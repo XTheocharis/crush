@@ -97,6 +97,21 @@
         "tools"
       ]
     },
+    "LCMOptions": {
+      "properties": {
+        "ctx_cutoff_threshold": {
+          "type": "number"
+        },
+        "disable_large_tool_output": {
+          "type": "boolean"
+        },
+        "large_tool_output_token_threshold": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "LSPConfig": {
       "properties": {
         "disabled": {
@@ -451,6 +466,10 @@
           "type": "boolean",
           "description": "Show indeterminate progress updates during long operations",
           "default": true
+        },
+        "lcm": {
+          "$ref": "#/$defs/LCMOptions",
+          "description": "Lossless Context Management options"
         }
       },
       "additionalProperties": false,
