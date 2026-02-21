@@ -81,6 +81,7 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 		Model:            sql.NullString{String: string(params.Model), Valid: true},
 		Provider:         sql.NullString{String: params.Provider, Valid: params.Provider != ""},
 		IsSummaryMessage: isSummary,
+		SessionID_2:      sessionID,
 	})
 	if err != nil {
 		return Message{}, err

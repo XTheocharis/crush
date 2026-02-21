@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/history"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
@@ -68,6 +69,9 @@ type coordinator struct {
 	filetracker filetracker.Service
 	lspManager  *lsp.Manager
 
+	lcm        lcm.Manager
+	extraTools []fantasy.AgentTool
+
 	currentAgent SessionAgent
 	agents       map[string]SessionAgent
 
@@ -83,6 +87,8 @@ func NewCoordinator(
 	history history.Service,
 	filetracker filetracker.Service,
 	lspManager *lsp.Manager,
+	lcm lcm.Manager,
+	extraTools []fantasy.AgentTool,
 ) (Coordinator, error) {
 	c := &coordinator{
 		cfg:         cfg,
@@ -92,6 +98,8 @@ func NewCoordinator(
 		history:     history,
 		filetracker: filetracker,
 		lspManager:  lspManager,
+		lcm:         lcm,
+		extraTools:  extraTools,
 		agents:      make(map[string]SessionAgent),
 	}
 
@@ -101,7 +109,11 @@ func NewCoordinator(
 	}
 
 	// TODO: make this dynamic when we support multiple agents
-	prompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	promptOpts := []prompt.Option{prompt.WithWorkingDir(c.cfg.WorkingDir())}
+	if lcm != nil {
+		promptOpts = append(promptOpts, prompt.WithExtraContextFiles(lcmContextFiles(lcm)))
+	}
+	prompt, err := coderPrompt(promptOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +124,11 @@ func NewCoordinator(
 	}
 	c.currentAgent = agent
 	c.agents[config.AgentCoder] = agent
+
+	if c.lcm != nil {
+		c.lcm.SetDefaultContextWindow(agent.Model().CatwalkCfg.ContextWindow)
+		c.lcm.SetModelOutputLimit(agent.Model().CatwalkCfg.DefaultMaxTokens)
+	}
 	return c, nil
 }
 
@@ -157,6 +174,7 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 		}
 	}
 
+	lcm.CompactIfOverHardLimit(ctx, c.lcm, sessionID)
 	run := func() (*fantasy.AgentResult, error) {
 		return c.currentAgent.Run(ctx, SessionAgentCall{
 			SessionID:        sessionID,
@@ -358,16 +376,17 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 
 	largeProviderCfg, _ := c.cfg.Providers.Get(large.ModelCfg.Provider)
 	result := NewSessionAgent(SessionAgentOptions{
-		large,
-		small,
-		largeProviderCfg.SystemPromptPrefix,
-		"",
-		isSubAgent,
-		c.cfg.Options.DisableAutoSummarize,
-		c.permissions.SkipRequests(),
-		c.sessions,
-		c.messages,
-		nil,
+		LargeModel:           large,
+		SmallModel:           small,
+		SystemPromptPrefix:   largeProviderCfg.SystemPromptPrefix,
+		SystemPrompt:         "",
+		LCMManager:           c.lcm,
+		IsSubAgent:           isSubAgent,
+		DisableAutoSummarize: c.cfg.Options.DisableAutoSummarize || c.lcm != nil,
+		IsYolo:               c.permissions.SkipRequests(),
+		Sessions:             c.sessions,
+		Messages:             c.messages,
+		Tools:                nil,
 	})
 
 	c.readyWg.Go(func() error {
@@ -398,6 +417,9 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		if err != nil {
 			return nil, err
 		}
+		// Append extra tools (e.g., LCM tools).
+		allTools = append(allTools, c.extraTools...)
+
 		allTools = append(allTools, agentTool)
 	}
 
@@ -879,6 +901,13 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 		return err
 	}
 	c.currentAgent.SetTools(tools)
+
+	if c.lcm != nil {
+		c.lcm.SetModelOutputLimit(large.CatwalkCfg.DefaultMaxTokens)
+		if err := c.lcm.UpdateContextWindow(ctx, large.CatwalkCfg.ContextWindow); err != nil {
+			return fmt.Errorf("updating LCM context window: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -891,6 +920,11 @@ func (c *coordinator) QueuedPromptsList(sessionID string) []string {
 }
 
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
+	// Delegate to LCM if available.
+	if c.lcm != nil {
+		return c.lcm.Compact(ctx, sessionID)
+	}
+
 	providerCfg, ok := c.cfg.Providers.Get(c.currentAgent.Model().ModelCfg.Provider)
 	if !ok {
 		return errors.New("model provider not configured")
@@ -901,6 +935,17 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 func (c *coordinator) isUnauthorized(err error) bool {
 	var providerErr *fantasy.ProviderError
 	return errors.As(err, &providerErr) && providerErr.StatusCode == http.StatusUnauthorized
+}
+
+// lcmContextFiles converts lcm.ContextFile values to prompt.ContextFile values
+// for injection into the system prompt.
+func lcmContextFiles(mgr lcm.Manager) []prompt.ContextFile {
+	lcmFiles := mgr.GetContextFiles()
+	promptFiles := make([]prompt.ContextFile, len(lcmFiles))
+	for i, f := range lcmFiles {
+		promptFiles[i] = prompt.ContextFile{Path: f.Name, Content: f.Content}
+	}
+	return promptFiles
 }
 
 func (c *coordinator) refreshOAuth2Token(ctx context.Context, providerCfg config.ProviderConfig) error {

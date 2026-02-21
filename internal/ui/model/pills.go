@@ -139,7 +139,7 @@ func (m *UI) togglePillsExpanded() tea.Cmd {
 	if !m.hasSession() {
 		return nil
 	}
-	hasPills := hasIncompleteTodos(m.session.Todos) || m.promptQueue > 0
+	hasPills := hasIncompleteTodos(m.session.Todos) || m.promptQueue > 0 || m.lcmCompacting
 	if !hasPills {
 		return nil
 	}
@@ -189,7 +189,7 @@ func (m *UI) pillsAreaHeight() int {
 	}
 	hasIncomplete := hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
-	hasPills := hasIncomplete || hasQueue
+	hasPills := hasIncomplete || hasQueue || m.lcmCompacting
 	if !hasPills {
 		return 0
 	}
@@ -223,7 +223,7 @@ func (m *UI) renderPills() {
 	hasIncomplete := hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	if !hasIncomplete && !hasQueue {
+	if !hasIncomplete && !hasQueue && !m.lcmCompacting {
 		return
 	}
 
@@ -242,6 +242,9 @@ func (m *UI) renderPills() {
 	}
 	if hasQueue {
 		pills = append(pills, queuePill(m.promptQueue, queueFocused, m.pillsExpanded, t))
+	}
+	if m.lcmCompacting {
+		pills = append(pills, m.compactionPill())
 	}
 
 	var expandedList string

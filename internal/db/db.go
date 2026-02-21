@@ -24,6 +24,9 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.clearSessionSummaryMessageIDStmt, err = db.PrepareContext(ctx, clearSessionSummaryMessageID); err != nil {
+		return nil, fmt.Errorf("error preparing query ClearSessionSummaryMessageID: %w", err)
+	}
 	if q.createFileStmt, err = db.PrepareContext(ctx, createFile); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateFile: %w", err)
 	}
@@ -33,8 +36,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createSessionStmt, err = db.PrepareContext(ctx, createSession); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSession: %w", err)
 	}
+	if q.deleteAllLcmContextItemsStmt, err = db.PrepareContext(ctx, deleteAllLcmContextItems); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteAllLcmContextItems: %w", err)
+	}
 	if q.deleteFileStmt, err = db.PrepareContext(ctx, deleteFile); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteFile: %w", err)
+	}
+	if q.deleteLcmSummaryStmt, err = db.PrepareContext(ctx, deleteLcmSummary); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteLcmSummary: %w", err)
+	}
+	if q.deleteLcmSummaryMessagesStmt, err = db.PrepareContext(ctx, deleteLcmSummaryMessages); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteLcmSummaryMessages: %w", err)
+	}
+	if q.deleteLcmSummaryParentsStmt, err = db.PrepareContext(ctx, deleteLcmSummaryParents); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteLcmSummaryParents: %w", err)
 	}
 	if q.deleteMessageStmt, err = db.PrepareContext(ctx, deleteMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteMessage: %w", err)
@@ -63,6 +78,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getHourDayHeatmapStmt, err = db.PrepareContext(ctx, getHourDayHeatmap); err != nil {
 		return nil, fmt.Errorf("error preparing query GetHourDayHeatmap: %w", err)
 	}
+	if q.getLcmContextTokenCountStmt, err = db.PrepareContext(ctx, getLcmContextTokenCount); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLcmContextTokenCount: %w", err)
+	}
+	if q.getLcmLargeFileStmt, err = db.PrepareContext(ctx, getLcmLargeFile); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLcmLargeFile: %w", err)
+	}
+	if q.getLcmSessionConfigStmt, err = db.PrepareContext(ctx, getLcmSessionConfig); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLcmSessionConfig: %w", err)
+	}
+	if q.getLcmSummaryStmt, err = db.PrepareContext(ctx, getLcmSummary); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLcmSummary: %w", err)
+	}
 	if q.getMessageStmt, err = db.PrepareContext(ctx, getMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMessage: %w", err)
 	}
@@ -90,6 +117,27 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getUsageByModelStmt, err = db.PrepareContext(ctx, getUsageByModel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUsageByModel: %w", err)
 	}
+	if q.insertLcmContextItemStmt, err = db.PrepareContext(ctx, insertLcmContextItem); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLcmContextItem: %w", err)
+	}
+	if q.insertLcmLargeFileStmt, err = db.PrepareContext(ctx, insertLcmLargeFile); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLcmLargeFile: %w", err)
+	}
+	if q.insertLcmMapItemStmt, err = db.PrepareContext(ctx, insertLcmMapItem); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLcmMapItem: %w", err)
+	}
+	if q.insertLcmMapRunStmt, err = db.PrepareContext(ctx, insertLcmMapRun); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLcmMapRun: %w", err)
+	}
+	if q.insertLcmSummaryStmt, err = db.PrepareContext(ctx, insertLcmSummary); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLcmSummary: %w", err)
+	}
+	if q.insertLcmSummaryMessageStmt, err = db.PrepareContext(ctx, insertLcmSummaryMessage); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLcmSummaryMessage: %w", err)
+	}
+	if q.insertLcmSummaryParentStmt, err = db.PrepareContext(ctx, insertLcmSummaryParent); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLcmSummaryParent: %w", err)
+	}
 	if q.listAllUserMessagesStmt, err = db.PrepareContext(ctx, listAllUserMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAllUserMessages: %w", err)
 	}
@@ -102,8 +150,29 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listLatestSessionFilesStmt, err = db.PrepareContext(ctx, listLatestSessionFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListLatestSessionFiles: %w", err)
 	}
+	if q.listLcmContextItemsStmt, err = db.PrepareContext(ctx, listLcmContextItems); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLcmContextItems: %w", err)
+	}
+	if q.listLcmLargeFilesBySessionStmt, err = db.PrepareContext(ctx, listLcmLargeFilesBySession); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLcmLargeFilesBySession: %w", err)
+	}
+	if q.listLcmSummariesBySessionStmt, err = db.PrepareContext(ctx, listLcmSummariesBySession); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLcmSummariesBySession: %w", err)
+	}
+	if q.listLcmSummaryMessagesStmt, err = db.PrepareContext(ctx, listLcmSummaryMessages); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLcmSummaryMessages: %w", err)
+	}
+	if q.listLcmSummaryParentsStmt, err = db.PrepareContext(ctx, listLcmSummaryParents); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLcmSummaryParents: %w", err)
+	}
 	if q.listMessagesBySessionStmt, err = db.PrepareContext(ctx, listMessagesBySession); err != nil {
 		return nil, fmt.Errorf("error preparing query ListMessagesBySession: %w", err)
+	}
+	if q.listMessagesBySessionSeqStmt, err = db.PrepareContext(ctx, listMessagesBySessionSeq); err != nil {
+		return nil, fmt.Errorf("error preparing query ListMessagesBySessionSeq: %w", err)
+	}
+	if q.listMessagesInSeqRangeStmt, err = db.PrepareContext(ctx, listMessagesInSeqRange); err != nil {
+		return nil, fmt.Errorf("error preparing query ListMessagesInSeqRange: %w", err)
 	}
 	if q.listNewFilesStmt, err = db.PrepareContext(ctx, listNewFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListNewFiles: %w", err)
@@ -120,8 +189,26 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.recordFileReadStmt, err = db.PrepareContext(ctx, recordFileRead); err != nil {
 		return nil, fmt.Errorf("error preparing query RecordFileRead: %w", err)
 	}
+	if q.searchLcmSummariesStmt, err = db.PrepareContext(ctx, searchLcmSummaries); err != nil {
+		return nil, fmt.Errorf("error preparing query SearchLcmSummaries: %w", err)
+	}
+	if q.updateLcmLargeFileExplorationStmt, err = db.PrepareContext(ctx, updateLcmLargeFileExploration); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateLcmLargeFileExploration: %w", err)
+	}
+	if q.updateLcmMapItemStmt, err = db.PrepareContext(ctx, updateLcmMapItem); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateLcmMapItem: %w", err)
+	}
+	if q.updateLcmMapRunStatusStmt, err = db.PrepareContext(ctx, updateLcmMapRunStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateLcmMapRunStatus: %w", err)
+	}
+	if q.updateLcmSessionConfigStmt, err = db.PrepareContext(ctx, updateLcmSessionConfig); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateLcmSessionConfig: %w", err)
+	}
 	if q.updateMessageStmt, err = db.PrepareContext(ctx, updateMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateMessage: %w", err)
+	}
+	if q.updateMessageTokenCountStmt, err = db.PrepareContext(ctx, updateMessageTokenCount); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateMessageTokenCount: %w", err)
 	}
 	if q.updateSessionStmt, err = db.PrepareContext(ctx, updateSession); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSession: %w", err)
@@ -129,11 +216,19 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateSessionTitleAndUsageStmt, err = db.PrepareContext(ctx, updateSessionTitleAndUsage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSessionTitleAndUsage: %w", err)
 	}
+	if q.upsertLcmSessionConfigStmt, err = db.PrepareContext(ctx, upsertLcmSessionConfig); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertLcmSessionConfig: %w", err)
+	}
 	return &q, nil
 }
 
 func (q *Queries) Close() error {
 	var err error
+	if q.clearSessionSummaryMessageIDStmt != nil {
+		if cerr := q.clearSessionSummaryMessageIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing clearSessionSummaryMessageIDStmt: %w", cerr)
+		}
+	}
 	if q.createFileStmt != nil {
 		if cerr := q.createFileStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createFileStmt: %w", cerr)
@@ -149,9 +244,29 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createSessionStmt: %w", cerr)
 		}
 	}
+	if q.deleteAllLcmContextItemsStmt != nil {
+		if cerr := q.deleteAllLcmContextItemsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteAllLcmContextItemsStmt: %w", cerr)
+		}
+	}
 	if q.deleteFileStmt != nil {
 		if cerr := q.deleteFileStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteFileStmt: %w", cerr)
+		}
+	}
+	if q.deleteLcmSummaryStmt != nil {
+		if cerr := q.deleteLcmSummaryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteLcmSummaryStmt: %w", cerr)
+		}
+	}
+	if q.deleteLcmSummaryMessagesStmt != nil {
+		if cerr := q.deleteLcmSummaryMessagesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteLcmSummaryMessagesStmt: %w", cerr)
+		}
+	}
+	if q.deleteLcmSummaryParentsStmt != nil {
+		if cerr := q.deleteLcmSummaryParentsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteLcmSummaryParentsStmt: %w", cerr)
 		}
 	}
 	if q.deleteMessageStmt != nil {
@@ -199,6 +314,26 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getHourDayHeatmapStmt: %w", cerr)
 		}
 	}
+	if q.getLcmContextTokenCountStmt != nil {
+		if cerr := q.getLcmContextTokenCountStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLcmContextTokenCountStmt: %w", cerr)
+		}
+	}
+	if q.getLcmLargeFileStmt != nil {
+		if cerr := q.getLcmLargeFileStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLcmLargeFileStmt: %w", cerr)
+		}
+	}
+	if q.getLcmSessionConfigStmt != nil {
+		if cerr := q.getLcmSessionConfigStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLcmSessionConfigStmt: %w", cerr)
+		}
+	}
+	if q.getLcmSummaryStmt != nil {
+		if cerr := q.getLcmSummaryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLcmSummaryStmt: %w", cerr)
+		}
+	}
 	if q.getMessageStmt != nil {
 		if cerr := q.getMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getMessageStmt: %w", cerr)
@@ -244,6 +379,41 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getUsageByModelStmt: %w", cerr)
 		}
 	}
+	if q.insertLcmContextItemStmt != nil {
+		if cerr := q.insertLcmContextItemStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLcmContextItemStmt: %w", cerr)
+		}
+	}
+	if q.insertLcmLargeFileStmt != nil {
+		if cerr := q.insertLcmLargeFileStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLcmLargeFileStmt: %w", cerr)
+		}
+	}
+	if q.insertLcmMapItemStmt != nil {
+		if cerr := q.insertLcmMapItemStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLcmMapItemStmt: %w", cerr)
+		}
+	}
+	if q.insertLcmMapRunStmt != nil {
+		if cerr := q.insertLcmMapRunStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLcmMapRunStmt: %w", cerr)
+		}
+	}
+	if q.insertLcmSummaryStmt != nil {
+		if cerr := q.insertLcmSummaryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLcmSummaryStmt: %w", cerr)
+		}
+	}
+	if q.insertLcmSummaryMessageStmt != nil {
+		if cerr := q.insertLcmSummaryMessageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLcmSummaryMessageStmt: %w", cerr)
+		}
+	}
+	if q.insertLcmSummaryParentStmt != nil {
+		if cerr := q.insertLcmSummaryParentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLcmSummaryParentStmt: %w", cerr)
+		}
+	}
 	if q.listAllUserMessagesStmt != nil {
 		if cerr := q.listAllUserMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAllUserMessagesStmt: %w", cerr)
@@ -264,9 +434,44 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listLatestSessionFilesStmt: %w", cerr)
 		}
 	}
+	if q.listLcmContextItemsStmt != nil {
+		if cerr := q.listLcmContextItemsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLcmContextItemsStmt: %w", cerr)
+		}
+	}
+	if q.listLcmLargeFilesBySessionStmt != nil {
+		if cerr := q.listLcmLargeFilesBySessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLcmLargeFilesBySessionStmt: %w", cerr)
+		}
+	}
+	if q.listLcmSummariesBySessionStmt != nil {
+		if cerr := q.listLcmSummariesBySessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLcmSummariesBySessionStmt: %w", cerr)
+		}
+	}
+	if q.listLcmSummaryMessagesStmt != nil {
+		if cerr := q.listLcmSummaryMessagesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLcmSummaryMessagesStmt: %w", cerr)
+		}
+	}
+	if q.listLcmSummaryParentsStmt != nil {
+		if cerr := q.listLcmSummaryParentsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLcmSummaryParentsStmt: %w", cerr)
+		}
+	}
 	if q.listMessagesBySessionStmt != nil {
 		if cerr := q.listMessagesBySessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listMessagesBySessionStmt: %w", cerr)
+		}
+	}
+	if q.listMessagesBySessionSeqStmt != nil {
+		if cerr := q.listMessagesBySessionSeqStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listMessagesBySessionSeqStmt: %w", cerr)
+		}
+	}
+	if q.listMessagesInSeqRangeStmt != nil {
+		if cerr := q.listMessagesInSeqRangeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listMessagesInSeqRangeStmt: %w", cerr)
 		}
 	}
 	if q.listNewFilesStmt != nil {
@@ -294,9 +499,39 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing recordFileReadStmt: %w", cerr)
 		}
 	}
+	if q.searchLcmSummariesStmt != nil {
+		if cerr := q.searchLcmSummariesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing searchLcmSummariesStmt: %w", cerr)
+		}
+	}
+	if q.updateLcmLargeFileExplorationStmt != nil {
+		if cerr := q.updateLcmLargeFileExplorationStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateLcmLargeFileExplorationStmt: %w", cerr)
+		}
+	}
+	if q.updateLcmMapItemStmt != nil {
+		if cerr := q.updateLcmMapItemStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateLcmMapItemStmt: %w", cerr)
+		}
+	}
+	if q.updateLcmMapRunStatusStmt != nil {
+		if cerr := q.updateLcmMapRunStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateLcmMapRunStatusStmt: %w", cerr)
+		}
+	}
+	if q.updateLcmSessionConfigStmt != nil {
+		if cerr := q.updateLcmSessionConfigStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateLcmSessionConfigStmt: %w", cerr)
+		}
+	}
 	if q.updateMessageStmt != nil {
 		if cerr := q.updateMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateMessageStmt: %w", cerr)
+		}
+	}
+	if q.updateMessageTokenCountStmt != nil {
+		if cerr := q.updateMessageTokenCountStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateMessageTokenCountStmt: %w", cerr)
 		}
 	}
 	if q.updateSessionStmt != nil {
@@ -307,6 +542,11 @@ func (q *Queries) Close() error {
 	if q.updateSessionTitleAndUsageStmt != nil {
 		if cerr := q.updateSessionTitleAndUsageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateSessionTitleAndUsageStmt: %w", cerr)
+		}
+	}
+	if q.upsertLcmSessionConfigStmt != nil {
+		if cerr := q.upsertLcmSessionConfigStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertLcmSessionConfigStmt: %w", cerr)
 		}
 	}
 	return err
@@ -346,83 +586,143 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                             DBTX
-	tx                             *sql.Tx
-	createFileStmt                 *sql.Stmt
-	createMessageStmt              *sql.Stmt
-	createSessionStmt              *sql.Stmt
-	deleteFileStmt                 *sql.Stmt
-	deleteMessageStmt              *sql.Stmt
-	deleteSessionStmt              *sql.Stmt
-	deleteSessionFilesStmt         *sql.Stmt
-	deleteSessionMessagesStmt      *sql.Stmt
-	getAverageResponseTimeStmt     *sql.Stmt
-	getFileStmt                    *sql.Stmt
-	getFileByPathAndSessionStmt    *sql.Stmt
-	getFileReadStmt                *sql.Stmt
-	getHourDayHeatmapStmt          *sql.Stmt
-	getMessageStmt                 *sql.Stmt
-	getRecentActivityStmt          *sql.Stmt
-	getSessionByIDStmt             *sql.Stmt
-	getToolUsageStmt               *sql.Stmt
-	getTotalStatsStmt              *sql.Stmt
-	getUsageByDayStmt              *sql.Stmt
-	getUsageByDayOfWeekStmt        *sql.Stmt
-	getUsageByHourStmt             *sql.Stmt
-	getUsageByModelStmt            *sql.Stmt
-	listAllUserMessagesStmt        *sql.Stmt
-	listFilesByPathStmt            *sql.Stmt
-	listFilesBySessionStmt         *sql.Stmt
-	listLatestSessionFilesStmt     *sql.Stmt
-	listMessagesBySessionStmt      *sql.Stmt
-	listNewFilesStmt               *sql.Stmt
-	listSessionReadFilesStmt       *sql.Stmt
-	listSessionsStmt               *sql.Stmt
-	listUserMessagesBySessionStmt  *sql.Stmt
-	recordFileReadStmt             *sql.Stmt
-	updateMessageStmt              *sql.Stmt
-	updateSessionStmt              *sql.Stmt
-	updateSessionTitleAndUsageStmt *sql.Stmt
+	db                                DBTX
+	tx                                *sql.Tx
+	clearSessionSummaryMessageIDStmt  *sql.Stmt
+	createFileStmt                    *sql.Stmt
+	createMessageStmt                 *sql.Stmt
+	createSessionStmt                 *sql.Stmt
+	deleteAllLcmContextItemsStmt      *sql.Stmt
+	deleteFileStmt                    *sql.Stmt
+	deleteLcmSummaryStmt              *sql.Stmt
+	deleteLcmSummaryMessagesStmt      *sql.Stmt
+	deleteLcmSummaryParentsStmt       *sql.Stmt
+	deleteMessageStmt                 *sql.Stmt
+	deleteSessionStmt                 *sql.Stmt
+	deleteSessionFilesStmt            *sql.Stmt
+	deleteSessionMessagesStmt         *sql.Stmt
+	getAverageResponseTimeStmt        *sql.Stmt
+	getFileStmt                       *sql.Stmt
+	getFileByPathAndSessionStmt       *sql.Stmt
+	getFileReadStmt                   *sql.Stmt
+	getHourDayHeatmapStmt             *sql.Stmt
+	getLcmContextTokenCountStmt       *sql.Stmt
+	getLcmLargeFileStmt               *sql.Stmt
+	getLcmSessionConfigStmt           *sql.Stmt
+	getLcmSummaryStmt                 *sql.Stmt
+	getMessageStmt                    *sql.Stmt
+	getRecentActivityStmt             *sql.Stmt
+	getSessionByIDStmt                *sql.Stmt
+	getToolUsageStmt                  *sql.Stmt
+	getTotalStatsStmt                 *sql.Stmt
+	getUsageByDayStmt                 *sql.Stmt
+	getUsageByDayOfWeekStmt           *sql.Stmt
+	getUsageByHourStmt                *sql.Stmt
+	getUsageByModelStmt               *sql.Stmt
+	insertLcmContextItemStmt          *sql.Stmt
+	insertLcmLargeFileStmt            *sql.Stmt
+	insertLcmMapItemStmt              *sql.Stmt
+	insertLcmMapRunStmt               *sql.Stmt
+	insertLcmSummaryStmt              *sql.Stmt
+	insertLcmSummaryMessageStmt       *sql.Stmt
+	insertLcmSummaryParentStmt        *sql.Stmt
+	listAllUserMessagesStmt           *sql.Stmt
+	listFilesByPathStmt               *sql.Stmt
+	listFilesBySessionStmt            *sql.Stmt
+	listLatestSessionFilesStmt        *sql.Stmt
+	listLcmContextItemsStmt           *sql.Stmt
+	listLcmLargeFilesBySessionStmt    *sql.Stmt
+	listLcmSummariesBySessionStmt     *sql.Stmt
+	listLcmSummaryMessagesStmt        *sql.Stmt
+	listLcmSummaryParentsStmt         *sql.Stmt
+	listMessagesBySessionStmt         *sql.Stmt
+	listMessagesBySessionSeqStmt      *sql.Stmt
+	listMessagesInSeqRangeStmt        *sql.Stmt
+	listNewFilesStmt                  *sql.Stmt
+	listSessionReadFilesStmt          *sql.Stmt
+	listSessionsStmt                  *sql.Stmt
+	listUserMessagesBySessionStmt     *sql.Stmt
+	recordFileReadStmt                *sql.Stmt
+	searchLcmSummariesStmt            *sql.Stmt
+	updateLcmLargeFileExplorationStmt *sql.Stmt
+	updateLcmMapItemStmt              *sql.Stmt
+	updateLcmMapRunStatusStmt         *sql.Stmt
+	updateLcmSessionConfigStmt        *sql.Stmt
+	updateMessageStmt                 *sql.Stmt
+	updateMessageTokenCountStmt       *sql.Stmt
+	updateSessionStmt                 *sql.Stmt
+	updateSessionTitleAndUsageStmt    *sql.Stmt
+	upsertLcmSessionConfigStmt        *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                             tx,
-		tx:                             tx,
-		createFileStmt:                 q.createFileStmt,
-		createMessageStmt:              q.createMessageStmt,
-		createSessionStmt:              q.createSessionStmt,
-		deleteFileStmt:                 q.deleteFileStmt,
-		deleteMessageStmt:              q.deleteMessageStmt,
-		deleteSessionStmt:              q.deleteSessionStmt,
-		deleteSessionFilesStmt:         q.deleteSessionFilesStmt,
-		deleteSessionMessagesStmt:      q.deleteSessionMessagesStmt,
-		getAverageResponseTimeStmt:     q.getAverageResponseTimeStmt,
-		getFileStmt:                    q.getFileStmt,
-		getFileByPathAndSessionStmt:    q.getFileByPathAndSessionStmt,
-		getFileReadStmt:                q.getFileReadStmt,
-		getHourDayHeatmapStmt:          q.getHourDayHeatmapStmt,
-		getMessageStmt:                 q.getMessageStmt,
-		getRecentActivityStmt:          q.getRecentActivityStmt,
-		getSessionByIDStmt:             q.getSessionByIDStmt,
-		getToolUsageStmt:               q.getToolUsageStmt,
-		getTotalStatsStmt:              q.getTotalStatsStmt,
-		getUsageByDayStmt:              q.getUsageByDayStmt,
-		getUsageByDayOfWeekStmt:        q.getUsageByDayOfWeekStmt,
-		getUsageByHourStmt:             q.getUsageByHourStmt,
-		getUsageByModelStmt:            q.getUsageByModelStmt,
-		listAllUserMessagesStmt:        q.listAllUserMessagesStmt,
-		listFilesByPathStmt:            q.listFilesByPathStmt,
-		listFilesBySessionStmt:         q.listFilesBySessionStmt,
-		listLatestSessionFilesStmt:     q.listLatestSessionFilesStmt,
-		listMessagesBySessionStmt:      q.listMessagesBySessionStmt,
-		listNewFilesStmt:               q.listNewFilesStmt,
-		listSessionReadFilesStmt:       q.listSessionReadFilesStmt,
-		listSessionsStmt:               q.listSessionsStmt,
-		listUserMessagesBySessionStmt:  q.listUserMessagesBySessionStmt,
-		recordFileReadStmt:             q.recordFileReadStmt,
-		updateMessageStmt:              q.updateMessageStmt,
-		updateSessionStmt:              q.updateSessionStmt,
-		updateSessionTitleAndUsageStmt: q.updateSessionTitleAndUsageStmt,
+		db:                                tx,
+		tx:                                tx,
+		clearSessionSummaryMessageIDStmt:  q.clearSessionSummaryMessageIDStmt,
+		createFileStmt:                    q.createFileStmt,
+		createMessageStmt:                 q.createMessageStmt,
+		createSessionStmt:                 q.createSessionStmt,
+		deleteAllLcmContextItemsStmt:      q.deleteAllLcmContextItemsStmt,
+		deleteFileStmt:                    q.deleteFileStmt,
+		deleteLcmSummaryStmt:              q.deleteLcmSummaryStmt,
+		deleteLcmSummaryMessagesStmt:      q.deleteLcmSummaryMessagesStmt,
+		deleteLcmSummaryParentsStmt:       q.deleteLcmSummaryParentsStmt,
+		deleteMessageStmt:                 q.deleteMessageStmt,
+		deleteSessionStmt:                 q.deleteSessionStmt,
+		deleteSessionFilesStmt:            q.deleteSessionFilesStmt,
+		deleteSessionMessagesStmt:         q.deleteSessionMessagesStmt,
+		getAverageResponseTimeStmt:        q.getAverageResponseTimeStmt,
+		getFileStmt:                       q.getFileStmt,
+		getFileByPathAndSessionStmt:       q.getFileByPathAndSessionStmt,
+		getFileReadStmt:                   q.getFileReadStmt,
+		getHourDayHeatmapStmt:             q.getHourDayHeatmapStmt,
+		getLcmContextTokenCountStmt:       q.getLcmContextTokenCountStmt,
+		getLcmLargeFileStmt:               q.getLcmLargeFileStmt,
+		getLcmSessionConfigStmt:           q.getLcmSessionConfigStmt,
+		getLcmSummaryStmt:                 q.getLcmSummaryStmt,
+		getMessageStmt:                    q.getMessageStmt,
+		getRecentActivityStmt:             q.getRecentActivityStmt,
+		getSessionByIDStmt:                q.getSessionByIDStmt,
+		getToolUsageStmt:                  q.getToolUsageStmt,
+		getTotalStatsStmt:                 q.getTotalStatsStmt,
+		getUsageByDayStmt:                 q.getUsageByDayStmt,
+		getUsageByDayOfWeekStmt:           q.getUsageByDayOfWeekStmt,
+		getUsageByHourStmt:                q.getUsageByHourStmt,
+		getUsageByModelStmt:               q.getUsageByModelStmt,
+		insertLcmContextItemStmt:          q.insertLcmContextItemStmt,
+		insertLcmLargeFileStmt:            q.insertLcmLargeFileStmt,
+		insertLcmMapItemStmt:              q.insertLcmMapItemStmt,
+		insertLcmMapRunStmt:               q.insertLcmMapRunStmt,
+		insertLcmSummaryStmt:              q.insertLcmSummaryStmt,
+		insertLcmSummaryMessageStmt:       q.insertLcmSummaryMessageStmt,
+		insertLcmSummaryParentStmt:        q.insertLcmSummaryParentStmt,
+		listAllUserMessagesStmt:           q.listAllUserMessagesStmt,
+		listFilesByPathStmt:               q.listFilesByPathStmt,
+		listFilesBySessionStmt:            q.listFilesBySessionStmt,
+		listLatestSessionFilesStmt:        q.listLatestSessionFilesStmt,
+		listLcmContextItemsStmt:           q.listLcmContextItemsStmt,
+		listLcmLargeFilesBySessionStmt:    q.listLcmLargeFilesBySessionStmt,
+		listLcmSummariesBySessionStmt:     q.listLcmSummariesBySessionStmt,
+		listLcmSummaryMessagesStmt:        q.listLcmSummaryMessagesStmt,
+		listLcmSummaryParentsStmt:         q.listLcmSummaryParentsStmt,
+		listMessagesBySessionStmt:         q.listMessagesBySessionStmt,
+		listMessagesBySessionSeqStmt:      q.listMessagesBySessionSeqStmt,
+		listMessagesInSeqRangeStmt:        q.listMessagesInSeqRangeStmt,
+		listNewFilesStmt:                  q.listNewFilesStmt,
+		listSessionReadFilesStmt:          q.listSessionReadFilesStmt,
+		listSessionsStmt:                  q.listSessionsStmt,
+		listUserMessagesBySessionStmt:     q.listUserMessagesBySessionStmt,
+		recordFileReadStmt:                q.recordFileReadStmt,
+		searchLcmSummariesStmt:            q.searchLcmSummariesStmt,
+		updateLcmLargeFileExplorationStmt: q.updateLcmLargeFileExplorationStmt,
+		updateLcmMapItemStmt:              q.updateLcmMapItemStmt,
+		updateLcmMapRunStatusStmt:         q.updateLcmMapRunStatusStmt,
+		updateLcmSessionConfigStmt:        q.updateLcmSessionConfigStmt,
+		updateMessageStmt:                 q.updateMessageStmt,
+		updateMessageTokenCountStmt:       q.updateMessageTokenCountStmt,
+		updateSessionStmt:                 q.updateSessionStmt,
+		updateSessionTitleAndUsageStmt:    q.updateSessionTitleAndUsageStmt,
+		upsertLcmSessionConfigStmt:        q.upsertLcmSessionConfigStmt,
 	}
 }

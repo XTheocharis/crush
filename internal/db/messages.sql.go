@@ -19,12 +19,15 @@ INSERT INTO messages (
     model,
     provider,
     is_summary_message,
+    seq,
     created_at,
     updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now')
+    ?, ?, ?, ?, ?, ?, ?,
+    (SELECT COALESCE(MAX(m.seq), 0) + 1 FROM messages m WHERE m.session_id = ?),
+    strftime('%s', 'now'), strftime('%s', 'now')
 )
-RETURNING id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message
+RETURNING id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count
 `
 
 type CreateMessageParams struct {
@@ -35,6 +38,7 @@ type CreateMessageParams struct {
 	Model            sql.NullString `json:"model"`
 	Provider         sql.NullString `json:"provider"`
 	IsSummaryMessage int64          `json:"is_summary_message"`
+	SessionID_2      string         `json:"session_id_2"`
 }
 
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
@@ -46,6 +50,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		arg.Model,
 		arg.Provider,
 		arg.IsSummaryMessage,
+		arg.SessionID_2,
 	)
 	var i Message
 	err := row.Scan(
@@ -59,6 +64,8 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.FinishedAt,
 		&i.Provider,
 		&i.IsSummaryMessage,
+		&i.Seq,
+		&i.TokenCount,
 	)
 	return i, err
 }
@@ -84,7 +91,7 @@ func (q *Queries) DeleteSessionMessages(ctx context.Context, sessionID string) e
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count
 FROM messages
 WHERE id = ? LIMIT 1
 `
@@ -103,12 +110,14 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 		&i.FinishedAt,
 		&i.Provider,
 		&i.IsSummaryMessage,
+		&i.Seq,
+		&i.TokenCount,
 	)
 	return i, err
 }
 
 const listAllUserMessages = `-- name: ListAllUserMessages :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count
 FROM messages
 WHERE role = 'user'
 ORDER BY created_at DESC
@@ -134,6 +143,8 @@ func (q *Queries) ListAllUserMessages(ctx context.Context) ([]Message, error) {
 			&i.FinishedAt,
 			&i.Provider,
 			&i.IsSummaryMessage,
+			&i.Seq,
+			&i.TokenCount,
 		); err != nil {
 			return nil, err
 		}
@@ -149,7 +160,7 @@ func (q *Queries) ListAllUserMessages(ctx context.Context) ([]Message, error) {
 }
 
 const listMessagesBySession = `-- name: ListMessagesBySession :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count
 FROM messages
 WHERE session_id = ?
 ORDER BY created_at ASC
@@ -175,6 +186,8 @@ func (q *Queries) ListMessagesBySession(ctx context.Context, sessionID string) (
 			&i.FinishedAt,
 			&i.Provider,
 			&i.IsSummaryMessage,
+			&i.Seq,
+			&i.TokenCount,
 		); err != nil {
 			return nil, err
 		}
@@ -190,7 +203,7 @@ func (q *Queries) ListMessagesBySession(ctx context.Context, sessionID string) (
 }
 
 const listUserMessagesBySession = `-- name: ListUserMessagesBySession :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count
 FROM messages
 WHERE session_id = ? AND role = 'user'
 ORDER BY created_at DESC
@@ -216,6 +229,8 @@ func (q *Queries) ListUserMessagesBySession(ctx context.Context, sessionID strin
 			&i.FinishedAt,
 			&i.Provider,
 			&i.IsSummaryMessage,
+			&i.Seq,
+			&i.TokenCount,
 		); err != nil {
 			return nil, err
 		}

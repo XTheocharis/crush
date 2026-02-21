@@ -19,11 +19,12 @@ import (
 
 // Prompt represents a template-based prompt generator.
 type Prompt struct {
-	name       string
-	template   string
-	now        func() time.Time
-	platform   string
-	workingDir string
+	name              string
+	template          string
+	now               func() time.Time
+	platform          string
+	workingDir        string
+	extraContextFiles []ContextFile
 }
 
 type PromptDat struct {
@@ -61,6 +62,12 @@ func WithPlatform(platform string) Option {
 func WithWorkingDir(workingDir string) Option {
 	return func(p *Prompt) {
 		p.workingDir = workingDir
+	}
+}
+
+func WithExtraContextFiles(files []ContextFile) Option {
+	return func(p *Prompt) {
+		p.extraContextFiles = files
 	}
 }
 
@@ -198,6 +205,10 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, cfg con
 	for _, contextFiles := range files {
 		data.ContextFiles = append(data.ContextFiles, contextFiles...)
 	}
+
+	// Append any extra context files provided via WithExtraContextFiles.
+	data.ContextFiles = append(data.ContextFiles, p.extraContextFiles...)
+
 	return data, nil
 }
 

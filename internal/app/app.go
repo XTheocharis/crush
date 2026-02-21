@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/format"
 	"github.com/charmbracelet/crush/internal/history"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
@@ -62,6 +63,8 @@ type App struct {
 
 	config *config.Config
 
+	lcmManager lcm.Manager
+
 	serviceEventsWG *sync.WaitGroup
 	eventsCtx       context.Context
 	events          chan tea.Msg
@@ -77,6 +80,14 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 	q := db.New(conn)
 	sessions := session.NewService(q, conn)
 	messages := message.NewService(q)
+
+	// Initialize LCM if configured.
+	var lcmMgr lcm.Manager
+	if cfg.Options.LCM != nil {
+		lcmMgr = lcm.NewManager(q, conn)
+		messages = lcm.NewMessageDecorator(messages, lcmMgr, q, conn)
+		slog.Info("LCM enabled")
+	}
 	files := history.NewService(q, conn)
 	skipPermissionsRequests := cfg.Permissions != nil && cfg.Permissions.SkipRequests
 	var allowedTools []string
@@ -95,6 +106,8 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 		globalCtx: ctx,
 
 		config: cfg,
+
+		lcmManager: lcmMgr,
 
 		events:          make(chan tea.Msg, 100),
 		serviceEventsWG: &sync.WaitGroup{},
@@ -426,6 +439,9 @@ func (app *App) setupEvents() {
 	setupSubscriber(ctx, app.serviceEventsWG, "history", app.History.Subscribe, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "mcp", mcp.SubscribeEvents, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "lsp", SubscribeLSPEvents, app.events)
+	if app.lcmManager != nil {
+		setupSubscriber(ctx, app.serviceEventsWG, "lcm", app.lcmManager.Subscribe, app.events)
+	}
 	cleanupFunc := func(context.Context) error {
 		cancel()
 		app.serviceEventsWG.Wait()
@@ -496,6 +512,8 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		app.History,
 		app.FileTracker,
 		app.LSPManager,
+		app.lcmManager,
+		lcm.ExtraAgentTools(app.lcmManager),
 	)
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)

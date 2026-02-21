@@ -18,6 +18,85 @@ type File struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+type LcmContextItem struct {
+	SessionID  string         `json:"session_id"`
+	Position   int64          `json:"position"`
+	ItemType   string         `json:"item_type"`
+	MessageID  sql.NullString `json:"message_id"`
+	SummaryID  sql.NullString `json:"summary_id"`
+	TokenCount int64          `json:"token_count"`
+}
+
+type LcmLargeFile struct {
+	FileID             string         `json:"file_id"`
+	SessionID          string         `json:"session_id"`
+	OriginalPath       string         `json:"original_path"`
+	Content            sql.NullString `json:"content"`
+	TokenCount         int64          `json:"token_count"`
+	ExplorationSummary sql.NullString `json:"exploration_summary"`
+	ExplorerUsed       sql.NullString `json:"explorer_used"`
+	CreatedAt          int64          `json:"created_at"`
+}
+
+type LcmMapItem struct {
+	ItemID     string         `json:"item_id"`
+	RunID      string         `json:"run_id"`
+	Status     string         `json:"status"`
+	InputJson  string         `json:"input_json"`
+	OutputJson sql.NullString `json:"output_json"`
+	ErrorMsg   sql.NullString `json:"error_msg"`
+	CreatedAt  int64          `json:"created_at"`
+	UpdatedAt  int64          `json:"updated_at"`
+}
+
+type LcmMapRun struct {
+	RunID      string `json:"run_id"`
+	SessionID  string `json:"session_id"`
+	Status     string `json:"status"`
+	InputPath  string `json:"input_path"`
+	OutputPath string `json:"output_path"`
+	SchemaJson string `json:"schema_json"`
+	CreatedAt  int64  `json:"created_at"`
+	UpdatedAt  int64  `json:"updated_at"`
+}
+
+type LcmSessionConfig struct {
+	SessionID           string  `json:"session_id"`
+	ModelName           string  `json:"model_name"`
+	ModelCtxMaxTokens   int64   `json:"model_ctx_max_tokens"`
+	CtxCutoffThreshold  float64 `json:"ctx_cutoff_threshold"`
+	SoftThresholdTokens int64   `json:"soft_threshold_tokens"`
+	HardThresholdTokens int64   `json:"hard_threshold_tokens"`
+	CreatedAt           int64   `json:"created_at"`
+	UpdatedAt           int64   `json:"updated_at"`
+}
+
+type LcmSummariesFt struct {
+	Content string `json:"content"`
+}
+
+type LcmSummary struct {
+	SummaryID  string `json:"summary_id"`
+	SessionID  string `json:"session_id"`
+	Kind       string `json:"kind"`
+	Content    string `json:"content"`
+	TokenCount int64  `json:"token_count"`
+	FileIds    string `json:"file_ids"`
+	CreatedAt  int64  `json:"created_at"`
+}
+
+type LcmSummaryMessage struct {
+	SummaryID string `json:"summary_id"`
+	MessageID string `json:"message_id"`
+	Ord       int64  `json:"ord"`
+}
+
+type LcmSummaryParent struct {
+	SummaryID       string `json:"summary_id"`
+	ParentSummaryID string `json:"parent_summary_id"`
+	Ord             int64  `json:"ord"`
+}
+
 type Message struct {
 	ID               string         `json:"id"`
 	SessionID        string         `json:"session_id"`
@@ -29,12 +108,18 @@ type Message struct {
 	FinishedAt       sql.NullInt64  `json:"finished_at"`
 	Provider         sql.NullString `json:"provider"`
 	IsSummaryMessage int64          `json:"is_summary_message"`
+	Seq              int64          `json:"seq"`
+	TokenCount       int64          `json:"token_count"`
+}
+
+type MessagesFt struct {
+	Content string `json:"content"`
 }
 
 type ReadFile struct {
 	SessionID string `json:"session_id"`
 	Path      string `json:"path"`
-	ReadAt    int64  `json:"read_at"` // Unix timestamp when file was last read
+	ReadAt    int64  `json:"read_at"`
 }
 
 type Session struct {

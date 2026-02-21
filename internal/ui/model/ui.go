@@ -33,6 +33,7 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -225,6 +226,11 @@ type UI struct {
 	todoSpinner    spinner.Model
 	todoIsSpinning bool
 
+	// LCM compaction state
+	lcmCompacting      bool
+	lcmCompactingStart time.Time
+	lcmSpinner         spinner.Model
+
 	// mouse highlighting related state
 	lastClickTime time.Time
 
@@ -262,6 +268,11 @@ func New(com *common.Common) *UI {
 		spinner.WithStyle(com.Styles.Pills.TodoSpinner),
 	)
 
+	lcmSpinner := spinner.New(
+		spinner.WithSpinner(spinner.MiniDot),
+		spinner.WithStyle(com.Styles.Pills.TodoSpinner),
+	)
+
 	// Attachments component
 	attachments := attachments.New(
 		attachments.NewRenderer(
@@ -289,6 +300,7 @@ func New(com *common.Common) *UI {
 		completions: comp,
 		attachments: attachments,
 		todoSpinner: todoSpinner,
+		lcmSpinner:  lcmSpinner,
 		lspStates:   make(map[string]app.LSPClientInfo),
 		mcpStates:   make(map[string]mcp.ClientInfo),
 	}
@@ -544,6 +556,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pubsub.Event[permission.PermissionNotification]:
 		m.handlePermissionNotification(msg.Payload)
+	case pubsub.Event[lcm.CompactionEvent]:
+		cmds = append(cmds, func() tea.Msg {
+			return CompactionEventToMsg(msg.Payload)
+		})
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
 	case tea.TerminalVersionMsg:
@@ -708,6 +724,24 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+		if m.lcmCompacting {
+			var cmd tea.Cmd
+			m.lcmSpinner, cmd = m.lcmSpinner.Update(msg)
+			if cmd != nil {
+				m.renderPills()
+				cmds = append(cmds, cmd)
+			}
+		}
+
+	case CompactionStartedMsg:
+		m.lcmCompacting = true
+		m.lcmCompactingStart = time.Now()
+		cmds = append(cmds, m.lcmSpinner.Tick)
+		m.renderPills()
+
+	case CompactionCompletedMsg, CompactionFailedMsg:
+		m.lcmCompacting = false
+		m.renderPills()
 
 	case tea.KeyPressMsg:
 		if cmd := m.handleKeyPressMsg(msg); cmd != nil {
