@@ -625,14 +625,14 @@ func DefaultStyles() Styles {
 			StylePrimitive: ansi.StylePrimitive{
 				// BlockPrefix: "\n",
 				// BlockSuffix: "\n",
-				Color: stringPtr(charmtone.Smoke.Hex()),
+				Color: ptr(charmtone.Smoke.Hex()),
 			},
-			// Margin: uintPtr(defaultMargin),
+			// Margin: ptr[uint](defaultMargin),
 		},
 		BlockQuote: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{},
-			Indent:         uintPtr(1),
-			IndentToken:    stringPtr("│ "),
+			Indent:         ptr[uint](1),
+			IndentToken:    ptr("│ "),
 		},
 		List: ansi.StyleList{
 			LevelIndent: defaultListIndent,
@@ -640,17 +640,17 @@ func DefaultStyles() Styles {
 		Heading: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				BlockSuffix: "\n",
-				Color:       stringPtr(charmtone.Malibu.Hex()),
-				Bold:        boolPtr(true),
+				Color:       ptr(charmtone.Malibu.Hex()),
+				Bold:        ptr(true),
 			},
 		},
 		H1: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				Prefix:          " ",
 				Suffix:          " ",
-				Color:           stringPtr(charmtone.Zest.Hex()),
-				BackgroundColor: stringPtr(charmtone.Charple.Hex()),
-				Bold:            boolPtr(true),
+				Color:           ptr(charmtone.Zest.Hex()),
+				BackgroundColor: ptr(charmtone.Charple.Hex()),
+				Bold:            ptr(true),
 			},
 		},
 		H2: ansi.StyleBlock{
@@ -676,21 +676,21 @@ func DefaultStyles() Styles {
 		H6: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				Prefix: "###### ",
-				Color:  stringPtr(charmtone.Guac.Hex()),
-				Bold:   boolPtr(false),
+				Color:  ptr(charmtone.Guac.Hex()),
+				Bold:   ptr(false),
 			},
 		},
 		Strikethrough: ansi.StylePrimitive{
-			CrossedOut: boolPtr(true),
+			CrossedOut: ptr(true),
 		},
 		Emph: ansi.StylePrimitive{
-			Italic: boolPtr(true),
+			Italic: ptr(true),
 		},
 		Strong: ansi.StylePrimitive{
-			Bold: boolPtr(true),
+			Bold: ptr(true),
 		},
 		HorizontalRule: ansi.StylePrimitive{
-			Color:  stringPtr(charmtone.Charcoal.Hex()),
+			Color:  ptr(charmtone.Charcoal.Hex()),
 			Format: "\n--------\n",
 		},
 		Item: ansi.StylePrimitive{
@@ -705,117 +705,117 @@ func DefaultStyles() Styles {
 			Unticked:       "[ ] ",
 		},
 		Link: ansi.StylePrimitive{
-			Color:     stringPtr(charmtone.Zinc.Hex()),
-			Underline: boolPtr(true),
+			Color:     ptr(charmtone.Zinc.Hex()),
+			Underline: ptr(true),
 		},
 		LinkText: ansi.StylePrimitive{
-			Color: stringPtr(charmtone.Guac.Hex()),
-			Bold:  boolPtr(true),
+			Color: ptr(charmtone.Guac.Hex()),
+			Bold:  ptr(true),
 		},
 		Image: ansi.StylePrimitive{
-			Color:     stringPtr(charmtone.Cheeky.Hex()),
-			Underline: boolPtr(true),
+			Color:     ptr(charmtone.Cheeky.Hex()),
+			Underline: ptr(true),
 		},
 		ImageText: ansi.StylePrimitive{
-			Color:  stringPtr(charmtone.Squid.Hex()),
+			Color:  ptr(charmtone.Squid.Hex()),
 			Format: "Image: {{.text}} →",
 		},
 		Code: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				Prefix:          " ",
 				Suffix:          " ",
-				Color:           stringPtr(charmtone.Coral.Hex()),
-				BackgroundColor: stringPtr(charmtone.Charcoal.Hex()),
+				Color:           ptr(charmtone.Coral.Hex()),
+				BackgroundColor: ptr(charmtone.Charcoal.Hex()),
 			},
 		},
 		CodeBlock: ansi.StyleCodeBlock{
 			StyleBlock: ansi.StyleBlock{
 				StylePrimitive: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Charcoal.Hex()),
+					Color: ptr(charmtone.Charcoal.Hex()),
 				},
-				Margin: uintPtr(defaultMargin),
+				Margin: ptr[uint](defaultMargin),
 			},
 			Chroma: &ansi.Chroma{
 				Text: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Smoke.Hex()),
+					Color: ptr(charmtone.Smoke.Hex()),
 				},
 				Error: ansi.StylePrimitive{
-					Color:           stringPtr(charmtone.Butter.Hex()),
-					BackgroundColor: stringPtr(charmtone.Sriracha.Hex()),
+					Color:           ptr(charmtone.Butter.Hex()),
+					BackgroundColor: ptr(charmtone.Sriracha.Hex()),
 				},
 				Comment: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Oyster.Hex()),
+					Color: ptr(charmtone.Oyster.Hex()),
 				},
 				CommentPreproc: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Bengal.Hex()),
+					Color: ptr(charmtone.Bengal.Hex()),
 				},
 				Keyword: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Malibu.Hex()),
+					Color: ptr(charmtone.Malibu.Hex()),
 				},
 				KeywordReserved: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Pony.Hex()),
+					Color: ptr(charmtone.Pony.Hex()),
 				},
 				KeywordNamespace: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Pony.Hex()),
+					Color: ptr(charmtone.Pony.Hex()),
 				},
 				KeywordType: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Guppy.Hex()),
+					Color: ptr(charmtone.Guppy.Hex()),
 				},
 				Operator: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Salmon.Hex()),
+					Color: ptr(charmtone.Salmon.Hex()),
 				},
 				Punctuation: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Zest.Hex()),
+					Color: ptr(charmtone.Zest.Hex()),
 				},
 				Name: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Smoke.Hex()),
+					Color: ptr(charmtone.Smoke.Hex()),
 				},
 				NameBuiltin: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Cheeky.Hex()),
+					Color: ptr(charmtone.Cheeky.Hex()),
 				},
 				NameTag: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Mauve.Hex()),
+					Color: ptr(charmtone.Mauve.Hex()),
 				},
 				NameAttribute: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Hazy.Hex()),
+					Color: ptr(charmtone.Hazy.Hex()),
 				},
 				NameClass: ansi.StylePrimitive{
-					Color:     stringPtr(charmtone.Salt.Hex()),
-					Underline: boolPtr(true),
-					Bold:      boolPtr(true),
+					Color:     ptr(charmtone.Salt.Hex()),
+					Underline: ptr(true),
+					Bold:      ptr(true),
 				},
 				NameDecorator: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Citron.Hex()),
+					Color: ptr(charmtone.Citron.Hex()),
 				},
 				NameFunction: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Guac.Hex()),
+					Color: ptr(charmtone.Guac.Hex()),
 				},
 				LiteralNumber: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Julep.Hex()),
+					Color: ptr(charmtone.Julep.Hex()),
 				},
 				LiteralString: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Cumin.Hex()),
+					Color: ptr(charmtone.Cumin.Hex()),
 				},
 				LiteralStringEscape: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Bok.Hex()),
+					Color: ptr(charmtone.Bok.Hex()),
 				},
 				GenericDeleted: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Coral.Hex()),
+					Color: ptr(charmtone.Coral.Hex()),
 				},
 				GenericEmph: ansi.StylePrimitive{
-					Italic: boolPtr(true),
+					Italic: ptr(true),
 				},
 				GenericInserted: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Guac.Hex()),
+					Color: ptr(charmtone.Guac.Hex()),
 				},
 				GenericStrong: ansi.StylePrimitive{
-					Bold: boolPtr(true),
+					Bold: ptr(true),
 				},
 				GenericSubheading: ansi.StylePrimitive{
-					Color: stringPtr(charmtone.Squid.Hex()),
+					Color: ptr(charmtone.Squid.Hex()),
 				},
 				Background: ansi.StylePrimitive{
-					BackgroundColor: stringPtr(charmtone.Charcoal.Hex()),
+					BackgroundColor: ptr(charmtone.Charcoal.Hex()),
 				},
 			},
 		},
@@ -830,8 +830,8 @@ func DefaultStyles() Styles {
 	}
 
 	// PlainMarkdown style - muted colors on subtle background for thinking content.
-	plainBg := stringPtr(bgBaseLighter.Hex())
-	plainFg := stringPtr(fgMuted.Hex())
+	plainBg := ptr(bgBaseLighter.Hex())
+	plainFg := ptr(fgMuted.Hex())
 	s.PlainMarkdown = ansi.StyleConfig{
 		Document: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
@@ -844,8 +844,8 @@ func DefaultStyles() Styles {
 				Color:           plainFg,
 				BackgroundColor: plainBg,
 			},
-			Indent:      uintPtr(1),
-			IndentToken: stringPtr("│ "),
+			Indent:      ptr[uint](1),
+			IndentToken: ptr("│ "),
 		},
 		List: ansi.StyleList{
 			LevelIndent: defaultListIndent,
@@ -853,7 +853,7 @@ func DefaultStyles() Styles {
 		Heading: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				BlockSuffix:     "\n",
-				Bold:            boolPtr(true),
+				Bold:            ptr(true),
 				Color:           plainFg,
 				BackgroundColor: plainBg,
 			},
@@ -862,7 +862,7 @@ func DefaultStyles() Styles {
 			StylePrimitive: ansi.StylePrimitive{
 				Prefix:          " ",
 				Suffix:          " ",
-				Bold:            boolPtr(true),
+				Bold:            ptr(true),
 				Color:           plainFg,
 				BackgroundColor: plainBg,
 			},
@@ -903,17 +903,17 @@ func DefaultStyles() Styles {
 			},
 		},
 		Strikethrough: ansi.StylePrimitive{
-			CrossedOut:      boolPtr(true),
+			CrossedOut:      ptr(true),
 			Color:           plainFg,
 			BackgroundColor: plainBg,
 		},
 		Emph: ansi.StylePrimitive{
-			Italic:          boolPtr(true),
+			Italic:          ptr(true),
 			Color:           plainFg,
 			BackgroundColor: plainBg,
 		},
 		Strong: ansi.StylePrimitive{
-			Bold:            boolPtr(true),
+			Bold:            ptr(true),
 			Color:           plainFg,
 			BackgroundColor: plainBg,
 		},
@@ -941,17 +941,17 @@ func DefaultStyles() Styles {
 			Unticked: "[ ] ",
 		},
 		Link: ansi.StylePrimitive{
-			Underline:       boolPtr(true),
+			Underline:       ptr(true),
 			Color:           plainFg,
 			BackgroundColor: plainBg,
 		},
 		LinkText: ansi.StylePrimitive{
-			Bold:            boolPtr(true),
+			Bold:            ptr(true),
 			Color:           plainFg,
 			BackgroundColor: plainBg,
 		},
 		Image: ansi.StylePrimitive{
-			Underline:       boolPtr(true),
+			Underline:       ptr(true),
 			Color:           plainFg,
 			BackgroundColor: plainBg,
 		},
@@ -974,7 +974,7 @@ func DefaultStyles() Styles {
 					Color:           plainFg,
 					BackgroundColor: plainBg,
 				},
-				Margin: uintPtr(defaultMargin),
+				Margin: ptr[uint](defaultMargin),
 			},
 		},
 		Table: ansi.StyleTable{
@@ -1354,10 +1354,12 @@ func DefaultStyles() Styles {
 	return s
 }
 
-// Helper functions for style pointers
-func boolPtr(b bool) *bool       { return &b }
-func stringPtr(s string) *string { return &s }
-func uintPtr(u uint) *uint       { return &u }
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T {
+	p := &v
+	return p
+}
+
 func chromaStyle(style ansi.StylePrimitive) string {
 	var s strings.Builder
 

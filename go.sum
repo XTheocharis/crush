@@ -2,8 +2,8 @@ charm.land/bubbles/v2 v2.0.0-rc.1.0.20260109112849-ae99f46cec66 h1:2BdJynsAW+8rv
 charm.land/bubbles/v2 v2.0.0-rc.1.0.20260109112849-ae99f46cec66/go.mod h1:5AbN6cEd/47gkEf8TgiQ2O3RZ5QxMS14l9W+7F9fPC4=
 charm.land/bubbletea/v2 v2.0.0-rc.2.0.20260209074636-30878e43d7b0 h1:HAbpM9TPjZM18D677ww3VnkKXdd2hyMQtHUsVV0HcPQ=
 charm.land/bubbletea/v2 v2.0.0-rc.2.0.20260209074636-30878e43d7b0/go.mod h1:3LRff2U4WIYXy7MTxfbAQ+AdfM3D8Xuvz2wbsOD9OHQ=
-charm.land/catwalk v0.21.0 h1:ShexIXWiyFH9QOV9EqQikUUdrvidiFm8PYXGl9Ql6VA=
-charm.land/catwalk v0.21.0/go.mod h1:rFC/V96rIHX7VES215c/qzI1EW/Moo1ggs1Q6seTy5s=
+charm.land/catwalk v0.21.1 h1:CO6GDgfl6u0Gx6v3vC64B8DEnX+PhjDxX7IrVyu3Feg=
+charm.land/catwalk v0.21.1/go.mod h1:rFC/V96rIHX7VES215c/qzI1EW/Moo1ggs1Q6seTy5s=
 charm.land/fantasy v0.9.0 h1:2KzDYZC3IDb6T8KhWn4akqDHoU5Evr+VwL2xbaWtXmM=
 charm.land/fantasy v0.9.0/go.mod h1:vpR/vcgCtKZ5SWHNbW/5c1b+DMDNNO15j+t/evoQb/4=
 charm.land/glamour/v2 v2.0.0-20260123212943-6014aa153a9b h1:A6IUUyChZDWP16RUdRJCfmYISAKWQGyIcfhZJUCViQ0=
@@ -130,8 +130,10 @@ github.com/charmbracelet/x/windows v0.2.2 h1:IofanmuvaxnKHuV04sC0eBy/smG6kIKrWG2
 github.com/charmbracelet/x/windows v0.2.2/go.mod h1:/8XtdKZzedat74NQFn0NGlGL4soHB0YQZrETF96h75k=
 github.com/clipperhouse/displaywidth v0.10.0 h1:GhBG8WuerxjFQQYeuZAeVTuyxuX+UraiZGD4HJQ3Y8g=
 github.com/clipperhouse/displaywidth v0.10.0/go.mod h1:XqJajYsaiEwkxOj4bowCTMcT1SgvHo9flfF3jQasdbs=
-github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
-github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
+github.com/clipperhouse/stringish v0.1.1 h1:+NSqMOr3GR6k1FdRhhnXrLfztGzuG+VuFDfatpWHKCs=
+github.com/clipperhouse/stringish v0.1.1/go.mod h1:v/WhFtE1q0ovMta2+m+UbpZ+2/HEXNWYXQgCt4hdOzA=
+github.com/clipperhouse/uax29/v2 v2.6.0 h1:z0cDbUV+aPASdFb2/ndFnS9ts/WNXgTNNGFoKXuhpos=
+github.com/clipperhouse/uax29/v2 v2.6.0/go.mod h1:Wn1g7MK6OoeDT0vL+Q0SQLDz/KpfsVRgg6W7ihQeh4g=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os8IaYg++6uMOdKK83QtkkvJik=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
