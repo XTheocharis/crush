@@ -36,6 +36,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/session"
@@ -103,6 +104,8 @@ type sessionAgent struct {
 	systemPrompt       *csync.Value[string]
 	tools              *csync.Slice[fantasy.AgentTool]
 
+	lcmManager lcm.Manager
+
 	isSubAgent           bool
 	sessions             session.Service
 	messages             message.Service
@@ -118,6 +121,7 @@ type SessionAgentOptions struct {
 	SmallModel           Model
 	SystemPromptPrefix   string
 	SystemPrompt         string
+	LCMManager           lcm.Manager
 	IsSubAgent           bool
 	DisableAutoSummarize bool
 	IsYolo               bool
@@ -134,6 +138,7 @@ func NewSessionAgent(
 		smallModel:           csync.NewValue(opts.SmallModel),
 		systemPromptPrefix:   csync.NewValue(opts.SystemPromptPrefix),
 		systemPrompt:         csync.NewValue(opts.SystemPrompt),
+		lcmManager:           opts.LCMManager,
 		isSubAgent:           opts.IsSubAgent,
 		sessions:             opts.Sessions,
 		messages:             opts.Messages,
@@ -287,6 +292,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			if promptPrefix != "" {
 				prepared.Messages = append([]fantasy.Message{fantasy.NewSystemMessage(promptPrefix)}, prepared.Messages...)
 			}
+
+			lcm.CompactIfOverHardLimit(callContext, a.lcmManager, call.SessionID)
 
 			var assistantMsg message.Message
 			assistantMsg, err = a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{

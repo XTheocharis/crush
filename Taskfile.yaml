@@ -52,6 +52,14 @@ tasks:
     generates:
       - crush{{exeExt}}
 
+  build:all:
+    desc: Regenerate all generated files and build
+    cmds:
+      - task: sqlc
+      - task: hyper
+      - task: schema
+      - task: build
+
   run:
     desc: Run build
     cmds:
@@ -143,6 +151,20 @@ tasks:
       - echo "Generated schema.json"
     generates:
       - schema.json
+
+  sqlc:
+    desc: Regenerate sqlc database layer
+    cmds:
+      - sqlc generate
+    sources:
+      - ./internal/db/sql/*.sql
+      - ./internal/db/migrations/*.sql
+      - ./sqlc.yaml
+    generates:
+      - ./internal/db/db.go
+      - ./internal/db/models.go
+      - ./internal/db/querier.go
+      - ./internal/db/*.sql.go
 
   hyper:
     desc: Update Hyper embedded provider.json

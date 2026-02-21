@@ -17,7 +17,9 @@ import (
 var agentToolDescription []byte
 
 type AgentParams struct {
-	Prompt string `json:"prompt" description:"The task for the agent to perform"`
+	Prompt         string `json:"prompt" description:"The task for the agent to perform"`
+	DelegatedScope string `json:"delegated_scope,omitempty" description:"Description of what work is being delegated to this sub-agent"`
+	KeptWork       string `json:"kept_work,omitempty" description:"Description of what work the calling agent retains"`
 }
 
 const (
@@ -54,6 +56,13 @@ func (c *coordinator) agentTool(ctx context.Context) (fantasy.AgentTool, error) 
 			agentMessageID := tools.GetMessageFromContext(ctx)
 			if agentMessageID == "" {
 				return fantasy.ToolResponse{}, errors.New("agent message id missing from context")
+			}
+
+			// Enforce scope-reduction parameters when LCM is active and calling session is a sub-agent
+			if c.lcm != nil && c.sessions.IsAgentToolSession(sessionID) {
+				if params.DelegatedScope == "" || params.KeptWork == "" {
+					return fantasy.NewTextErrorResponse("delegated_scope and kept_work are required when spawning sub-agents with LCM active"), nil
+				}
 			}
 
 			agentToolSessionID := c.sessions.CreateAgentToolSessionID(agentMessageID, call.ID)

@@ -18,10 +18,20 @@ INSERT INTO messages (
     model,
     provider,
     is_summary_message,
+    seq,
     created_at,
     updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now')
+    sqlc.arg(id),
+    sqlc.arg(session_id),
+    sqlc.arg(role),
+    sqlc.arg(parts),
+    sqlc.arg(model),
+    sqlc.arg(provider),
+    sqlc.arg(is_summary_message),
+    (SELECT COALESCE(MAX(m.seq), 0) + 1 FROM messages m WHERE m.session_id = sqlc.arg(session_id)),
+    strftime('%s', 'now'),
+    strftime('%s', 'now')
 )
 RETURNING *;
 
