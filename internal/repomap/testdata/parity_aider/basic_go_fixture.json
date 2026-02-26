@@ -1,0 +1,89 @@
+{
+  "fixture_id": "base_go_parity",
+  "description": "Basic Go repository structure for Aider parity testing. Contains a simple project with typical file types: main entrypoint, core service layer, data models, utilities, and configuration.",
+  "provenance": {
+    "aider_commit_sha": "0000000000000000000000000000000000000000",
+    "comparator_path": "https://github.com/Aider-AI/aider/tree/0000000000000000000000000000000000000000",
+    "fixtures_sha256": "2d2737a92d8132a0dc50c461a0bcbae7900470d71b32b9b18da83a2964ffba80",
+    "grep_ast_provenance": "grep-ast@v0.8.1",
+    "tokenizer_id": "cl100k_base",
+    "tokenizer_version": "v0.1.0"
+  },
+  "repository": {
+    "root": "fixture/basic_go_parity",
+    "files": [
+      "README.md",
+      "go.mod",
+      "main.go",
+      "cmd/server/main.go",
+      "internal/core/service.go",
+      "internal/core/model.go",
+      "internal/util/strings.go",
+      "internal/util/time.go",
+      "pkg/http/client.go"
+    ]
+  },
+  "profiles": [
+    {
+      "profile_id": "parity_low_budget",
+      "parity_mode": true,
+      "token_budget": 1024,
+      "repeat_runs": 10,
+      "deterministic_mode": true,
+      "enhancement_tiers_enabled": "none",
+      "token_counter_mode": "tokenizer_backed",
+      "fixed_seed": 1337,
+      "expected_results": {
+        "stage_count": {
+          "stage0": 0,
+          "stage1": 0,
+          "stage2": 0,
+          "stage3": 0
+        }
+      }
+    },
+    {
+      "profile_id": "parity_medium_budget",
+      "parity_mode": true,
+      "token_budget": 2048,
+      "repeat_runs": 10,
+      "deterministic_mode": true,
+      "enhancement_tiers_enabled": "none",
+      "token_counter_mode": "tokenizer_backed",
+      "fixed_seed": 1337,
+      "expected_results": {
+        "stage_count": {
+          "stage0": 0,
+          "stage1": 0,
+          "stage2": 0,
+          "stage3": 0
+        }
+      }
+    },
+    {
+      "profile_id": "parity_high_budget",
+      "parity_mode": true,
+      "token_budget": 4096,
+      "repeat_runs": 10,
+      "deterministic_mode": true,
+      "enhancement_tiers_enabled": "none",
+      "token_counter_mode": "tokenizer_backed",
+      "fixed_seed": 1337,
+      "expected_results": {
+        "stage_count": {
+          "stage0": 0,
+          "stage1": 0,
+          "stage2": 0,
+          "stage3": 0
+        }
+      }
+    }
+  ],
+  "assertions": {
+    "require_non_empty_map": true,
+    "require_rendered_entries": true,
+    "require_stage_invariants": true,
+    "comparator_tolerance_pct": 0.15,
+    "parity_mode": true
+  }
+}

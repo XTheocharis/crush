@@ -15,21 +15,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/anthropic"
-	"charm.land/fantasy/providers/bedrock"
 	"charm.land/fantasy/providers/google"
 	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openrouter"
-	"charm.land/fantasy/providers/vercel"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/agent/hyper"
 	"github.com/charmbracelet/crush/internal/agent/tools"
@@ -39,6 +36,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/stringext"
 	"github.com/charmbracelet/x/exp/charmtone"
@@ -80,6 +78,7 @@ type SessionAgent interface {
 	SetModels(large Model, small Model)
 	SetTools(tools []fantasy.AgentTool)
 	SetSystemPrompt(systemPrompt string)
+	SetPrepareStepHooks(hooks []PrepareStepHook)
 	Cancel(sessionID string)
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
@@ -112,8 +111,10 @@ type sessionAgent struct {
 	disableAutoSummarize bool
 	isYolo               bool
 
-	messageQueue   *csync.Map[string, []SessionAgentCall]
-	activeRequests *csync.Map[string, context.CancelFunc]
+	messageQueue         *csync.Map[string, []SessionAgentCall]
+	activeRequests       *csync.Map[string, context.CancelFunc]
+	queueGenerationBySID *csync.Map[string, *atomic.Int64]
+	prepareStepHooks     *csync.Slice[PrepareStepHook]
 }
 
 type SessionAgentOptions struct {
@@ -147,6 +148,8 @@ func NewSessionAgent(
 		isYolo:               opts.IsYolo,
 		messageQueue:         csync.NewMap[string, []SessionAgentCall](),
 		activeRequests:       csync.NewMap[string, context.CancelFunc](),
+		queueGenerationBySID: csync.NewMap[string, *atomic.Int64](),
+		prepareStepHooks:     csync.NewSlice[PrepareStepHook](),
 	}
 }
 
@@ -157,6 +160,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	if call.SessionID == "" {
 		return nil, ErrSessionMissing
 	}
+	queueGeneration := a.currentQueueGeneration(call.SessionID)
 
 	// Queue the message if busy
 	if a.IsSessionBusy(call.SessionID) {
@@ -192,7 +196,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 
 	if len(agentTools) > 0 {
 		// Add Anthropic caching to the last tool.
-		agentTools[len(agentTools)-1].SetProviderOptions(a.getCacheControlOptions())
+		agentTools[len(agentTools)-1].SetProviderOptions(cacheControlOptions())
 	}
 
 	agent := fantasy.NewAgent(
@@ -223,12 +227,18 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	defer wg.Wait()
 
 	// Add the user message to the session.
-	_, err = a.createUserMessage(ctx, call)
+	rootUserMessage, err := a.createUserMessage(ctx, call)
 	if err != nil {
 		return nil, err
 	}
 
-	// Add the session to the context.
+	runKey := repomap.RunInjectionKey{
+		RootUserMessageID: rootUserMessage.ID,
+		QueueGeneration:   queueGeneration,
+	}
+
+	// Add run/session metadata to the context.
+	ctx = repomap.WithRunInjectionKey(ctx, runKey)
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, call.SessionID)
 
 	genCtx, cancel := context.WithCancel(ctx)
@@ -261,6 +271,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				prepared.Messages[i].ProviderOptions = nil
 			}
 
+			callContext, prepared, err = applyPrepareStepHooks(
+				callContext,
+				options,
+				prepared,
+				a.prepareStepHooks.Copy(),
+			)
+			if err != nil {
+				return callContext, prepared, err
+			}
+
 			queuedCalls, _ := a.messageQueue.Get(call.SessionID)
 			a.messageQueue.Del(call.SessionID)
 			for _, queued := range queuedCalls {
@@ -280,12 +300,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				if msg.Role == fantasy.MessageRoleSystem {
 					lastSystemRoleInx = i
 				} else if !systemMessageUpdated {
-					prepared.Messages[lastSystemRoleInx].ProviderOptions = a.getCacheControlOptions()
+					prepared.Messages[lastSystemRoleInx].ProviderOptions = cacheControlOptions()
 					systemMessageUpdated = true
 				}
 				// Than add cache control to the last 2 messages.
 				if i > len(prepared.Messages)-3 {
-					prepared.Messages[i].ProviderOptions = a.getCacheControlOptions()
+					prepared.Messages[i].ProviderOptions = cacheControlOptions()
 				}
 			}
 
@@ -565,6 +585,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	// There are queued messages restart the loop.
 	firstQueuedMessage := queuedMessages[0]
 	a.messageQueue.Set(call.SessionID, queuedMessages[1:])
+	a.incrementQueueGeneration(call.SessionID)
 	return a.Run(ctx, firstQueuedMessage)
 }
 
@@ -686,23 +707,6 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 	currentSession.PromptTokens = 0
 	_, err = a.sessions.Save(genCtx, currentSession)
 	return err
-}
-
-func (a *sessionAgent) getCacheControlOptions() fantasy.ProviderOptions {
-	if t, _ := strconv.ParseBool(os.Getenv("CRUSH_DISABLE_ANTHROPIC_CACHE")); t {
-		return fantasy.ProviderOptions{}
-	}
-	return fantasy.ProviderOptions{
-		anthropic.Name: &anthropic.ProviderCacheControlOptions{
-			CacheControl: anthropic.CacheControl{Type: "ephemeral"},
-		},
-		bedrock.Name: &anthropic.ProviderCacheControlOptions{
-			CacheControl: anthropic.CacheControl{Type: "ephemeral"},
-		},
-		vercel.Name: &anthropic.ProviderCacheControlOptions{
-			CacheControl: anthropic.CacheControl{Type: "ephemeral"},
-		},
-	}
 }
 
 func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentCall) (message.Message, error) {
@@ -1030,8 +1034,30 @@ func (a *sessionAgent) SetSystemPrompt(systemPrompt string) {
 	a.systemPrompt.Set(systemPrompt)
 }
 
+func (a *sessionAgent) SetPrepareStepHooks(hooks []PrepareStepHook) {
+	a.prepareStepHooks.SetSlice(hooks)
+}
+
 func (a *sessionAgent) Model() Model {
 	return a.largeModel.Get()
+}
+
+func (a *sessionAgent) currentQueueGeneration(sessionID string) int64 {
+	counter, ok := a.queueGenerationBySID.Get(sessionID)
+	if !ok || counter == nil {
+		counter = &atomic.Int64{}
+		a.queueGenerationBySID.Set(sessionID, counter)
+	}
+	return counter.Load()
+}
+
+func (a *sessionAgent) incrementQueueGeneration(sessionID string) int64 {
+	counter, ok := a.queueGenerationBySID.Get(sessionID)
+	if !ok || counter == nil {
+		counter = &atomic.Int64{}
+		a.queueGenerationBySID.Set(sessionID, counter)
+	}
+	return counter.Add(1)
 }
 
 // convertToToolResult converts a fantasy tool result to a message tool result.

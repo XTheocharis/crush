@@ -374,10 +374,12 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Apply defaults to LSP configurations
 	c.applyLSPDefaults()
 
-	// Add the default context paths if they are not already present
-	c.Options.ContextPaths = append(defaultContextPaths, c.Options.ContextPaths...)
-	slices.Sort(c.Options.ContextPaths)
-	c.Options.ContextPaths = slices.Compact(c.Options.ContextPaths)
+	// Add the default context paths if they are not already present.
+	// Copy defaults first to avoid mutating shared backing arrays.
+	contextPaths := append([]string(nil), defaultContextPaths...)
+	contextPaths = append(contextPaths, c.Options.ContextPaths...)
+	slices.Sort(contextPaths)
+	c.Options.ContextPaths = slices.Compact(contextPaths)
 
 	// Add the default skills directories if not already present.
 	for _, dir := range GlobalSkillsDirs() {
@@ -410,6 +412,10 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		} else {
 			c.Options.Attribution.TrailerStyle = TrailerStyleAssistedBy
 		}
+	}
+	if c.Options.RepoMap == nil {
+		v := DefaultRepoMapOptions()
+		c.Options.RepoMap = &v
 	}
 	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
 }

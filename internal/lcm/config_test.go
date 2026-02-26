@@ -60,16 +60,17 @@ func TestComputeBudget_WithOverhead(t *testing.T) {
 		CutoffThreshold:    0.6,
 		SystemPromptTokens: 5000,
 		ToolTokens:         3000,
+		RepoMapTokens:      2000,
 	})
 
-	// overhead = 5000 + 3000 = 8000
+	// overhead = 5000 + 3000 + 2000 = 10000
 	// outputReserve = min(20000, 128000*0.25=32000) = 20000
-	// hardLimit = 128000 - 8000 - 20000 = 100000
-	require.Equal(t, int64(100000), budget.HardLimit)
+	// hardLimit = 128000 - 10000 - 20000 = 98000
+	require.Equal(t, int64(98000), budget.HardLimit)
 
-	// softRaw = 128000*0.6 - 8000 = 76800 - 8000 = 68800
-	// softThreshold = min(68800, 100000) = 68800
-	require.Equal(t, int64(68800), budget.SoftThreshold)
+	// softRaw = 128000*0.6 - 10000 = 76800 - 10000 = 66800
+	// softThreshold = min(66800, 98000) = 66800
+	require.Equal(t, int64(66800), budget.SoftThreshold)
 }
 
 func TestComputeBudget_ZeroContextWindow(t *testing.T) {

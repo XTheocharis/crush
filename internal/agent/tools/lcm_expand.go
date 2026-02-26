@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	LcmExpandToolName = "lcm_expand"
+	LcmExpandToolName          = "lcm_expand"
+	lcmExpandMainSessionDenied = "This tool is only available to sub-agent (Task) sessions. To expand a summary, delegate this task to a Task sub-agent."
 )
 
 type LcmExpandParams struct {
@@ -52,17 +53,19 @@ func NewLcmExpandTool(sqlDB *sql.DB) fantasy.AgentTool {
 			}
 
 			if !isSubAgent {
-				return fantasy.NewTextErrorResponse(
-					"This tool is only available to sub-agent (Task) sessions. " +
-						"To expand a summary, delegate this task to a Task sub-agent.",
-				), nil
+				return fantasy.NewTextErrorResponse(lcmExpandMainSessionDenied), nil
 			}
 
 			// Expand the summary
-			messages, err := expandSummary(ctx, sqlDB, params.SummaryID)
+			messages, err := expandSummary(ctx, sqlDB, sessionID, params.SummaryID)
 			if err != nil {
 				if err == sql.ErrNoRows {
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("Summary not found: %s", params.SummaryID)), nil
+				}
+				if err == errLCMAccessDenied {
+					return fantasy.NewTextErrorResponse(
+						fmt.Sprintf("Access denied: %s is outside this session lineage", params.SummaryID),
+					), nil
 				}
 				return fantasy.ToolResponse{}, fmt.Errorf("error expanding summary: %w", err)
 			}
@@ -107,11 +110,22 @@ func isSubAgentSession(ctx context.Context, db *sql.DB, sessionID string) (bool,
 }
 
 // expandSummary recursively expands a summary to retrieve all original messages
-func expandSummary(ctx context.Context, db *sql.DB, summaryID string) ([]expandedMessage, error) {
-	// Use a recursive CTE to find all summaries in the hierarchy
+func expandSummary(ctx context.Context, db *sql.DB, callerSessionID, summaryID string) ([]expandedMessage, error) {
+	// Use recursive CTEs to scope the summary lookup by caller session lineage,
+	// then expand parent summaries.
 	query := `
-WITH RECURSIVE expanded(summary_id) AS (
+WITH RECURSIVE lineage(id) AS (
     SELECT ?
+    UNION
+    SELECT s.parent_session_id
+    FROM sessions s
+    JOIN lineage l ON s.id = l.id
+    WHERE s.parent_session_id IS NOT NULL
+), expanded(summary_id) AS (
+    SELECT ls.summary_id
+    FROM lcm_summaries ls
+    WHERE ls.summary_id = ?
+      AND ls.session_id IN (SELECT id FROM lineage)
     UNION
     SELECT sp.parent_summary_id
     FROM lcm_summary_parents sp
@@ -123,7 +137,7 @@ JOIN messages m ON m.id = sm.message_id
 JOIN expanded e ON e.summary_id = sm.summary_id
 ORDER BY m.seq ASC`
 
-	rows, err := db.QueryContext(ctx, query, summaryID)
+	rows, err := db.QueryContext(ctx, query, callerSessionID, summaryID)
 	if err != nil {
 		return nil, err
 	}
@@ -142,15 +156,22 @@ ORDER BY m.seq ASC`
 		return nil, err
 	}
 
-	// If no messages found, check if summary exists
+	// If no messages found, check if summary exists and whether access is denied.
 	if len(messages) == 0 {
-		var exists bool
-		checkQuery := `SELECT EXISTS(SELECT 1 FROM lcm_summaries WHERE summary_id = ?)`
-		if err := db.QueryRowContext(ctx, checkQuery, summaryID).Scan(&exists); err != nil {
+		exists, err := lcmSummaryExists(ctx, db, summaryID)
+		if err != nil {
 			return nil, err
 		}
 		if !exists {
 			return nil, sql.ErrNoRows
+		}
+
+		inLineage, err := lcmSummaryInSessionLineage(ctx, db, callerSessionID, summaryID)
+		if err != nil {
+			return nil, err
+		}
+		if !inLineage {
+			return nil, errLCMAccessDenied
 		}
 	}
 

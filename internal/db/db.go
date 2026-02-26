@@ -54,6 +54,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteMessageStmt, err = db.PrepareContext(ctx, deleteMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteMessage: %w", err)
 	}
+	if q.deleteRepoMapFileCacheStmt, err = db.PrepareContext(ctx, deleteRepoMapFileCache); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRepoMapFileCache: %w", err)
+	}
+	if q.deleteRepoMapTagsByPathStmt, err = db.PrepareContext(ctx, deleteRepoMapTagsByPath); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRepoMapTagsByPath: %w", err)
+	}
 	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
 	}
@@ -62,6 +68,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteSessionMessagesStmt, err = db.PrepareContext(ctx, deleteSessionMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSessionMessages: %w", err)
+	}
+	if q.deleteSessionRankingsStmt, err = db.PrepareContext(ctx, deleteSessionRankings); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteSessionRankings: %w", err)
+	}
+	if q.deleteSessionReadOnlyPathsStmt, err = db.PrepareContext(ctx, deleteSessionReadOnlyPaths); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteSessionReadOnlyPaths: %w", err)
 	}
 	if q.getAverageResponseTimeStmt, err = db.PrepareContext(ctx, getAverageResponseTime); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAverageResponseTime: %w", err)
@@ -95,6 +107,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getRecentActivityStmt, err = db.PrepareContext(ctx, getRecentActivity); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRecentActivity: %w", err)
+	}
+	if q.getRepoMapFileCacheStmt, err = db.PrepareContext(ctx, getRepoMapFileCache); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepoMapFileCache: %w", err)
+	}
+	if q.getRepoMapFileCacheByPathStmt, err = db.PrepareContext(ctx, getRepoMapFileCacheByPath); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepoMapFileCacheByPath: %w", err)
 	}
 	if q.getSessionByIDStmt, err = db.PrepareContext(ctx, getSessionByID); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionByID: %w", err)
@@ -138,6 +156,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.insertLcmSummaryParentStmt, err = db.PrepareContext(ctx, insertLcmSummaryParent); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertLcmSummaryParent: %w", err)
 	}
+	if q.insertRepoMapTagStmt, err = db.PrepareContext(ctx, insertRepoMapTag); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertRepoMapTag: %w", err)
+	}
 	if q.listAllUserMessagesStmt, err = db.PrepareContext(ctx, listAllUserMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAllUserMessages: %w", err)
 	}
@@ -177,8 +198,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listNewFilesStmt, err = db.PrepareContext(ctx, listNewFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListNewFiles: %w", err)
 	}
+	if q.listRepoMapDefsByNameStmt, err = db.PrepareContext(ctx, listRepoMapDefsByName); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRepoMapDefsByName: %w", err)
+	}
+	if q.listRepoMapTagsStmt, err = db.PrepareContext(ctx, listRepoMapTags); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRepoMapTags: %w", err)
+	}
+	if q.listSessionRankingsStmt, err = db.PrepareContext(ctx, listSessionRankings); err != nil {
+		return nil, fmt.Errorf("error preparing query ListSessionRankings: %w", err)
+	}
 	if q.listSessionReadFilesStmt, err = db.PrepareContext(ctx, listSessionReadFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSessionReadFiles: %w", err)
+	}
+	if q.listSessionReadOnlyPathsStmt, err = db.PrepareContext(ctx, listSessionReadOnlyPaths); err != nil {
+		return nil, fmt.Errorf("error preparing query ListSessionReadOnlyPaths: %w", err)
 	}
 	if q.listSessionsStmt, err = db.PrepareContext(ctx, listSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSessions: %w", err)
@@ -218,6 +251,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.upsertLcmSessionConfigStmt, err = db.PrepareContext(ctx, upsertLcmSessionConfig); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertLcmSessionConfig: %w", err)
+	}
+	if q.upsertRepoMapFileCacheStmt, err = db.PrepareContext(ctx, upsertRepoMapFileCache); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertRepoMapFileCache: %w", err)
+	}
+	if q.upsertSessionRankingStmt, err = db.PrepareContext(ctx, upsertSessionRanking); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertSessionRanking: %w", err)
+	}
+	if q.upsertSessionReadOnlyPathStmt, err = db.PrepareContext(ctx, upsertSessionReadOnlyPath); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertSessionReadOnlyPath: %w", err)
 	}
 	return &q, nil
 }
@@ -274,6 +316,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteMessageStmt: %w", cerr)
 		}
 	}
+	if q.deleteRepoMapFileCacheStmt != nil {
+		if cerr := q.deleteRepoMapFileCacheStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRepoMapFileCacheStmt: %w", cerr)
+		}
+	}
+	if q.deleteRepoMapTagsByPathStmt != nil {
+		if cerr := q.deleteRepoMapTagsByPathStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRepoMapTagsByPathStmt: %w", cerr)
+		}
+	}
 	if q.deleteSessionStmt != nil {
 		if cerr := q.deleteSessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSessionStmt: %w", cerr)
@@ -287,6 +339,16 @@ func (q *Queries) Close() error {
 	if q.deleteSessionMessagesStmt != nil {
 		if cerr := q.deleteSessionMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSessionMessagesStmt: %w", cerr)
+		}
+	}
+	if q.deleteSessionRankingsStmt != nil {
+		if cerr := q.deleteSessionRankingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteSessionRankingsStmt: %w", cerr)
+		}
+	}
+	if q.deleteSessionReadOnlyPathsStmt != nil {
+		if cerr := q.deleteSessionReadOnlyPathsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteSessionReadOnlyPathsStmt: %w", cerr)
 		}
 	}
 	if q.getAverageResponseTimeStmt != nil {
@@ -342,6 +404,16 @@ func (q *Queries) Close() error {
 	if q.getRecentActivityStmt != nil {
 		if cerr := q.getRecentActivityStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getRecentActivityStmt: %w", cerr)
+		}
+	}
+	if q.getRepoMapFileCacheStmt != nil {
+		if cerr := q.getRepoMapFileCacheStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepoMapFileCacheStmt: %w", cerr)
+		}
+	}
+	if q.getRepoMapFileCacheByPathStmt != nil {
+		if cerr := q.getRepoMapFileCacheByPathStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepoMapFileCacheByPathStmt: %w", cerr)
 		}
 	}
 	if q.getSessionByIDStmt != nil {
@@ -414,6 +486,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing insertLcmSummaryParentStmt: %w", cerr)
 		}
 	}
+	if q.insertRepoMapTagStmt != nil {
+		if cerr := q.insertRepoMapTagStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertRepoMapTagStmt: %w", cerr)
+		}
+	}
 	if q.listAllUserMessagesStmt != nil {
 		if cerr := q.listAllUserMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAllUserMessagesStmt: %w", cerr)
@@ -479,9 +556,29 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listNewFilesStmt: %w", cerr)
 		}
 	}
+	if q.listRepoMapDefsByNameStmt != nil {
+		if cerr := q.listRepoMapDefsByNameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRepoMapDefsByNameStmt: %w", cerr)
+		}
+	}
+	if q.listRepoMapTagsStmt != nil {
+		if cerr := q.listRepoMapTagsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRepoMapTagsStmt: %w", cerr)
+		}
+	}
+	if q.listSessionRankingsStmt != nil {
+		if cerr := q.listSessionRankingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listSessionRankingsStmt: %w", cerr)
+		}
+	}
 	if q.listSessionReadFilesStmt != nil {
 		if cerr := q.listSessionReadFilesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listSessionReadFilesStmt: %w", cerr)
+		}
+	}
+	if q.listSessionReadOnlyPathsStmt != nil {
+		if cerr := q.listSessionReadOnlyPathsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listSessionReadOnlyPathsStmt: %w", cerr)
 		}
 	}
 	if q.listSessionsStmt != nil {
@@ -549,6 +646,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upsertLcmSessionConfigStmt: %w", cerr)
 		}
 	}
+	if q.upsertRepoMapFileCacheStmt != nil {
+		if cerr := q.upsertRepoMapFileCacheStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertRepoMapFileCacheStmt: %w", cerr)
+		}
+	}
+	if q.upsertSessionRankingStmt != nil {
+		if cerr := q.upsertSessionRankingStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertSessionRankingStmt: %w", cerr)
+		}
+	}
+	if q.upsertSessionReadOnlyPathStmt != nil {
+		if cerr := q.upsertSessionReadOnlyPathStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertSessionReadOnlyPathStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -598,9 +710,13 @@ type Queries struct {
 	deleteLcmSummaryMessagesStmt      *sql.Stmt
 	deleteLcmSummaryParentsStmt       *sql.Stmt
 	deleteMessageStmt                 *sql.Stmt
+	deleteRepoMapFileCacheStmt        *sql.Stmt
+	deleteRepoMapTagsByPathStmt       *sql.Stmt
 	deleteSessionStmt                 *sql.Stmt
 	deleteSessionFilesStmt            *sql.Stmt
 	deleteSessionMessagesStmt         *sql.Stmt
+	deleteSessionRankingsStmt         *sql.Stmt
+	deleteSessionReadOnlyPathsStmt    *sql.Stmt
 	getAverageResponseTimeStmt        *sql.Stmt
 	getFileStmt                       *sql.Stmt
 	getFileByPathAndSessionStmt       *sql.Stmt
@@ -612,6 +728,8 @@ type Queries struct {
 	getLcmSummaryStmt                 *sql.Stmt
 	getMessageStmt                    *sql.Stmt
 	getRecentActivityStmt             *sql.Stmt
+	getRepoMapFileCacheStmt           *sql.Stmt
+	getRepoMapFileCacheByPathStmt     *sql.Stmt
 	getSessionByIDStmt                *sql.Stmt
 	getToolUsageStmt                  *sql.Stmt
 	getTotalStatsStmt                 *sql.Stmt
@@ -626,6 +744,7 @@ type Queries struct {
 	insertLcmSummaryStmt              *sql.Stmt
 	insertLcmSummaryMessageStmt       *sql.Stmt
 	insertLcmSummaryParentStmt        *sql.Stmt
+	insertRepoMapTagStmt              *sql.Stmt
 	listAllUserMessagesStmt           *sql.Stmt
 	listFilesByPathStmt               *sql.Stmt
 	listFilesBySessionStmt            *sql.Stmt
@@ -639,7 +758,11 @@ type Queries struct {
 	listMessagesBySessionSeqStmt      *sql.Stmt
 	listMessagesInSeqRangeStmt        *sql.Stmt
 	listNewFilesStmt                  *sql.Stmt
+	listRepoMapDefsByNameStmt         *sql.Stmt
+	listRepoMapTagsStmt               *sql.Stmt
+	listSessionRankingsStmt           *sql.Stmt
 	listSessionReadFilesStmt          *sql.Stmt
+	listSessionReadOnlyPathsStmt      *sql.Stmt
 	listSessionsStmt                  *sql.Stmt
 	listUserMessagesBySessionStmt     *sql.Stmt
 	recordFileReadStmt                *sql.Stmt
@@ -653,6 +776,9 @@ type Queries struct {
 	updateSessionStmt                 *sql.Stmt
 	updateSessionTitleAndUsageStmt    *sql.Stmt
 	upsertLcmSessionConfigStmt        *sql.Stmt
+	upsertRepoMapFileCacheStmt        *sql.Stmt
+	upsertSessionRankingStmt          *sql.Stmt
+	upsertSessionReadOnlyPathStmt     *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -669,9 +795,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteLcmSummaryMessagesStmt:      q.deleteLcmSummaryMessagesStmt,
 		deleteLcmSummaryParentsStmt:       q.deleteLcmSummaryParentsStmt,
 		deleteMessageStmt:                 q.deleteMessageStmt,
+		deleteRepoMapFileCacheStmt:        q.deleteRepoMapFileCacheStmt,
+		deleteRepoMapTagsByPathStmt:       q.deleteRepoMapTagsByPathStmt,
 		deleteSessionStmt:                 q.deleteSessionStmt,
 		deleteSessionFilesStmt:            q.deleteSessionFilesStmt,
 		deleteSessionMessagesStmt:         q.deleteSessionMessagesStmt,
+		deleteSessionRankingsStmt:         q.deleteSessionRankingsStmt,
+		deleteSessionReadOnlyPathsStmt:    q.deleteSessionReadOnlyPathsStmt,
 		getAverageResponseTimeStmt:        q.getAverageResponseTimeStmt,
 		getFileStmt:                       q.getFileStmt,
 		getFileByPathAndSessionStmt:       q.getFileByPathAndSessionStmt,
@@ -683,6 +813,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getLcmSummaryStmt:                 q.getLcmSummaryStmt,
 		getMessageStmt:                    q.getMessageStmt,
 		getRecentActivityStmt:             q.getRecentActivityStmt,
+		getRepoMapFileCacheStmt:           q.getRepoMapFileCacheStmt,
+		getRepoMapFileCacheByPathStmt:     q.getRepoMapFileCacheByPathStmt,
 		getSessionByIDStmt:                q.getSessionByIDStmt,
 		getToolUsageStmt:                  q.getToolUsageStmt,
 		getTotalStatsStmt:                 q.getTotalStatsStmt,
@@ -697,6 +829,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		insertLcmSummaryStmt:              q.insertLcmSummaryStmt,
 		insertLcmSummaryMessageStmt:       q.insertLcmSummaryMessageStmt,
 		insertLcmSummaryParentStmt:        q.insertLcmSummaryParentStmt,
+		insertRepoMapTagStmt:              q.insertRepoMapTagStmt,
 		listAllUserMessagesStmt:           q.listAllUserMessagesStmt,
 		listFilesByPathStmt:               q.listFilesByPathStmt,
 		listFilesBySessionStmt:            q.listFilesBySessionStmt,
@@ -710,7 +843,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listMessagesBySessionSeqStmt:      q.listMessagesBySessionSeqStmt,
 		listMessagesInSeqRangeStmt:        q.listMessagesInSeqRangeStmt,
 		listNewFilesStmt:                  q.listNewFilesStmt,
+		listRepoMapDefsByNameStmt:         q.listRepoMapDefsByNameStmt,
+		listRepoMapTagsStmt:               q.listRepoMapTagsStmt,
+		listSessionRankingsStmt:           q.listSessionRankingsStmt,
 		listSessionReadFilesStmt:          q.listSessionReadFilesStmt,
+		listSessionReadOnlyPathsStmt:      q.listSessionReadOnlyPathsStmt,
 		listSessionsStmt:                  q.listSessionsStmt,
 		listUserMessagesBySessionStmt:     q.listUserMessagesBySessionStmt,
 		recordFileReadStmt:                q.recordFileReadStmt,
@@ -724,5 +861,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateSessionStmt:                 q.updateSessionStmt,
 		updateSessionTitleAndUsageStmt:    q.updateSessionTitleAndUsageStmt,
 		upsertLcmSessionConfigStmt:        q.upsertLcmSessionConfigStmt,
+		upsertRepoMapFileCacheStmt:        q.upsertRepoMapFileCacheStmt,
+		upsertSessionRankingStmt:          q.upsertSessionRankingStmt,
+		upsertSessionReadOnlyPathStmt:     q.upsertSessionReadOnlyPathStmt,
 	}
 }

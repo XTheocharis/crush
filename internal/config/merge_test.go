@@ -232,6 +232,59 @@ func TestConfigMerging(t *testing.T) {
 		require.Equal(t, newMaxDepth, *c.Tools.Ls.MaxDepth)
 	})
 
+	t.Run("repo_map_options", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Tools: Tools{
+				RepoMap: RepoMapOptions{
+					Disabled:      false,
+					MaxTokens:     2048,
+					ExcludeGlobs:  []string{"*.log"},
+					RefreshMode:   "auto",
+					MapMulNoFiles: 2.0,
+				},
+			},
+		}, Config{
+			Tools: Tools{
+				RepoMap: RepoMapOptions{
+					Disabled:      true,
+					MaxTokens:     4096,
+					ExcludeGlobs:  []string{"*.tmp"},
+					RefreshMode:   "manual",
+					MapMulNoFiles: 3.0,
+				},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.True(t, c.Tools.RepoMap.Disabled, "disabled should be ORed (true because second is true)")
+		require.Equal(t, 4096, c.Tools.RepoMap.MaxTokens, "max_tokens should use second value (non-zero)")
+		require.Equal(t, []string{"*.log", "*.tmp"}, c.Tools.RepoMap.ExcludeGlobs, "exclude_globs should be appended")
+		require.Equal(t, "manual", c.Tools.RepoMap.RefreshMode, "refresh_mode should use second value")
+		require.Equal(t, 3.0, c.Tools.RepoMap.MapMulNoFiles, "map_mul_no_files should use second value")
+	})
+
+	t.Run("repo_map_second_wins_nonzero", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Tools: Tools{
+				RepoMap: RepoMapOptions{
+					MaxTokens:     2048,
+					MapMulNoFiles: 2.5,
+				},
+			},
+		}, Config{
+			Tools: Tools{
+				RepoMap: RepoMapOptions{
+					MaxTokens:     0,
+					MapMulNoFiles: 0,
+				},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.Equal(t, 2048, c.Tools.RepoMap.MaxTokens, "max_tokens should keep first when second is zero")
+		require.Equal(t, 2.5, c.Tools.RepoMap.MapMulNoFiles, "map_mul_no_files should keep first when second is zero")
+	})
+
 	t.Run("models", func(t *testing.T) {
 		c := exerciseMerge(t, Config{
 			Models: map[SelectedModelType]SelectedModel{
@@ -874,6 +927,256 @@ func TestConfigMerging(t *testing.T) {
 		require.NotNil(t, c)
 		require.NotNil(t, c.Options.LCM)
 		require.InDelta(t, 0.7, c.Options.LCM.CtxCutoffThreshold, 0.001)
+	})
+
+	t.Run("repo_map_options_merged", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{
+					Disabled:      false,
+					MaxTokens:     1024,
+					ExcludeGlobs:  []string{"vendor/**", "*.min.js"},
+					RefreshMode:   "auto",
+					MapMulNoFiles: 2.0,
+				},
+				TUI: &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{
+					Disabled:      true,
+					MaxTokens:     2048,
+					ExcludeGlobs:  []string{"*.min.js", "dist/**"},
+					RefreshMode:   "manual",
+					MapMulNoFiles: 3.5,
+				},
+				TUI: &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.NotNil(t, c.Options.RepoMap)
+		require.True(t, c.Options.RepoMap.Disabled)
+		require.Equal(t, 2048, c.Options.RepoMap.MaxTokens)
+		require.Equal(t, "manual", c.Options.RepoMap.RefreshMode)
+		require.Equal(t, 3.5, c.Options.RepoMap.MapMulNoFiles)
+		require.Equal(t, []string{"*.min.js", "dist/**", "vendor/**"}, c.Options.RepoMap.ExcludeGlobs)
+	})
+
+	t.Run("repo_map_disabled_or_latch", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{Disabled: true},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{Disabled: false},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.NotNil(t, c.Options.RepoMap)
+		require.True(t, c.Options.RepoMap.Disabled)
+	})
+
+	t.Run("repo_map_nil_in_first_config", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{TUI: &TUIOptions{}},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{
+					MaxTokens:     4096,
+					RefreshMode:   "always",
+					MapMulNoFiles: 1.5,
+				},
+				TUI: &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.NotNil(t, c.Options.RepoMap)
+		require.Equal(t, 4096, c.Options.RepoMap.MaxTokens)
+		require.Equal(t, "always", c.Options.RepoMap.RefreshMode)
+		require.Equal(t, 1.5, c.Options.RepoMap.MapMulNoFiles)
+	})
+
+	t.Run("repo_map_nil_in_second_config", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{
+					MaxTokens:     4096,
+					ExcludeGlobs:  []string{"vendor/**"},
+					RefreshMode:   "always",
+					MapMulNoFiles: 1.5,
+				},
+				TUI: &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{TUI: &TUIOptions{}},
+		})
+
+		require.NotNil(t, c)
+		require.NotNil(t, c.Options.RepoMap)
+		// First config values are preserved when second has nil
+		require.Equal(t, 4096, c.Options.RepoMap.MaxTokens)
+		require.Equal(t, "always", c.Options.RepoMap.RefreshMode)
+		require.Equal(t, 1.5, c.Options.RepoMap.MapMulNoFiles)
+		require.Equal(t, []string{"vendor/**"}, c.Options.RepoMap.ExcludeGlobs)
+	})
+
+	t.Run("repo_map_maxtokens_last_non_zero", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MaxTokens: 2048},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MaxTokens: 0},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// When later config has 0, earlier non-zero value is kept
+		require.Equal(t, 2048, c.Options.RepoMap.MaxTokens)
+	})
+
+	t.Run("repo_map_maxtokens_non_zero_overrides", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MaxTokens: 1024},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MaxTokens: 4096},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// When later config has non-zero, it overrides
+		require.Equal(t, 4096, c.Options.RepoMap.MaxTokens)
+	})
+
+	t.Run("repo_map_refreshmode_last_non_empty", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{RefreshMode: "manual"},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{RefreshMode: ""},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// When later config has empty string, earlier non-empty is kept
+		require.Equal(t, "manual", c.Options.RepoMap.RefreshMode)
+	})
+
+	t.Run("repo_map_refreshmode_non_empty_overrides", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{RefreshMode: "auto"},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{RefreshMode: "always"},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// When later config has non-empty, it overrides
+		require.Equal(t, "always", c.Options.RepoMap.RefreshMode)
+	})
+
+	t.Run("repo_map_mapmulnofiles_zero_does_not_override", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MapMulNoFiles: 2.5},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MapMulNoFiles: 0},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// When later config has 0, earlier non-zero is kept
+		require.Equal(t, 2.5, c.Options.RepoMap.MapMulNoFiles)
+	})
+
+	t.Run("repo_map_mapmulnofiles_non_zero_overrides", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MapMulNoFiles: 1.5},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{MapMulNoFiles: 3.0},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// When later config has non-zero, it overrides
+		require.Equal(t, 3.0, c.Options.RepoMap.MapMulNoFiles)
+	})
+
+	t.Run("repo_map_excludeglobs_empty_first", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{
+					ExcludeGlobs: []string{},
+				},
+				TUI: &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{
+					ExcludeGlobs: []string{"vendor/**", "node_modules/**"},
+				},
+				TUI: &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// Empty array + globs = globs
+		require.Equal(t, []string{"node_modules/**", "vendor/**"}, c.Options.RepoMap.ExcludeGlobs)
+	})
+
+	t.Run("repo_map_disabled_remains_true", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{Disabled: true},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{Disabled: false},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{Disabled: false},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		// Once disabled, stays disabled even if later configs don't disable it
+		require.True(t, c.Options.RepoMap.Disabled)
 	})
 
 	t.Run("grep_timeout_merged", func(t *testing.T) {

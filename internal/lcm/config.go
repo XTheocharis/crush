@@ -6,6 +6,7 @@ type BudgetConfig struct {
 	CutoffThreshold    float64
 	SystemPromptTokens int64
 	ToolTokens         int64
+	RepoMapTokens      int64
 	ModelOutputLimit   int64
 }
 
@@ -13,13 +14,13 @@ type BudgetConfig struct {
 //
 // Formula:
 //
-//	overhead = systemPromptTokens + toolTokens
+//	overhead = systemPromptTokens + toolTokens + repoMapTokens
 //	outputReserve = min(20000, contextWindow * 0.25)
 //	hardLimit = contextWindow - overhead - outputReserve
 //	softRaw = contextWindow * cutoffThreshold - overhead
 //	softThreshold = max(0, min(softRaw, hardLimit))
 func ComputeBudget(cfg BudgetConfig) Budget {
-	overhead := cfg.SystemPromptTokens + cfg.ToolTokens
+	overhead := cfg.SystemPromptTokens + cfg.ToolTokens + cfg.RepoMapTokens
 	outputReserve := int64(20000)
 	if reserve25 := int64(float64(cfg.ContextWindow) * 0.25); reserve25 < outputReserve {
 		outputReserve = reserve25

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/charmbracelet/crush/internal/treesitter"
 )
 
 const (
@@ -39,21 +41,53 @@ type Explorer interface {
 	Explore(ctx context.Context, input ExploreInput) (ExploreResult, error)
 }
 
+// RegistryOption configures a Registry.
+type RegistryOption func(*Registry)
+
+// WithTreeSitter adds a tree-sitter parser to the registry with TreeSitterExplorer.
+func WithTreeSitter(parser treesitter.Parser) RegistryOption {
+	return func(r *Registry) {
+		r.tsParser = parser
+	}
+}
+
+// WithOutputProfile sets formatter profile behavior for truncation markers.
+func WithOutputProfile(profile OutputProfile) RegistryOption {
+	return func(r *Registry) {
+		r.formatterProfile = profile
+	}
+}
+
 // Registry is an ordered list of explorers with optional LLM enhancement.
 type Registry struct {
-	explorers []Explorer
-	llm       LLMClient // nil when LLM is unavailable (tier 1 only)
-	agentFn   AgentFunc // nil when agent-based exploration is unavailable
+	explorers        []Explorer
+	llm              LLMClient // nil when LLM is unavailable (tier 1 only)
+	agentFn          AgentFunc // nil when agent-based exploration is unavailable
+	tsParser         treesitter.Parser
+	formatterProfile OutputProfile
 }
 
 // NewRegistry creates a registry with all built-in explorers.
-func NewRegistry() *Registry {
-	r := &Registry{}
+func NewRegistry(opts ...RegistryOption) *Registry {
+	r := &Registry{formatterProfile: OutputProfileEnhancement}
 	// Register in priority order.
+	// Binary -> Data formats -> Code -> Shell -> Text -> Fallback.
 	r.explorers = []Explorer{
-		// Binary/executable types first
+		// Phase 1: Binary/executable types
 		&BinaryExplorer{},
-		// Code explorers by extension
+		// Phase 2: Data/document explorers (checked before code)
+		&JSONExplorer{},
+		&CSVExplorer{},
+		&YAMLExplorer{},
+		&TOMLExplorer{},
+		&INIExplorer{},
+		&XMLExplorer{},
+		&HTMLExplorer{},
+		&MarkdownExplorer{},
+		&LatexExplorer{},
+		&SQLiteExplorer{},
+		&LogsExplorer{},
+		// Phase 3: Language-specific code explorers.
 		&GoExplorer{},
 		&PythonExplorer{},
 		&JavaScriptExplorer{},
@@ -63,19 +97,31 @@ func NewRegistry() *Registry {
 		&CppExplorer{},
 		&CExplorer{},
 		&RubyExplorer{},
+		// Phase 4: Shell scripts (checked before generic text)
 		&ShellExplorer{},
-		// Data explorers
-		&JSONExplorer{},
-		&CSVExplorer{},
-		&YAMLExplorer{},
-		&TOMLExplorer{},
-		&INIExplorer{},
-		&XMLExplorer{},
-		&HTMLExplorer{},
-		// Generic text fallback
+		// Phase 5: Generic text fallback
 		&TextExplorer{},
-		// Final fallback
+		// Phase 6: Final fallback
 		&FallbackExplorer{},
+	}
+	// Apply options.
+	for _, opt := range opts {
+		opt(r)
+	}
+	// If a tree-sitter parser is provided, add TreeSitterExplorer to the chain.
+	// It's inserted after data format explorers to handle code files before
+	// shell-specific handling while preserving data-format-first ordering.
+	if r.tsParser != nil {
+		tsExp := &TreeSitterExplorer{parser: r.tsParser, formatterProfile: r.formatterProfile}
+		// Insert after HTMLExplorer (last data format) and before ShellExplorer.
+		newExplorers := make([]Explorer, 0, len(r.explorers)+1)
+		for _, e := range r.explorers {
+			newExplorers = append(newExplorers, e)
+			if _, ok := e.(*HTMLExplorer); ok {
+				newExplorers = append(newExplorers, tsExp)
+			}
+		}
+		r.explorers = newExplorers
 	}
 	return r
 }
@@ -106,7 +152,7 @@ func (r *Registry) Explore(ctx context.Context, input ExploreInput) (ExploreResu
 
 	// Attempt LLM-enhanced exploration (tiers 2 and 3).
 	enhanced := exploreLLMEnhanced(ctx, r.llm, r.agentFn, input, staticResult)
-	return enhanced, nil
+	return formatExploreResult(enhanced, r.formatterProfile), nil
 }
 
 // exploreStatic runs the static (template-based) explorer chain.
@@ -115,12 +161,13 @@ func (r *Registry) exploreStatic(ctx context.Context, input ExploreInput) (Explo
 		if e.CanHandle(input.Path, input.Content) {
 			result, err := e.Explore(ctx, input)
 			if err == nil {
-				return result, nil
+				return formatExploreResult(result, r.formatterProfile), nil
 			}
 		}
 	}
 	// Should never reach here since FallbackExplorer handles everything.
-	return ExploreResult{Summary: "Unknown file type", ExplorerUsed: "fallback"}, nil
+	result := ExploreResult{Summary: "Unknown file type", ExplorerUsed: "fallback"}
+	return formatExploreResult(result, r.formatterProfile), nil
 }
 
 // looksLikeText returns true if content appears to be text (not binary).

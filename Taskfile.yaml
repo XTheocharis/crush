@@ -9,7 +9,7 @@ vars:
     sh: test -f race.log && echo "1" || echo ""
 
 env:
-  CGO_ENABLED: 0
+  CGO_ENABLED: 1
   GOEXPERIMENT: greenteagc
 
 tasks:
@@ -46,6 +46,34 @@ tasks:
       LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     cmds:
       - "go build -v {{if .RACE}}-race{{end}} {{.LDFLAGS}} ."
+    sources:
+      - ./**/*.go
+      - go.mod
+    generates:
+      - crush{{exeExt}}
+
+  build:cgo:
+    desc: Build with explicit CGO_ENABLED (requires CGO)
+    vars:
+      LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - "go build -v {{.LDFLAGS}} ."
+    sources:
+      - ./**/*.go
+      - go.mod
+    generates:
+      - crush{{exeExt}}
+
+  build:nocgo:
+    desc: Build without CGO (non-signoff compatibility check)
+    vars:
+      LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
+    env:
+      CGO_ENABLED: 0
+    cmds:
+      - "go build -v {{.LDFLAGS}} ."
     sources:
       - ./**/*.go
       - go.mod
@@ -90,6 +118,47 @@ tasks:
       CGO_ENABLED: 1
     cmds:
       - go test -race -failfast ./... {{.CLI_ARGS}}
+
+  test:cgo:
+    desc: Run tests with explicit CGO_ENABLED (requires CGO)
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - go test -race -failfast ./... {{.CLI_ARGS}}
+
+  test:nocgo:
+    desc: Run tests without CGO (non-signoff compatibility check)
+    env:
+      CGO_ENABLED: 0
+    cmds:
+      - go test -failfast ./... {{.CLI_ARGS}}
+
+  test:parity:
+    desc: Run parity mode tests (parity_mode=true, requires CGO)
+    env:
+      CGO_ENABLED: 1
+      PARITY_MODE: true
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "test:parity requires CGO_ENABLED=1"; exit 1; }
+      - go test -race -failfast ./... -run Parity {{.CLI_ARGS}}
+
+  parity:bundle:
+    desc: Generate and validate local atomic parity sign-off bundle (requires CGO)
+    env:
+      CGO_ENABLED: 1
+      PARITY_MODE: true
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "parity:bundle requires CGO_ENABLED=1"; exit 1; }
+      - go test -failfast ./internal/repomap/... ./internal/lcm/explorer/... -run 'Conformance|Bundle|Manifest' -count=1 {{.CLI_ARGS}}
+
+  test:exceed:
+    desc: Run exceed mode tests (parity_mode=false, requires CGO)
+    env:
+      CGO_ENABLED: 1
+      PARITY_MODE: false
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "test:exceed requires CGO_ENABLED=1"; exit 1; }
+      - go test -race -failfast ./... -run Exceed {{.CLI_ARGS}}
 
   test:record:
     desc: Run tests and record all VCR cassettes again
@@ -240,3 +309,35 @@ tasks:
       - go get charm.land/fantasy
       - go get charm.land/catwalk
       - go mod tidy
+
+  tsaudit:
+    desc: Run treesitter dependency check
+    cmds:
+      - go run ./internal/cmd/tsaudit check {{.CLI_ARGS}}
+
+  tsaudit:update:
+    desc: Update treesitter dependency files
+    cmds:
+      - go run ./internal/cmd/tsaudit update {{.CLI_ARGS}}
+
+  tsaudit:verify:
+    desc: Verify treesitter dependencies are up to date
+    cmds:
+      - go run ./internal/cmd/tsaudit verify {{.CLI_ARGS}}
+
+  validate:ts:
+    desc: Validate tree-sitter parser setup (requires CGO)
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "validate:ts requires CGO_ENABLED=1"; exit 1; }
+      - go test -run TestTsParser -v ./internal/treesitter/
+      - task: tsaudit
+
+  validate:repomap:
+    desc: Validate repo-map implementation (requires CGO)
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "validate:repomap requires CGO_ENABLED=1"; exit 1; }
+      - go test -run TestRepoMap -race -v ./internal/repomap/

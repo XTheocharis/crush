@@ -1,0 +1,163 @@
+{
+  "generated": "2026-02-25T00:00:00Z",
+  "language_pack_version": "0.13.0",
+  "aider_commit": "unknown",
+  "languages": [
+    {
+      "name": "arduino",
+      "query_source": "pack"
+    },
+    {
+      "name": "c",
+      "query_source": "pack"
+    },
+    {
+      "name": "c_sharp",
+      "query_source": "langs"
+    },
+    {
+      "name": "chatito",
+      "query_source": "pack"
+    },
+    {
+      "name": "commonlisp",
+      "query_source": "pack"
+    },
+    {
+      "name": "cpp",
+      "query_source": "pack"
+    },
+    {
+      "name": "csharp",
+      "query_source": "pack"
+    },
+    {
+      "name": "d",
+      "query_source": "pack"
+    },
+    {
+      "name": "dart",
+      "query_source": "pack"
+    },
+    {
+      "name": "elisp",
+      "query_source": "pack"
+    },
+    {
+      "name": "elixir",
+      "query_source": "pack"
+    },
+    {
+      "name": "elm",
+      "query_source": "pack"
+    },
+    {
+      "name": "fortran",
+      "query_source": "langs"
+    },
+    {
+      "name": "gleam",
+      "query_source": "pack"
+    },
+    {
+      "name": "go",
+      "query_source": "pack"
+    },
+    {
+      "name": "haskell",
+      "query_source": "langs"
+    },
+    {
+      "name": "hcl",
+      "query_source": "langs"
+    },
+    {
+      "name": "java",
+      "query_source": "pack"
+    },
+    {
+      "name": "javascript",
+      "query_source": "pack"
+    },
+    {
+      "name": "julia",
+      "query_source": "langs"
+    },
+    {
+      "name": "kotlin",
+      "query_source": "langs"
+    },
+    {
+      "name": "lua",
+      "query_source": "pack"
+    },
+    {
+      "name": "matlab",
+      "query_source": "pack"
+    },
+    {
+      "name": "ocaml",
+      "query_source": "pack"
+    },
+    {
+      "name": "ocaml_interface",
+      "query_source": "pack"
+    },
+    {
+      "name": "php",
+      "query_source": "langs"
+    },
+    {
+      "name": "properties",
+      "query_source": "pack"
+    },
+    {
+      "name": "python",
+      "query_source": "pack"
+    },
+    {
+      "name": "ql",
+      "query_source": "langs"
+    },
+    {
+      "name": "r",
+      "query_source": "pack"
+    },
+    {
+      "name": "racket",
+      "query_source": "pack"
+    },
+    {
+      "name": "ruby",
+      "query_source": "pack"
+    },
+    {
+      "name": "rust",
+      "query_source": "pack"
+    },
+    {
+      "name": "scala",
+      "query_source": "langs"
+    },
+    {
+      "name": "solidity",
+      "query_source": "pack"
+    },
+    {
+      "name": "swift",
+      "query_source": "pack"
+    },
+    {
+      "name": "typescript",
+      "query_source": "langs"
+    },
+    {
+      "name": "udev",
+      "query_source": "pack"
+    },
+    {
+      "name": "zig",
+      "query_source": "langs"
+    }
+  ]
+}

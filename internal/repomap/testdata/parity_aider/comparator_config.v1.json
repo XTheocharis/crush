@@ -1,0 +1,32 @@
+{
+  "version": "1",
+  "description": "Aider comparator configuration for parity testing. Defines the reference implementation provenance and comparison behavior.",
+  "generated_at": "2025-02-26T00:00:00Z",
+  "aider_reference": {
+    "repository_url": "https://github.com/Aider-AI/aider",
+    "target_commit_sha": "0000000000000000000000000000000000000000",
+    "entrypoint": "aider_main_cli",
+    "map_multiplier": {
+      "default": 1.0,
+      "source": "cli_config_default"
+    }
+  },
+  "grep_ast_reference": {
+    "repository_url": "https://github.com/paul-gauthier/grep-ast",
+    "target_version": "v0.8.1",
+    "commit_sha": "",
+    "purpose": "Code graph extraction for repo map"
+  },
+  "parity_protocol": {
+    "version": "1",
+    "normalization_rules": [
+      "path_separator_normalize",
+      "line_ending_normalize",
+      "stage3_order_normalize"
+    ],
+    "forbidden_normalizations": [
+      "content_semantic_normalize",
+      "identifier_casing_normalize"
+    ]
+  }
+}

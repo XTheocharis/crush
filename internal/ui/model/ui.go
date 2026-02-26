@@ -1423,6 +1423,33 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if msg.Args != nil {
 			content = substituteArgs(content, msg.Args)
 		}
+		content = strings.TrimSpace(content)
+		commandID := strings.TrimSpace(msg.CommandID)
+		if commandID == "" {
+			commandID = content
+		}
+		if strings.HasPrefix(commandID, "project:map-") {
+			if !m.hasSession() {
+				cmds = append(cmds, util.ReportWarn("Start a session before running repo map controls."))
+				m.dialog.CloseFrontDialog()
+				break
+			}
+			handled, statusMsg, err := m.com.App.RunRepoMapControl(context.Background(), commandID, m.session.ID)
+			if handled {
+				if err != nil {
+					cmds = append(cmds, util.ReportError(err))
+				} else if statusMsg != "" {
+					cmds = append(cmds, util.ReportInfo(statusMsg))
+				}
+				m.dialog.CloseFrontDialog()
+				break
+			}
+		}
+		if app.IsRepoMapResetCommand(commandID) {
+			cmds = append(cmds, util.ReportWarn("map_reset is command-only and not available for direct model invocation."))
+			m.dialog.CloseFrontDialog()
+			break
+		}
 		cmds = append(cmds, m.sendMessage(content))
 		m.dialog.CloseFrontDialog()
 	case dialog.ActionRunMCPPrompt:

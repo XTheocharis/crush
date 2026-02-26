@@ -122,6 +122,38 @@ type ReadFile struct {
 	ReadAt    int64  `json:"read_at"`
 }
 
+type RepoMapFileCache struct {
+	RepoKey  string `json:"repo_key"`
+	RelPath  string `json:"rel_path"`
+	Mtime    int64  `json:"mtime"`
+	Language string `json:"language"`
+	TagCount int64  `json:"tag_count"`
+}
+
+type RepoMapSessionRanking struct {
+	RepoKey   string  `json:"repo_key"`
+	SessionID string  `json:"session_id"`
+	RelPath   string  `json:"rel_path"`
+	Rank      float64 `json:"rank"`
+}
+
+type RepoMapSessionReadOnly struct {
+	RepoKey   string `json:"repo_key"`
+	SessionID string `json:"session_id"`
+	RelPath   string `json:"rel_path"`
+}
+
+type RepoMapTag struct {
+	ID       int64  `json:"id"`
+	RepoKey  string `json:"repo_key"`
+	RelPath  string `json:"rel_path"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	NodeType string `json:"node_type"`
+	Line     int64  `json:"line"`
+	Language string `json:"language"`
+}
+
 type Session struct {
 	ID               string         `json:"id"`
 	ParentSessionID  sql.NullString `json:"parent_session_id"`

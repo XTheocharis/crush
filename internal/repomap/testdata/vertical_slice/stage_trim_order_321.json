@@ -1,0 +1,48 @@
+{
+  "name": "stage_trim_order_321",
+  "repository": {
+    "root": "fixture/trim_order",
+    "files": [
+      "README.md",
+      "cmd/app.go",
+      "internal/core/runner.go",
+      "internal/model/data.go",
+      "pkg/codec/encoder.go"
+    ]
+  },
+  "pipeline": {
+    "stage0_special_files": ["README.md"],
+    "stage1_ranked_defs": [
+      {"file": "cmd/app.go", "ident": "Run", "rank": 0.85},
+      {"file": "internal/core/runner.go", "ident": "Start", "rank": 0.80}
+    ],
+    "stage2_graph_nodes": ["internal/model/data.go"],
+    "stage3_repo_files": ["pkg/codec/encoder.go"]
+  },
+  "profiles": [
+    {
+      "name": "trim_stage3_only",
+      "parity_mode": false,
+      "token_budget": 28,
+      "repeat_runs": 10
+    },
+    {
+      "name": "trim_stage3_and_2",
+      "parity_mode": false,
+      "token_budget": 19,
+      "repeat_runs": 10
+    },
+    {
+      "name": "trim_stage3_2_1",
+      "parity_mode": false,
+      "token_budget": 12,
+      "repeat_runs": 10
+    }
+  ],
+  "assertions": {
+    "require_non_empty_map": true,
+    "require_rendered_entries": false,
+    "require_stage_invariants": true,
+    "require_trim_order": [3, 2, 1]
+  }
+}

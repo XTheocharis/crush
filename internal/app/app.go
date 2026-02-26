@@ -32,6 +32,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/ui/anim"
@@ -58,6 +59,9 @@ type App struct {
 	FileTracker filetracker.Service
 
 	AgentCoordinator agent.Coordinator
+	repoMapOpt       agent.CoordinatorOption
+	repoMapSvc       *repomap.Service
+	repoMapCtl       *RepoMapController
 
 	LSPManager *lsp.Manager
 
@@ -85,7 +89,10 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 	var lcmMgr lcm.Manager
 	if cfg.Options.LCM != nil {
 		lcmMgr = lcm.NewManager(q, conn)
-		messages = lcm.NewMessageDecorator(messages, lcmMgr, q, conn)
+		messages = lcm.NewMessageDecorator(messages, lcmMgr, q, conn, lcm.MessageDecoratorConfig{
+			DisableLargeToolOutput:        cfg.Options.LCM.DisableLargeToolOutput,
+			LargeToolOutputTokenThreshold: cfg.Options.LCM.LargeToolOutputTokenThreshold,
+		})
 		slog.Info("LCM enabled")
 	}
 	files := history.NewService(q, conn)
@@ -100,7 +107,7 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 		Messages:    messages,
 		History:     files,
 		Permissions: permission.NewPermissionService(cfg.WorkingDir(), skipPermissionsRequests, allowedTools),
-		FileTracker: filetracker.NewService(q),
+		FileTracker: filetracker.NewService(q, cfg.WorkingDir()),
 		LSPManager:  lsp.NewManager(cfg),
 
 		globalCtx: ctx,
@@ -114,6 +121,7 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 		tuiWG:           &sync.WaitGroup{},
 	}
 
+	app.repoMapOpt = app.initRepoMap(ctx, conn)
 	app.setupEvents()
 
 	// Check for updates in the background.
@@ -503,6 +511,10 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		return fmt.Errorf("coder agent configuration is missing")
 	}
 	var err error
+	coordinatorOpts := []agent.CoordinatorOption{}
+	if app.repoMapOpt != nil {
+		coordinatorOpts = append(coordinatorOpts, app.repoMapOpt)
+	}
 	app.AgentCoordinator, err = agent.NewCoordinator(
 		ctx,
 		app.config,
@@ -514,6 +526,7 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		app.LSPManager,
 		app.lcmManager,
 		lcm.ExtraAgentTools(app.lcmManager),
+		coordinatorOpts...,
 	)
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)
@@ -563,6 +576,11 @@ func (app *App) Shutdown() {
 	// before closing the DB so agents can finish writing their state.
 	if app.AgentCoordinator != nil {
 		app.AgentCoordinator.CancelAll()
+	}
+	if app.repoMapSvc != nil {
+		if err := app.repoMapSvc.Close(); err != nil {
+			slog.Error("Failed to close repo map service", "error", err)
+		}
 	}
 
 	// Now run remaining cleanup tasks in parallel.

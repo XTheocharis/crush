@@ -19,9 +19,13 @@ type Querier interface {
 	DeleteLcmSummaryMessages(ctx context.Context, summaryID string) error
 	DeleteLcmSummaryParents(ctx context.Context, summaryID string) error
 	DeleteMessage(ctx context.Context, id string) error
+	DeleteRepoMapFileCache(ctx context.Context, arg DeleteRepoMapFileCacheParams) error
+	DeleteRepoMapTagsByPath(ctx context.Context, arg DeleteRepoMapTagsByPathParams) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteSessionFiles(ctx context.Context, sessionID string) error
 	DeleteSessionMessages(ctx context.Context, sessionID string) error
+	DeleteSessionRankings(ctx context.Context, arg DeleteSessionRankingsParams) error
+	DeleteSessionReadOnlyPaths(ctx context.Context, arg DeleteSessionReadOnlyPathsParams) error
 	GetAverageResponseTime(ctx context.Context) (int64, error)
 	GetFile(ctx context.Context, id string) (File, error)
 	GetFileByPathAndSession(ctx context.Context, arg GetFileByPathAndSessionParams) (File, error)
@@ -33,6 +37,8 @@ type Querier interface {
 	GetLcmSummary(ctx context.Context, summaryID string) (LcmSummary, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetRecentActivity(ctx context.Context) ([]GetRecentActivityRow, error)
+	GetRepoMapFileCache(ctx context.Context, repoKey string) ([]RepoMapFileCache, error)
+	GetRepoMapFileCacheByPath(ctx context.Context, arg GetRepoMapFileCacheByPathParams) (RepoMapFileCache, error)
 	GetSessionByID(ctx context.Context, id string) (Session, error)
 	GetToolUsage(ctx context.Context) ([]GetToolUsageRow, error)
 	GetTotalStats(ctx context.Context) (GetTotalStatsRow, error)
@@ -54,6 +60,7 @@ type Querier interface {
 	InsertLcmSummaryMessage(ctx context.Context, arg InsertLcmSummaryMessageParams) error
 	// LCM Summary Parents
 	InsertLcmSummaryParent(ctx context.Context, arg InsertLcmSummaryParentParams) error
+	InsertRepoMapTag(ctx context.Context, arg InsertRepoMapTagParams) error
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
 	ListFilesByPath(ctx context.Context, path string) ([]File, error)
 	ListFilesBySession(ctx context.Context, sessionID string) ([]File, error)
@@ -67,7 +74,11 @@ type Querier interface {
 	ListMessagesBySessionSeq(ctx context.Context, sessionID string) ([]Message, error)
 	ListMessagesInSeqRange(ctx context.Context, arg ListMessagesInSeqRangeParams) ([]Message, error)
 	ListNewFiles(ctx context.Context) ([]File, error)
+	ListRepoMapDefsByName(ctx context.Context, arg ListRepoMapDefsByNameParams) ([]ListRepoMapDefsByNameRow, error)
+	ListRepoMapTags(ctx context.Context, repoKey string) ([]ListRepoMapTagsRow, error)
+	ListSessionRankings(ctx context.Context, arg ListSessionRankingsParams) ([]RepoMapSessionRanking, error)
 	ListSessionReadFiles(ctx context.Context, sessionID string) ([]ReadFile, error)
+	ListSessionReadOnlyPaths(ctx context.Context, arg ListSessionReadOnlyPathsParams) ([]string, error)
 	ListSessions(ctx context.Context) ([]Session, error)
 	ListUserMessagesBySession(ctx context.Context, sessionID string) ([]Message, error)
 	RecordFileRead(ctx context.Context, arg RecordFileReadParams) error
@@ -82,6 +93,9 @@ type Querier interface {
 	UpdateSessionTitleAndUsage(ctx context.Context, arg UpdateSessionTitleAndUsageParams) error
 	// LCM Session Config
 	UpsertLcmSessionConfig(ctx context.Context, arg UpsertLcmSessionConfigParams) error
+	UpsertRepoMapFileCache(ctx context.Context, arg UpsertRepoMapFileCacheParams) error
+	UpsertSessionRanking(ctx context.Context, arg UpsertSessionRankingParams) error
+	UpsertSessionReadOnlyPath(ctx context.Context, arg UpsertSessionReadOnlyPathParams) error
 }
 
 var _ Querier = (*Queries)(nil)

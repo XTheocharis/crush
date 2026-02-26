@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/db"
@@ -184,6 +185,143 @@ func TestManager_UpdateContextWindow(t *testing.T) {
 	require.Equal(t, int64(256000), budget.ContextWindow)
 }
 
+func TestManager_SetRepoMapTokens_RecomputesBudgetAndPersists(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-repomap-budget"
+	createTestSession(t, queries, sessionID)
+	require.NoError(t, mgr.InitSession(ctx, sessionID))
+
+	require.NoError(t, mgr.SetRepoMapTokens(ctx, sessionID, 1500))
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+	cfg, err := queries.GetLcmSessionConfig(ctx, sessionID)
+	require.NoError(t, err)
+
+	expected := ComputeBudget(BudgetConfig{
+		ContextWindow:    cfg.ModelCtxMaxTokens,
+		CutoffThreshold:  cfg.CtxCutoffThreshold,
+		RepoMapTokens:    1500,
+		ModelOutputLimit: 0,
+	})
+
+	require.Equal(t, expected.SoftThreshold, budget.SoftThreshold)
+	require.Equal(t, expected.HardLimit, budget.HardLimit)
+	require.Equal(t, expected.ContextWindow, budget.ContextWindow)
+	require.Equal(t, expected.SoftThreshold, cfg.SoftThresholdTokens)
+	require.Equal(t, expected.HardLimit, cfg.HardThresholdTokens)
+}
+
+func TestManager_SetRepoMapTokens_UpsertsWhenConfigMissing(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-repomap-upsert"
+	createTestSession(t, queries, sessionID)
+
+	require.NoError(t, mgr.SetRepoMapTokens(ctx, sessionID, 900))
+
+	cfg, err := queries.GetLcmSessionConfig(ctx, sessionID)
+	require.NoError(t, err)
+	expected := ComputeBudget(BudgetConfig{
+		ContextWindow:    cfg.ModelCtxMaxTokens,
+		CutoffThreshold:  cfg.CtxCutoffThreshold,
+		RepoMapTokens:    900,
+		ModelOutputLimit: 0,
+	})
+
+	require.Equal(t, expected.SoftThreshold, cfg.SoftThresholdTokens)
+	require.Equal(t, expected.HardLimit, cfg.HardThresholdTokens)
+}
+
+func TestManager_SetRepoMapTokens_RecomputeAfterContextWindowUpdate(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-repomap-recompute"
+	createTestSession(t, queries, sessionID)
+	require.NoError(t, mgr.InitSession(ctx, sessionID))
+	require.NoError(t, mgr.SetRepoMapTokens(ctx, sessionID, 1200))
+	require.NoError(t, mgr.UpdateContextWindow(ctx, 256000))
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+	cfg, err := queries.GetLcmSessionConfig(ctx, sessionID)
+	require.NoError(t, err)
+
+	expected := ComputeBudget(BudgetConfig{
+		ContextWindow:    256000,
+		CutoffThreshold:  cfg.CtxCutoffThreshold,
+		RepoMapTokens:    1200,
+		ModelOutputLimit: 0,
+	})
+
+	require.Equal(t, expected.SoftThreshold, budget.SoftThreshold)
+	require.Equal(t, expected.HardLimit, budget.HardLimit)
+	require.Equal(t, int64(256000), budget.ContextWindow)
+	require.Equal(t, expected.SoftThreshold, cfg.SoftThresholdTokens)
+	require.Equal(t, expected.HardLimit, cfg.HardThresholdTokens)
+}
+
+func TestManager_SetRepoMapTokens_ConcurrentConsistency(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-repomap-concurrent"
+	createTestSession(t, queries, sessionID)
+	require.NoError(t, mgr.InitSession(ctx, sessionID))
+
+	const workers = 24
+	const repoMapTokens = int64(777)
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			if err := mgr.SetRepoMapTokens(ctx, sessionID, repoMapTokens); err != nil {
+				errCh <- err
+				return
+			}
+			if _, err := mgr.GetBudget(ctx, sessionID); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+	cfg, err := queries.GetLcmSessionConfig(ctx, sessionID)
+	require.NoError(t, err)
+
+	expected := ComputeBudget(BudgetConfig{
+		ContextWindow:    cfg.ModelCtxMaxTokens,
+		CutoffThreshold:  cfg.CtxCutoffThreshold,
+		RepoMapTokens:    repoMapTokens,
+		ModelOutputLimit: 0,
+	})
+
+	require.Equal(t, expected.SoftThreshold, budget.SoftThreshold)
+	require.Equal(t, expected.HardLimit, budget.HardLimit)
+	require.Equal(t, expected.SoftThreshold, cfg.SoftThresholdTokens)
+	require.Equal(t, expected.HardLimit, cfg.HardThresholdTokens)
+}
+
 func TestManager_Subscribe(t *testing.T) {
 	t.Parallel()
 	queries, sqlDB := setupTestDB(t)
@@ -315,10 +453,10 @@ func BenchmarkManager_GetContextTokenCount(b *testing.B) {
 	for i := range 50 {
 		msgID := fmt.Sprintf("bench-msg-%d", i)
 		_, err := queries.CreateMessage(ctx, db.CreateMessageParams{
-			ID:          msgID,
-			SessionID:   sessionID,
-			Role:        "user",
-			Parts:       `[{"type":"text","data":{"text":"bench"}}]`,
+			ID:        msgID,
+			SessionID: sessionID,
+			Role:      "user",
+			Parts:     `[{"type":"text","data":{"text":"bench"}}]`,
 		})
 		if err != nil {
 			b.Fatal(err)

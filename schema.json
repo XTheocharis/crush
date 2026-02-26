@@ -470,6 +470,10 @@
         "lcm": {
           "$ref": "#/$defs/LCMOptions",
           "description": "Lossless Context Management options"
+        },
+        "repo_map": {
+          "$ref": "#/$defs/RepoMapOptions",
+          "description": "Repository map configuration"
         }
       },
       "additionalProperties": false,
@@ -570,6 +574,35 @@
           },
           "type": "array",
           "description": "List of models available from this provider"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "RepoMapOptions": {
+      "properties": {
+        "disabled": {
+          "type": "boolean",
+          "description": "Disable repo map generation entirely"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "description": "Override max token budget for rendered map (0 = dynamic)"
+        },
+        "exclude_globs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Additional glob patterns to exclude from repo map scanning"
+        },
+        "refresh_mode": {
+          "type": "string",
+          "description": "When to regenerate the repo map: auto files manual or always"
+        },
+        "map_mul_no_files": {
+          "type": "number",
+          "description": "Budget multiplier when no files are in chat (default 2.0)"
         }
       },
       "additionalProperties": false,
@@ -748,6 +781,10 @@
         },
         "grep": {
           "$ref": "#/$defs/ToolGrep"
+        },
+        "repo_map": {
+          "$ref": "#/$defs/RepoMapOptions",
+          "description": "Repository map generation options"
         }
       },
       "additionalProperties": false,

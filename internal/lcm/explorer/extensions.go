@@ -93,6 +93,8 @@ var TEXT_EXTENSIONS = map[string]string{
 var BINARY_EXTENSIONS = map[string]struct{}{
 	"exe": {}, "dll": {}, "so": {}, "dylib": {}, "a": {}, "lib": {},
 	"obj": {}, "bin": {}, "elf": {},
+	// Extension-less binaries (e.g. Linux ELF executables named "binary") are
+	// detected by binary signatures in BinaryExplorer.
 	"app": {}, "deb": {}, "rpm": {}, "msi": {}, "dmg": {},
 	"png": {}, "jpg": {}, "jpeg": {}, "gif": {}, "bmp": {}, "ico": {}, "svg": {},
 	"webp": {}, "tiff": {}, "tif": {},

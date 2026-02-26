@@ -78,6 +78,8 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
+	github.com/UserNobody14/tree-sitter-dart v0.0.0-20251004150700-d4d8f3e337d8 // indirect
+	github.com/alex-pinkus/tree-sitter-swift v0.0.0-20260222060216-30e18c7b0210 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
@@ -105,8 +107,12 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/ebitengine/purego v0.10.0-alpha.4 // indirect
+	github.com/elm-tooling/tree-sitter-elm v1.1.2-0.20250504123327-6e3c6d51f131 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/fwcd/tree-sitter-kotlin v0.3.2 // indirect
+	github.com/gdamore/tree-sitter-d v0.8.3-0.20250629224829-fb028c8f14f4 // indirect
+	github.com/gleam-lang/tree-sitter-gleam v1.1.1-0.20251006195038-ec3c27c5eef2 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
 	github.com/go-json-experiment/json v0.0.0-20251027170946-4849db3c2f7e // indirect
@@ -136,6 +142,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
@@ -149,14 +156,39 @@ require (
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/r-lib/tree-sitter-r v1.2.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
+	github.com/theHamsta/tree-sitter-commonlisp v0.4.2-0.20250316154927-32323509b3d9 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tree-sitter-grammars/tree-sitter-arduino v0.24.1-0.20250907061412-53eb391da4c6 // indirect
+	github.com/tree-sitter-grammars/tree-sitter-chatito v0.5.1-0.20250817084729-c0ed82c665b7 // indirect
+	github.com/tree-sitter-grammars/tree-sitter-hcl v1.2.0 // indirect
+	github.com/tree-sitter-grammars/tree-sitter-lua v0.3.1-0.20250516173203-4fbec840c341 // indirect
+	github.com/tree-sitter-grammars/tree-sitter-properties v0.3.0 // indirect
+	github.com/tree-sitter-grammars/tree-sitter-udev v0.2.1 // indirect
+	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
+	github.com/tree-sitter/tree-sitter-c v0.24.2-0.20250915034600-ae19b676b13b // indirect
+	github.com/tree-sitter/tree-sitter-c-sharp v0.23.1 // indirect
+	github.com/tree-sitter/tree-sitter-cpp v0.23.5-0.20250927134553-12bd6f7e9608 // indirect
+	github.com/tree-sitter/tree-sitter-go v0.25.1-0.20250915233352-2346a3ab1bb3 // indirect
+	github.com/tree-sitter/tree-sitter-haskell v0.23.1 // indirect
+	github.com/tree-sitter/tree-sitter-java v0.23.6-0.20250915034552-e10607b45ff7 // indirect
+	github.com/tree-sitter/tree-sitter-javascript v0.25.1-0.20250915034224-58404d8cf191 // indirect
+	github.com/tree-sitter/tree-sitter-julia v0.25.0 // indirect
+	github.com/tree-sitter/tree-sitter-ocaml v0.24.2 // indirect
+	github.com/tree-sitter/tree-sitter-php v0.24.2 // indirect
+	github.com/tree-sitter/tree-sitter-python v0.25.1-0.20250915213335-26855eabccb1 // indirect
+	github.com/tree-sitter/tree-sitter-ql v1.1.0 // indirect
+	github.com/tree-sitter/tree-sitter-ruby v0.23.1 // indirect
+	github.com/tree-sitter/tree-sitter-rust v0.24.0 // indirect
+	github.com/tree-sitter/tree-sitter-scala v0.24.0 // indirect
+	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
 	github.com/u-root/u-root v0.14.1-0.20250807200646-5e7721023dc7 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect

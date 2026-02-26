@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -13,7 +14,10 @@ type BinaryExplorer struct{}
 func (e *BinaryExplorer) CanHandle(path string, content []byte) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
 	_, isBinary := BINARY_EXTENSIONS[ext]
-	return isBinary
+	if isBinary {
+		return true
+	}
+	return hasBinarySignature(content)
 }
 
 func (e *BinaryExplorer) Explore(ctx context.Context, input ExploreInput) (ExploreResult, error) {
@@ -24,6 +28,27 @@ func (e *BinaryExplorer) Explore(ctx context.Context, input ExploreInput) (Explo
 		ExplorerUsed:  "binary",
 		TokenEstimate: estimateTokens(summary),
 	}, nil
+}
+
+func hasBinarySignature(content []byte) bool {
+	signatures := [][]byte{
+		{0x7F, 0x45, 0x4C, 0x46},             // ELF
+		{0x89, 0x50, 0x4E, 0x47},             // PNG
+		{0xFF, 0xD8, 0xFF},                   // JPEG
+		{0x50, 0x4B, 0x03, 0x04},             // ZIP
+		{0x25, 0x50, 0x44, 0x46},             // PDF
+		{0x4D, 0x5A},                         // PE/MZ
+		{0xCA, 0xFE, 0xBA, 0xBE},             // Java class
+		{0x00, 0x61, 0x73, 0x6D},             // WASM
+		{0x1F, 0x8B},                         // gzip
+		{0x52, 0x61, 0x72, 0x21, 0x1A, 0x07}, // RAR
+	}
+	for _, sig := range signatures {
+		if len(content) >= len(sig) && bytes.HasPrefix(content, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 // TextExplorer handles generic text files not matched by specific explorers.

@@ -1,0 +1,34 @@
+## SQLite database: test.db
+
+### Overview
+- SQLite version: <normalized>
+- Size: <normalized> bytes
+- Tables: 3
+
+### Table inventory
+- Indexes: 2
+- comments
+- posts
+- users
+
+### Index inventory
+- idx_posts_user on posts
+- idx_users_email on users
+
+### comments (3 columns)
+- comment TEXT
+- id INTEGER
+- post_id INTEGER
+
+### posts (4 columns)
+- content TEXT
+- id INTEGER (PK)
+- title TEXT
+- user_id INTEGER
+
+### users (5 columns)
+- age INTEGER
+- created_at TIMESTAMP
+- email TEXT
+- id INTEGER (PK)
+- name TEXT NOT NULL

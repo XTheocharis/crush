@@ -1,0 +1,25 @@
+## Markdown file: complete.md
+
+### Overview
+- Frontmatter keys: 4
+- Frontmatter: true
+- Size: 965 bytes
+
+### Heading hierarchy
+- H1: 1
+- H2: 4
+- H3: 2
+- H4: 2
+- H5: 1
+- H6: 1
+- Total: 11
+
+### Fenced code blocks
+- javascript: 1
+- python: 1
+
+### Links
+- Autolinks (http/https URLs): 1
+- Inline links (markdown style): 2
+- Reference definitions: 2
+- Reference-style links: 2

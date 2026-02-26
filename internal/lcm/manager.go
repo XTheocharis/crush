@@ -44,6 +44,9 @@ type Manager interface {
 	// SetModelOutputLimit sets the model's max output token limit for budget computation.
 	SetModelOutputLimit(limit int64)
 
+	// SetRepoMapTokens sets repo map token overhead for session budget computation.
+	SetRepoMapTokens(ctx context.Context, sessionID string, tokens int64) error
+
 	// UpdateContextWindow updates context window for all tracked sessions.
 	UpdateContextWindow(ctx context.Context, contextWindow int64) error
 
@@ -75,9 +78,10 @@ type compactionManager struct {
 	broker     *pubsub.Broker[CompactionEvent]
 	summarizer *Summarizer
 
-	inFlight    sync.Map // sessionID -> struct{} (deduplication)
-	budgetCache sync.Map // sessionID -> Budget
-	sessionMu   sync.Map // sessionID -> *sync.Mutex (per-session compaction lock)
+	inFlight      sync.Map // sessionID -> struct{} (deduplication)
+	budgetCache   sync.Map // sessionID -> Budget
+	repoMapTokens sync.Map // sessionID -> int64
+	sessionMu     sync.Map // sessionID -> *sync.Mutex (per-session compaction lock)
 
 	defaultContextWindow    int64
 	defaultCutoff           float64
@@ -125,9 +129,11 @@ func (m *compactionManager) Subscribe(ctx context.Context) <-chan pubsub.Event[C
 
 // InitSession creates or ensures an LCM session config exists for the session.
 func (m *compactionManager) InitSession(ctx context.Context, sessionID string) error {
+	repoMapTokens := m.repoMapTokensForSession(sessionID)
 	budget := ComputeBudget(BudgetConfig{
 		ContextWindow:    m.defaultContextWindow,
 		CutoffThreshold:  m.defaultCutoff,
+		RepoMapTokens:    repoMapTokens,
 		ModelOutputLimit: m.defaultModelOutputLimit,
 	})
 
@@ -164,6 +170,20 @@ func (m *compactionManager) SetModelOutputLimit(limit int64) {
 	m.defaultModelOutputLimit = limit
 }
 
+// SetRepoMapTokens sets repo map token overhead for a session and atomically
+// updates both in-memory cache and persisted thresholds.
+func (m *compactionManager) SetRepoMapTokens(ctx context.Context, sessionID string, tokens int64) error {
+	if tokens < 0 {
+		tokens = 0
+	}
+
+	mu := m.sessionMutex(sessionID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	return m.setRepoMapTokensLocked(ctx, sessionID, tokens)
+}
+
 // UpdateContextWindow updates context window for all tracked sessions.
 func (m *compactionManager) UpdateContextWindow(ctx context.Context, contextWindow int64) error {
 	m.defaultContextWindow = contextWindow
@@ -171,9 +191,11 @@ func (m *compactionManager) UpdateContextWindow(ctx context.Context, contextWind
 	// Update all cached budgets.
 	m.budgetCache.Range(func(key, _ any) bool {
 		sessionID := key.(string)
+		repoMapTokens := m.repoMapTokensForSession(sessionID)
 		budget := ComputeBudget(BudgetConfig{
 			ContextWindow:    contextWindow,
 			CutoffThreshold:  m.defaultCutoff,
+			RepoMapTokens:    repoMapTokens,
 			ModelOutputLimit: m.defaultModelOutputLimit,
 		})
 
@@ -195,6 +217,79 @@ func (m *compactionManager) UpdateContextWindow(ctx context.Context, contextWind
 	return nil
 }
 
+func (m *compactionManager) repoMapTokensForSession(sessionID string) int64 {
+	if tokens, ok := m.repoMapTokens.Load(sessionID); ok {
+		return tokens.(int64)
+	}
+	return 0
+}
+
+func (m *compactionManager) setRepoMapTokensLocked(ctx context.Context, sessionID string, tokens int64) error {
+	tx, err := m.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := m.queries.WithTx(tx)
+	config, err := qtx.GetLcmSessionConfig(ctx, sessionID)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			return fmt.Errorf("getting session config: %w", err)
+		}
+
+		budget := ComputeBudget(BudgetConfig{
+			ContextWindow:    m.defaultContextWindow,
+			CutoffThreshold:  m.defaultCutoff,
+			RepoMapTokens:    tokens,
+			ModelOutputLimit: m.defaultModelOutputLimit,
+		})
+		if err := qtx.UpsertLcmSessionConfig(ctx, db.UpsertLcmSessionConfigParams{
+			SessionID:           sessionID,
+			ModelName:           "",
+			ModelCtxMaxTokens:   m.defaultContextWindow,
+			CtxCutoffThreshold:  m.defaultCutoff,
+			SoftThresholdTokens: budget.SoftThreshold,
+			HardThresholdTokens: budget.HardLimit,
+		}); err != nil {
+			return fmt.Errorf("upserting session config: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing transaction: %w", err)
+		}
+		m.repoMapTokens.Store(sessionID, tokens)
+		m.budgetCache.Store(sessionID, budget)
+		return nil
+	}
+
+	budget := ComputeBudget(BudgetConfig{
+		ContextWindow:    config.ModelCtxMaxTokens,
+		CutoffThreshold:  config.CtxCutoffThreshold,
+		RepoMapTokens:    tokens,
+		ModelOutputLimit: m.defaultModelOutputLimit,
+	})
+
+	if err := qtx.UpdateLcmSessionConfig(ctx, db.UpdateLcmSessionConfigParams{
+		SessionID:           sessionID,
+		ModelName:           config.ModelName,
+		ModelCtxMaxTokens:   config.ModelCtxMaxTokens,
+		CtxCutoffThreshold:  config.CtxCutoffThreshold,
+		SoftThresholdTokens: budget.SoftThreshold,
+		HardThresholdTokens: budget.HardLimit,
+	}); err != nil {
+		return fmt.Errorf("updating session config: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	m.repoMapTokens.Store(sessionID, tokens)
+	m.budgetCache.Store(sessionID, budget)
+	return nil
+}
+
 // GetBudget returns the token budget for a session.
 func (m *compactionManager) GetBudget(ctx context.Context, sessionID string) (Budget, error) {
 	// Check cache first.
@@ -207,9 +302,12 @@ func (m *compactionManager) GetBudget(ctx context.Context, sessionID string) (Bu
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Return default budget.
+			repoMapTokens := m.repoMapTokensForSession(sessionID)
 			budget := ComputeBudget(BudgetConfig{
-				ContextWindow:   m.defaultContextWindow,
-				CutoffThreshold: m.defaultCutoff,
+				ContextWindow:    m.defaultContextWindow,
+				CutoffThreshold:  m.defaultCutoff,
+				RepoMapTokens:    repoMapTokens,
+				ModelOutputLimit: m.defaultModelOutputLimit,
 			})
 			return budget, nil
 		}

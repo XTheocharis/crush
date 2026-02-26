@@ -1,0 +1,34 @@
+{
+  "name": "stage_assembly_no_stage0",
+  "repository": {
+    "root": "fixture/no_stage0",
+    "files": [
+      "cmd/main.go",
+      "internal/service/logic.go",
+      "internal/model/entity.go",
+      "pkg/cache/store.go"
+    ]
+  },
+  "pipeline": {
+    "stage0_special_files": [],
+    "stage1_ranked_defs": [
+      {"file": "cmd/main.go", "ident": "main", "rank": 0.92},
+      {"file": "internal/service/logic.go", "ident": "Execute", "rank": 0.78}
+    ],
+    "stage2_graph_nodes": ["internal/model/entity.go"],
+    "stage3_repo_files": ["pkg/cache/store.go"]
+  },
+  "profiles": [
+    {
+      "name": "no_stage0_preserve_order",
+      "parity_mode": false,
+      "token_budget": 40,
+      "repeat_runs": 10
+    }
+  ],
+  "assertions": {
+    "require_non_empty_map": true,
+    "require_rendered_entries": true,
+    "require_stage_invariants": true
+  }
+}

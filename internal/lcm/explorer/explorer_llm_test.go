@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/crush/internal/treesitter"
 	"github.com/stretchr/testify/require"
 )
 
@@ -202,6 +203,283 @@ func TestRegistryExplore_WithLLM(t *testing.T) {
 		Content: []byte("package main\n\nfunc main() {}"),
 	})
 	require.NoError(t, err)
-	require.Equal(t, "LLM enhanced Go summary", result.Summary)
+	require.Contains(t, result.Summary, "## LLM enhanced Go summary")
 	require.Contains(t, result.ExplorerUsed, "+llm")
+}
+
+// mockParser is a test implementation of treesitter.Parser.
+type mockParser struct {
+	closeErr  error
+	analyzeFn func(ctx context.Context, path string, content []byte) (*treesitter.FileAnalysis, error)
+}
+
+func (m *mockParser) Analyze(ctx context.Context, path string, content []byte) (*treesitter.FileAnalysis, error) {
+	if m.analyzeFn != nil {
+		return m.analyzeFn(ctx, path, content)
+	}
+	return &treesitter.FileAnalysis{
+		Language: "go",
+		Symbols: []treesitter.SymbolInfo{
+			{Name: "main", Kind: "function", Line: 1},
+		},
+		Imports: []treesitter.ImportInfo{
+			{Path: "fmt", Category: treesitter.ImportCategoryStdlib},
+		},
+	}, nil
+}
+
+func (m *mockParser) Languages() []string {
+	return []string{"go", "python", "javascript", "typescript", "rust", "java"}
+}
+
+func (m *mockParser) SupportsLanguage(lang string) bool {
+	switch lang {
+	case "go", "python", "javascript", "typescript", "rust", "java":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *mockParser) HasTags(lang string) bool {
+	return m.SupportsLanguage(lang)
+}
+
+func (m *mockParser) Close() error {
+	return m.closeErr
+}
+
+func TestWithTreeSitter_OptionWiring(t *testing.T) {
+	t.Parallel()
+	parser := &mockParser{}
+	r := NewRegistry(WithTreeSitter(parser))
+	require.NotNil(t, r)
+	require.NotNil(t, r.tsParser)
+	require.Same(t, parser, r.tsParser)
+}
+
+func TestNewRegistry_WithTreeSitter_ExplorerChain(t *testing.T) {
+	t.Parallel()
+	parser := &mockParser{}
+	r := NewRegistry(WithTreeSitter(parser))
+
+	// Verify TreeSitterExplorer is in the chain.
+	var treesitterExp *TreeSitterExplorer
+	found := false
+	for _, e := range r.explorers {
+		if ts, ok := e.(*TreeSitterExplorer); ok {
+			treesitterExp = ts
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "TreeSitterExplorer should be in the chain when parser is provided")
+	require.NotNil(t, treesitterExp)
+	require.Equal(t, OutputProfileEnhancement, treesitterExp.formatterProfile)
+
+	// Check that it comes before TextExplorer data-format explorers.
+	var tsIndex, textIndex int
+	for i, e := range r.explorers {
+		if _, ok := e.(*TreeSitterExplorer); ok {
+			tsIndex = i
+		}
+		if _, ok := e.(*TextExplorer); ok {
+			textIndex = i
+		}
+	}
+	require.Less(t, tsIndex, textIndex, "TreeSitterExplorer should come before TextExplorer")
+}
+
+func TestNewRegistry_WithTreeSitter_DataFormatFirstOrdering(t *testing.T) {
+	t.Parallel()
+	parser := &mockParser{}
+	r := NewRegistry(WithTreeSitter(parser))
+
+	// Build a list of explorer type names in order.
+	var types []string
+	for _, e := range r.explorers {
+		types = append(types, explorerTypeName(e))
+	}
+
+	// Verify data format explorers come before TreeSitterExplorer.
+	jsonIdx, csvIdx, yamlIdx, tomlIdx, xmlIdx, htmlIdx := -1, -1, -1, -1, -1, -1
+	tsIdx := -1
+
+	for i, typ := range types {
+		switch typ {
+		case "JSONExplorer":
+			jsonIdx = i
+		case "CSVExplorer":
+			csvIdx = i
+		case "YAMLExplorer":
+			yamlIdx = i
+		case "TOMLExplorer":
+			tomlIdx = i
+		case "XMLExplorer":
+			xmlIdx = i
+		case "HTMLExplorer":
+			htmlIdx = i
+		case "TreeSitterExplorer":
+			tsIdx = i
+		}
+	}
+
+	// All data format explorers should come before TreeSitterExplorer.
+	for _, idx := range []int{jsonIdx, csvIdx, yamlIdx, tomlIdx, xmlIdx, htmlIdx} {
+		require.GreaterOrEqual(t, tsIdx, 0, "TreeSitterExplorer should be in the chain")
+		if idx >= 0 {
+			require.Less(t, idx, tsIdx, "%s should come before TreeSitterExplorer", types[idx])
+		}
+	}
+}
+
+func TestNewRegistry_BackwardCompatibility(t *testing.T) {
+	t.Parallel()
+
+	// No options provided - should work as before.
+	r := NewRegistry()
+	require.NotNil(t, r)
+	require.Nil(t, r.tsParser)
+	require.Greater(t, len(r.explorers), 0)
+
+	// Verify TreeSitterExplorer is NOT in the chain without option.
+	for _, e := range r.explorers {
+		_, ok := e.(*TreeSitterExplorer)
+		require.False(t, ok, "TreeSitterExplorer should NOT be in the chain without WithTreeSitter option")
+	}
+
+	// Empty options should be fine.
+	r2 := NewRegistry()
+	require.NotNil(t, r2)
+	require.Nil(t, r2.tsParser)
+}
+
+func TestNewRegistryWithLLM_WithTreeSitter_Passthrough(t *testing.T) {
+	t.Parallel()
+	parser := &mockParser{}
+	llm := &mockLLM{response: "test"}
+	agentFn := func(_ context.Context, _, _, _ string) (string, error) {
+		return "agent", nil
+	}
+
+	r := NewRegistryWithLLM(llm, agentFn, WithTreeSitter(parser))
+	require.NotNil(t, r)
+	require.NotNil(t, r.llm)
+	require.NotNil(t, r.agentFn)
+	require.NotNil(t, r.tsParser)
+	require.Same(t, parser, r.tsParser)
+
+	// Verify TreeSitterExplorer is in the chain.
+	var found bool
+	for _, e := range r.explorers {
+		if _, ok := e.(*TreeSitterExplorer); ok {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "TreeSitterExplorer should be in the chain with option passthrough")
+}
+
+func TestNewRegistryWithLLM_BackwardCompatibility(t *testing.T) {
+	t.Parallel()
+	llm := &mockLLM{response: "test"}
+
+	// No TreeSitter option provided - should preserve old signature.
+	r := NewRegistryWithLLM(llm, nil)
+	require.NotNil(t, r)
+	require.NotNil(t, r.llm)
+	require.Nil(t, r.agentFn)
+	require.Nil(t, r.tsParser)
+}
+
+func TestNewRegistryWithLLM_NoOptions(t *testing.T) {
+	t.Parallel()
+	llm := &mockLLM{response: "test"}
+
+	// Explicitly passing no options.
+	r := NewRegistryWithLLM(llm, nil)
+	require.NotNil(t, r)
+	require.NotNil(t, r.llm)
+	require.Nil(t, r.tsParser)
+
+	// Verify TreeSitterExplorer is NOT in the chain.
+	for _, e := range r.explorers {
+		_, ok := e.(*TreeSitterExplorer)
+		require.False(t, ok, "TreeSitterExplorer should not be in chain with no options")
+	}
+}
+
+func TestTreeSitterExplorer_InChain_HandlesSupportedFiles(t *testing.T) {
+	t.Parallel()
+	parser := &mockParser{}
+	r := NewRegistry(WithTreeSitter(parser))
+
+	content := []byte(`package main
+
+func main() {
+	fmt.Println("hello")
+}
+`)
+
+	result, err := r.Explore(context.Background(), ExploreInput{
+		Path:    "main.go",
+		Content: content,
+	})
+	require.NoError(t, err)
+
+	// Since GoExplorer has higher priority and CanHandle returns true first,
+	// it will be used. TreeSitterExplorer is positioned to catch files that
+	// aren't caught by higher-priority specific explorers.
+	// This test just verifies that the chain works.
+	require.NotEmpty(t, result.Summary)
+}
+
+// explorerTypeName returns the name of an explorer type for testing.
+func explorerTypeName(e Explorer) string {
+	switch e.(type) {
+	case *BinaryExplorer:
+		return "BinaryExplorer"
+	case *GoExplorer:
+		return "GoExplorer"
+	case *PythonExplorer:
+		return "PythonExplorer"
+	case *JavaScriptExplorer:
+		return "JavaScriptExplorer"
+	case *TypeScriptExplorer:
+		return "TypeScriptExplorer"
+	case *RustExplorer:
+		return "RustExplorer"
+	case *JavaExplorer:
+		return "JavaExplorer"
+	case *CppExplorer:
+		return "CppExplorer"
+	case *CExplorer:
+		return "CExplorer"
+	case *RubyExplorer:
+		return "RubyExplorer"
+	case *ShellExplorer:
+		return "ShellExplorer"
+	case *JSONExplorer:
+		return "JSONExplorer"
+	case *CSVExplorer:
+		return "CSVExplorer"
+	case *YAMLExplorer:
+		return "YAMLExplorer"
+	case *TOMLExplorer:
+		return "TOMLExplorer"
+	case *INIExplorer:
+		return "INIExplorer"
+	case *XMLExplorer:
+		return "XMLExplorer"
+	case *HTMLExplorer:
+		return "HTMLExplorer"
+	case *TextExplorer:
+		return "TextExplorer"
+	case *FallbackExplorer:
+		return "FallbackExplorer"
+	case *TreeSitterExplorer:
+		return "TreeSitterExplorer"
+	default:
+		return "Unknown"
+	}
 }

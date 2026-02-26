@@ -1,0 +1,32 @@
+{
+  "name": "stage_assembly_empty_later_stages",
+  "repository": {
+    "root": "fixture/empty_later",
+    "files": [
+      "README.md",
+      "LICENSE",
+      "cmd/main.go"
+    ]
+  },
+  "pipeline": {
+    "stage0_special_files": ["README.md", "LICENSE"],
+    "stage1_ranked_defs": [
+      {"file": "cmd/main.go", "ident": "main", "rank": 0.95}
+    ],
+    "stage2_graph_nodes": [],
+    "stage3_repo_files": []
+  },
+  "profiles": [
+    {
+      "name": "only_stage0_and_stage1",
+      "parity_mode": false,
+      "token_budget": 35,
+      "repeat_runs": 10
+    }
+  ],
+  "assertions": {
+    "require_non_empty_map": true,
+    "require_rendered_entries": true,
+    "require_stage_invariants": true
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "language": {
+    "go": "language_go_server.go",
+    "python": "language_python_processor.py"
+  },
+  "format": {
+    "json": "format_package.json",
+    "yaml": "format_docker-compose.yml",
+    "csv": "format_employees.csv"
+  },
+  "binary": {},
+  "shell": {
+    "deploy_script": "runtime_deploy.sh"
+  },
+  "markdown": {
+    "readme": "retrieval_README.md"
+  },
+  "negative": {},
+  "metadata": {
+    "volt_commit_sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "fixtures_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "comparator_path": "../volt",
+    "version": "1",
+    "generated_at": "2026-02-26T00:00:00Z",
+    "profile": "parity",
+    "deterministic_mode": true,
+    "enhancement_tiers_enabled": "none",
+    "token_counter_mode": "tokenizer_backed",
+    "fixed_seed": 1337
+  }
+}

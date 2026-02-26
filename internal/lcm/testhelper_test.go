@@ -70,10 +70,10 @@ func createTestMessage(t *testing.T, queries *db.Queries, sessionID, msgID, role
 	ctx := context.Background()
 	parts := fmt.Sprintf(`[{"type":"text","data":{"text":%q}}]`, textContent)
 	_, err := queries.CreateMessage(ctx, db.CreateMessageParams{
-		ID:          msgID,
-		SessionID:   sessionID,
-		Role:        role,
-		Parts:       parts,
+		ID:        msgID,
+		SessionID: sessionID,
+		Role:      role,
+		Parts:     parts,
 	})
 	require.NoError(t, err)
 }

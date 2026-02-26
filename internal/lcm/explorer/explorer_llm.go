@@ -30,9 +30,9 @@ type AgentFunc func(ctx context.Context, path, systemPrompt, userPrompt string) 
 
 // NewRegistryWithLLM creates a registry with all built-in explorers and an LLM
 // client for enhanced summarization. If agentFn is non-nil, agent-based
-// exploration (tier 3) is available.
-func NewRegistryWithLLM(llm LLMClient, agentFn AgentFunc) *Registry {
-	r := NewRegistry()
+// exploration (tier 3) is available. Options are passed through to NewRegistry.
+func NewRegistryWithLLM(llm LLMClient, agentFn AgentFunc, opts ...RegistryOption) *Registry {
+	r := NewRegistry(opts...)
 	r.llm = llm
 	r.agentFn = agentFn
 	return r

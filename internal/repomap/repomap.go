@@ -1,0 +1,569 @@
+package repomap
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"io/fs"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/treesitter"
+	"golang.org/x/sync/singleflight"
+)
+
+var errServiceClosed = errors.New("repomap service is closed")
+
+// RunInjectionKey identifies one logical Run() for injection gating.
+type RunInjectionKey struct {
+	RootUserMessageID string
+	QueueGeneration   int64
+}
+
+type runInjectionKeyContextKey string
+
+const runInjectionKeyCtxKey runInjectionKeyContextKey = "run_injection_key"
+
+// WithRunInjectionKey stores the run injection key in context.
+func WithRunInjectionKey(ctx context.Context, key RunInjectionKey) context.Context {
+	return context.WithValue(ctx, runInjectionKeyCtxKey, key)
+}
+
+// RunInjectionKeyFromContext retrieves the run injection key from context.
+func RunInjectionKeyFromContext(ctx context.Context) (RunInjectionKey, bool) {
+	v := ctx.Value(runInjectionKeyCtxKey)
+	if v == nil {
+		return RunInjectionKey{}, false
+	}
+	key, ok := v.(RunInjectionKey)
+	if !ok {
+		return RunInjectionKey{}, false
+	}
+	if key.RootUserMessageID == "" {
+		return RunInjectionKey{}, false
+	}
+	return key, true
+}
+
+// GenerateOpts specifies options for repo-map generation.
+type GenerateOpts struct {
+	SessionID        string
+	ChatFiles        []string
+	MentionedFnames  []string
+	MentionedIdents  []string
+	TokenBudget      int
+	MaxContextWindow int
+	ForceRefresh     bool
+}
+
+// Service handles repo-map generation and lifecycle.
+type Service struct {
+	parser       treesitter.Parser
+	db           *db.Queries
+	rawDB        *sql.DB
+	rootDir      string
+	cfg          *config.RepoMapOptions
+	lifecycleCtx context.Context
+	serviceCtx   context.Context
+	cancel       context.CancelFunc
+	closed       chan struct{}
+
+	wg sync.WaitGroup
+
+	mu                   sync.RWMutex
+	sessionCaches        *SessionCacheSet
+	renderCaches         *SessionRenderCacheSet
+	injectedBySessionRun map[string]map[RunInjectionKey]struct{}
+	allFiles             []string
+	preIndexDone         chan struct{}
+	preIndexRunning      bool
+	preIndexFlight       singleflight.Group
+	refreshFlight        singleflight.Group
+	onPreIndexRun        func()
+	onRefreshRun         func()
+
+	closeOnce sync.Once
+}
+
+// NewService creates a new repo-map service scaffold.
+func NewService(cfg *config.Config, q *db.Queries, rawDB *sql.DB, rootDir string, lifecycleCtx context.Context) *Service {
+	var repoCfg *config.RepoMapOptions
+	if cfg != nil && cfg.Options != nil {
+		repoCfg = cfg.Options.RepoMap
+	}
+
+	baseCtx := lifecycleCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	serviceCtx, cancel := context.WithCancel(baseCtx)
+
+	preIndexDone := make(chan struct{})
+	close(preIndexDone)
+
+	return &Service{
+		db:                   q,
+		rawDB:                rawDB,
+		rootDir:              rootDir,
+		cfg:                  repoCfg,
+		lifecycleCtx:         lifecycleCtx,
+		serviceCtx:           serviceCtx,
+		cancel:               cancel,
+		closed:               make(chan struct{}),
+		sessionCaches:        NewSessionCacheSet(),
+		renderCaches:         NewSessionRenderCacheSet(),
+		injectedBySessionRun: make(map[string]map[RunInjectionKey]struct{}),
+		preIndexDone:         preIndexDone,
+	}
+}
+
+// Generate produces a repo map.
+func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int, error) {
+	if err := s.checkContextsDone(ctx); err != nil {
+		return "", 0, err
+	}
+
+	sessionID := strings.TrimSpace(opts.SessionID)
+	if sessionID == "" {
+		return "", 0, nil
+	}
+
+	mode := "auto"
+	if s.cfg != nil {
+		mode = strings.ToLower(strings.TrimSpace(s.cfg.RefreshMode))
+	}
+	if mode == "" {
+		mode = "auto"
+	}
+
+	lastMap, lastTok := s.sessionCaches.Load(sessionID)
+	cacheKey := buildRenderCacheKey(mode, opts)
+	renderCache := s.renderCaches.GetOrCreate(sessionID)
+
+	switch mode {
+	case "manual":
+		if lastMap != "" || lastTok > 0 {
+			return lastMap, lastTok, nil
+		}
+		return "", 0, nil
+	case "files", "auto":
+		if lastMap != "" || lastTok > 0 {
+			return lastMap, lastTok, nil
+		}
+		if cacheKey != "" {
+			if m, tok, ok := renderCache.Get(cacheKey); ok {
+				s.sessionCaches.Store(sessionID, m, tok)
+				return m, tok, nil
+			}
+		}
+		return "", 0, nil
+	case "always":
+		return lastMap, lastTok, nil
+	default:
+		if lastMap != "" || lastTok > 0 {
+			return lastMap, lastTok, nil
+		}
+		if cacheKey != "" {
+			if m, tok, ok := renderCache.Get(cacheKey); ok {
+				s.sessionCaches.Store(sessionID, m, tok)
+				return m, tok, nil
+			}
+		}
+		return "", 0, nil
+	}
+}
+
+// Available returns whether repo-map service is ready.
+func (s *Service) Available() bool {
+	if s == nil {
+		return false
+	}
+	if s.isClosed() {
+		return false
+	}
+	return s.cfg != nil && !s.cfg.Disabled
+}
+
+// AllFiles returns all files in the repository for repo-map generation.
+func (s *Service) AllFiles(ctx context.Context) []string {
+	if s == nil {
+		return nil
+	}
+
+	done := s.preIndexSignal()
+	if done != nil {
+		select {
+		case <-done:
+		case <-s.serviceCtx.Done():
+		case <-ctxDone(ctx):
+		}
+	}
+
+	s.mu.RLock()
+	files := append([]string(nil), s.allFiles...)
+	s.mu.RUnlock()
+
+	return files
+}
+
+// LastGoodMap returns most recent successful map for a session.
+// Returns empty string if no cached value exists for the session.
+func (s *Service) LastGoodMap(sessionID string) string {
+	lastMap, _ := s.sessionCaches.Load(sessionID)
+	return lastMap
+}
+
+// LastTokenCount returns last generated map token count for a session.
+// Returns 0 if no cached value exists for the session.
+func (s *Service) LastTokenCount(sessionID string) int {
+	_, lastTok := s.sessionCaches.Load(sessionID)
+	return lastTok
+}
+
+// ShouldInject reports whether map should be injected for this run.
+func (s *Service) ShouldInject(sessionID string, runKey RunInjectionKey) bool {
+	if sessionID == "" || runKey.RootUserMessageID == "" {
+		return false
+	}
+	if s.isClosed() {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	runs, ok := s.injectedBySessionRun[sessionID]
+	if !ok {
+		runs = make(map[RunInjectionKey]struct{})
+		s.injectedBySessionRun[sessionID] = runs
+	}
+	if _, exists := runs[runKey]; exists {
+		return false
+	}
+	runs[runKey] = struct{}{}
+	return true
+}
+
+// RefreshAsync schedules async refresh.
+func (s *Service) RefreshAsync(sessionID string, opts GenerateOpts) {
+	if s == nil || s.isClosed() {
+		return
+	}
+	if opts.SessionID == "" {
+		opts.SessionID = sessionID
+	}
+	flightKey := s.buildRefreshFlightKey(sessionID, opts)
+
+	s.wg.Add(1)
+	go func(key string, sid string, o GenerateOpts) {
+		defer s.wg.Done()
+		_, _, _ = s.refreshFlight.Do(key, func() (interface{}, error) {
+			if s.onRefreshRun != nil {
+				s.onRefreshRun()
+			}
+			_, _, err := s.Refresh(s.serviceCtx, sid, o)
+			return nil, err
+		})
+	}(flightKey, sessionID, opts)
+}
+
+// Refresh performs synchronous refresh.
+func (s *Service) Refresh(ctx context.Context, sessionID string, opts GenerateOpts) (string, int, error) {
+	if opts.SessionID == "" {
+		opts.SessionID = sessionID
+	}
+
+	m, tok, err := s.Generate(ctx, opts)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if opts.SessionID != "" {
+		s.sessionCaches.Store(opts.SessionID, m, tok)
+		mode := "auto"
+		if s.cfg != nil {
+			mode = strings.ToLower(strings.TrimSpace(s.cfg.RefreshMode))
+		}
+		if mode == "" {
+			mode = "auto"
+		}
+		key := buildRenderCacheKey(mode, opts)
+		if key != "" {
+			s.renderCaches.GetOrCreate(opts.SessionID).Set(key, m, tok)
+		}
+	}
+
+	repoKey := repoKeyForRoot(s.rootDir)
+	if repoKey != "" && s.db != nil && opts.SessionID != "" {
+		_ = s.db.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: opts.SessionID})
+		_ = s.db.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: opts.SessionID})
+	}
+
+	return m, tok, nil
+}
+
+// Reset clears cached repo-map state for a session.
+func (s *Service) Reset(ctx context.Context, sessionID string) error {
+	if err := s.checkContextsDone(ctx); err != nil {
+		return err
+	}
+
+	s.sessionCaches.Clear(sessionID)
+	s.renderCaches.Clear(sessionID)
+
+	repoKey := repoKeyForRoot(s.rootDir)
+	if repoKey != "" && s.db != nil {
+		_ = s.db.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: sessionID})
+		_ = s.db.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: sessionID})
+	}
+
+	s.mu.Lock()
+	delete(s.injectedBySessionRun, sessionID)
+	s.mu.Unlock()
+	return nil
+}
+
+// PreIndex starts background pre-index work.
+func (s *Service) PreIndex() {
+	if s == nil || s.isClosed() {
+		return
+	}
+
+	s.mu.Lock()
+	if s.preIndexRunning {
+		s.mu.Unlock()
+		return
+	}
+	done := make(chan struct{})
+	s.preIndexDone = done
+	s.preIndexRunning = true
+	s.mu.Unlock()
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer func() {
+			s.mu.Lock()
+			s.preIndexRunning = false
+			close(done)
+			s.mu.Unlock()
+		}()
+
+		_, _, _ = s.preIndexFlight.Do(repoKeyForRoot(s.rootDir), func() (interface{}, error) {
+			if s.onPreIndexRun != nil {
+				s.onPreIndexRun()
+			}
+			files := s.walkAllFiles(s.serviceCtx)
+			s.mu.Lock()
+			s.allFiles = files
+			s.mu.Unlock()
+			return nil, nil
+		})
+	}()
+}
+
+// Close releases resources.
+func (s *Service) Close() error {
+	if s == nil {
+		return nil
+	}
+
+	var err error
+	s.closeOnce.Do(func() {
+		s.cancel()
+		close(s.closed)
+		s.wg.Wait()
+		if s.parser != nil {
+			err = s.parser.Close()
+		}
+	})
+	return err
+}
+
+func (s *Service) preIndexSignal() <-chan struct{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.preIndexDone
+}
+
+func (s *Service) isClosed() bool {
+	if s == nil {
+		return true
+	}
+	select {
+	case <-s.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) checkContextsDone(ctx context.Context) error {
+	if s == nil {
+		return errServiceClosed
+	}
+	if s.isClosed() {
+		return errServiceClosed
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.serviceCtx.Done():
+		if s.isClosed() {
+			return errServiceClosed
+		}
+		return s.serviceCtx.Err()
+	default:
+		return nil
+	}
+}
+
+func (s *Service) walkAllFiles(ctx context.Context) []string {
+	root := strings.TrimSpace(s.rootDir)
+	if root == "" {
+		return nil
+	}
+
+	files := make([]string, 0, 256)
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		select {
+		case <-ctxDone(ctx):
+			return context.Canceled
+		default:
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return nil
+		}
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	})
+	sort.Strings(files)
+	return files
+}
+
+func ctxDone(ctx context.Context) <-chan struct{} {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Done()
+}
+
+func buildRenderCacheKey(mode string, opts GenerateOpts) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = "auto"
+	}
+
+	chatFiles := normalizeUniqueGraphPaths(opts.ChatFiles)
+	mentionedFnames := normalizeUniqueGraphPaths(opts.MentionedFnames)
+	mentionedIdents := normalizeUniqueStrings(opts.MentionedIdents)
+
+	switch mode {
+	case "manual":
+		return "manual"
+	case "always":
+		return ""
+	case "files":
+		return strings.Join([]string{
+			mode,
+			joinParts(chatFiles),
+			itoa(opts.TokenBudget),
+		}, "|")
+	case "auto":
+		return strings.Join([]string{
+			mode,
+			joinParts(chatFiles),
+			joinParts(mentionedFnames),
+			joinParts(mentionedIdents),
+			itoa(opts.TokenBudget),
+		}, "|")
+	default:
+		return strings.Join([]string{
+			"auto",
+			joinParts(chatFiles),
+			joinParts(mentionedFnames),
+			joinParts(mentionedIdents),
+			itoa(opts.TokenBudget),
+		}, "|")
+	}
+}
+
+func joinParts(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ",")
+}
+
+func itoa(v int) string {
+	return strconv.Itoa(v)
+}
+
+func normalizeUniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, val := range values {
+		val = strings.TrimSpace(val)
+		if val == "" {
+			continue
+		}
+		if _, ok := seen[val]; ok {
+			continue
+		}
+		seen[val] = struct{}{}
+		out = append(out, val)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *Service) buildRefreshFlightKey(sessionID string, opts GenerateOpts) string {
+	mode := "auto"
+	if s != nil && s.cfg != nil {
+		mode = strings.ToLower(strings.TrimSpace(s.cfg.RefreshMode))
+	}
+	if mode == "" {
+		mode = "auto"
+	}
+	cacheKey := buildRenderCacheKey(mode, opts)
+	if cacheKey == "" {
+		cacheKey = strings.Join([]string{
+			mode,
+			joinParts(normalizeUniqueGraphPaths(opts.ChatFiles)),
+			joinParts(normalizeUniqueGraphPaths(opts.MentionedFnames)),
+			joinParts(normalizeUniqueStrings(opts.MentionedIdents)),
+			itoa(opts.TokenBudget),
+			itoa(opts.MaxContextWindow),
+			strconv.FormatBool(opts.ForceRefresh),
+		}, "|")
+	}
+	repoKey := repoKeyForRoot("")
+	if s != nil {
+		repoKey = repoKeyForRoot(s.rootDir)
+	}
+	return strings.Join([]string{repoKey, sessionID, cacheKey}, "|")
+}

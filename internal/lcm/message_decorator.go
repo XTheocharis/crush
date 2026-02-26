@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/lcm/explorer"
 	"github.com/charmbracelet/crush/internal/message"
 )
 
@@ -32,17 +34,34 @@ type messageDecorator struct {
 	store           *Store
 	querier         db.Querier
 	sqlDB           *sql.DB
+	cfg             MessageDecoratorConfig
+	explorers       *explorer.Registry
 	initSessions    sync.Map // sessionID -> struct{} (tracks lazily initialized sessions)
 }
 
+// MessageDecoratorConfig controls large-output interception behavior.
+type MessageDecoratorConfig struct {
+	DisableLargeToolOutput        bool
+	LargeToolOutputTokenThreshold int
+}
+
+func (c MessageDecoratorConfig) threshold() int64 {
+	if c.LargeToolOutputTokenThreshold > 0 {
+		return int64(c.LargeToolOutputTokenThreshold)
+	}
+	return LargeOutputThreshold
+}
+
 // NewMessageDecorator wraps svc with LCM-aware behaviour.
-func NewMessageDecorator(svc message.Service, mgr Manager, queries *db.Queries, sqlDB *sql.DB) message.Service {
+func NewMessageDecorator(svc message.Service, mgr Manager, queries *db.Queries, sqlDB *sql.DB, cfg MessageDecoratorConfig) message.Service {
 	return &messageDecorator{
-		Service: svc,
-		mgr:     mgr,
-		store:   newStore(queries, sqlDB),
-		querier: queries,
-		sqlDB:   sqlDB,
+		Service:   svc,
+		mgr:       mgr,
+		store:     newStore(queries, sqlDB),
+		querier:   queries,
+		sqlDB:     sqlDB,
+		cfg:       cfg,
+		explorers: explorer.NewRegistry(),
 	}
 }
 
@@ -70,7 +89,7 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 		partsText := extractPartsText(params.Parts)
 		tokenCount := EstimateTokens(partsText)
 
-		if tokenCount > LargeOutputThreshold {
+		if !s.cfg.DisableLargeToolOutput && tokenCount > s.cfg.threshold() {
 			fileID, err := s.store.InsertLargeTextContent(ctx, sessionID, partsText, "")
 			if err != nil {
 				// Storage failed — fall back to deterministic truncation.
@@ -84,6 +103,8 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 					message.TextContent{Text: truncated + suffix},
 				}
 			} else {
+				s.persistLargeOutputExploration(ctx, sessionID, fileID, partsText)
+
 				preview := truncateString(partsText, previewChars)
 				ref := fmt.Sprintf("[Large Tool Output Stored: %s]\nLCM File ID: %s\n\nPreview (first %d chars):\n%s",
 					fileID, fileID, previewChars, preview)
@@ -281,4 +302,43 @@ func truncateString(s string, maxChars int) string {
 		return s
 	}
 	return string(runes[:maxChars])
+}
+
+func (s *messageDecorator) persistLargeOutputExploration(ctx context.Context, sessionID, fileID, content string) {
+	if s.explorers == nil {
+		return
+	}
+
+	result, err := s.explorers.Explore(ctx, explorer.ExploreInput{
+		Path:      filepath.Base(fileID),
+		Content:   []byte(content),
+		SessionID: sessionID,
+	})
+	if err != nil {
+		slog.Warn("LCM exploration failed for large tool output",
+			"session_id", sessionID,
+			"file_id", fileID,
+			"error", err,
+		)
+		return
+	}
+
+	summary := strings.TrimSpace(result.Summary)
+	explorerUsed := strings.TrimSpace(result.ExplorerUsed)
+	if summary == "" || explorerUsed == "" {
+		return
+	}
+
+	err = s.querier.UpdateLcmLargeFileExploration(ctx, db.UpdateLcmLargeFileExplorationParams{
+		ExplorationSummary: sql.NullString{String: summary, Valid: true},
+		ExplorerUsed:       sql.NullString{String: explorerUsed, Valid: true},
+		FileID:             fileID,
+	})
+	if err != nil {
+		slog.Warn("Failed to persist LCM exploration for large tool output",
+			"session_id", sessionID,
+			"file_id", fileID,
+			"error", err,
+		)
+	}
 }

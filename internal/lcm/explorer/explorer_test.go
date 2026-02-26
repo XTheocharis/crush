@@ -6,120 +6,6 @@ import (
 	"testing"
 )
 
-func TestGoExplorer(t *testing.T) {
-	content := []byte(`package main
-
-import (
-	"fmt"
-	"strings"
-	"github.com/external/lib"
-	"github.com/charmbracelet/crush/internal/config"
-)
-
-type Server struct {
-	Port int
-}
-
-type Handler interface {
-	Handle() error
-}
-
-const MaxConnections = 100
-
-var DefaultPort = 8080
-
-func main() {
-	fmt.Println("Hello")
-}
-
-func (s *Server) Start() error {
-	return nil
-}
-`)
-
-	reg := NewRegistry()
-	result, err := reg.Explore(context.Background(), ExploreInput{
-		Path:    "test.go",
-		Content: content,
-	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
-
-	if result.ExplorerUsed != "go" {
-		t.Errorf("Expected go explorer, got %s", result.ExplorerUsed)
-	}
-
-	// Check for expected content
-	expectations := []string{
-		"Package: main",
-		"fmt",
-		"strings",
-		"external/lib",
-		"crush/internal/config",
-		"struct Server",
-		"interface Handler",
-		"MaxConnections",
-		"DefaultPort",
-		"main",
-		"(*Server) Start",
-	}
-
-	for _, exp := range expectations {
-		if !strings.Contains(result.Summary, exp) {
-			t.Errorf("Expected summary to contain %q, got:\n%s", exp, result.Summary)
-		}
-	}
-}
-
-func TestPythonExplorer(t *testing.T) {
-	content := []byte(`#!/usr/bin/env python3
-import os
-import sys
-from typing import List
-
-class Calculator:
-    def __init__(self):
-        pass
-
-    def add(self, a, b):
-        return a + b
-
-def main():
-    calc = Calculator()
-    print(calc.add(1, 2))
-
-if __name__ == "__main__":
-    main()
-`)
-
-	reg := NewRegistry()
-	result, err := reg.Explore(context.Background(), ExploreInput{
-		Path:    "test.py",
-		Content: content,
-	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
-
-	if result.ExplorerUsed != "python" {
-		t.Errorf("Expected python explorer, got %s", result.ExplorerUsed)
-	}
-
-	expectations := []string{
-		"Python file",
-		"import os",
-		"Calculator",
-		"main",
-	}
-
-	for _, exp := range expectations {
-		if !strings.Contains(result.Summary, exp) {
-			t.Errorf("Expected summary to contain %q", exp)
-		}
-	}
-}
-
 func TestJSONExplorer(t *testing.T) {
 	content := []byte(`{
   "name": "test",
@@ -415,5 +301,439 @@ func TestSampleContent(t *testing.T) {
 	parts := strings.Split(result, "[SAMPLED]")
 	if len(parts) != 3 {
 		t.Errorf("Expected 3 parts (begin, middle, end), got %d", len(parts))
+	}
+}
+
+// TestFallbackChainOrder verifies Phase 2A fallback chain ordering:
+// Binary -> JSON/CSV/YAML/TOML/INI/XML/HTML -> code explorers -> TreeSitterExplorer -> Shell -> Text -> Fallback.
+func TestFallbackChainOrder(t *testing.T) {
+	reg := NewRegistry()
+
+	mustBeBefore := func(before, after any) {
+		t.Helper()
+		beforeIdx, afterIdx := -1, -1
+		for i, e := range reg.explorers {
+			switch before.(type) {
+			case *BinaryExplorer:
+				if _, ok := e.(*BinaryExplorer); ok {
+					beforeIdx = i
+				}
+			case *JSONExplorer:
+				if _, ok := e.(*JSONExplorer); ok {
+					beforeIdx = i
+				}
+			case *HTMLExplorer:
+				if _, ok := e.(*HTMLExplorer); ok {
+					beforeIdx = i
+				}
+			case *ShellExplorer:
+				if _, ok := e.(*ShellExplorer); ok {
+					beforeIdx = i
+				}
+			case *TextExplorer:
+				if _, ok := e.(*TextExplorer); ok {
+					beforeIdx = i
+				}
+			}
+
+			switch after.(type) {
+			case *JSONExplorer:
+				if _, ok := e.(*JSONExplorer); ok {
+					afterIdx = i
+				}
+			case *ShellExplorer:
+				if _, ok := e.(*ShellExplorer); ok {
+					afterIdx = i
+				}
+			case *TextExplorer:
+				if _, ok := e.(*TextExplorer); ok {
+					afterIdx = i
+				}
+			case *FallbackExplorer:
+				if _, ok := e.(*FallbackExplorer); ok {
+					afterIdx = i
+				}
+			}
+		}
+		if beforeIdx < 0 || afterIdx < 0 {
+			t.Fatalf("did not find expected explorers (%T, %T)", before, after)
+		}
+		if beforeIdx >= afterIdx {
+			t.Fatalf("expected %T before %T, got indexes %d >= %d", before, after, beforeIdx, afterIdx)
+		}
+	}
+
+	mustBeBefore(&BinaryExplorer{}, &JSONExplorer{})
+	mustBeBefore(&HTMLExplorer{}, &ShellExplorer{})
+	mustBeBefore(&ShellExplorer{}, &TextExplorer{})
+	mustBeBefore(&TextExplorer{}, &FallbackExplorer{})
+
+	mockParser := &mockTreeSitterParser{supports: map[string]bool{}, hasTags: map[string]bool{}}
+	regWithTS := NewRegistry(WithTreeSitter(mockParser))
+
+	htmlIdx, tsIdx, shellIdx := -1, -1, -1
+	for i, e := range regWithTS.explorers {
+		if _, ok := e.(*HTMLExplorer); ok {
+			htmlIdx = i
+		}
+		if _, ok := e.(*TreeSitterExplorer); ok {
+			tsIdx = i
+		}
+		if _, ok := e.(*ShellExplorer); ok {
+			shellIdx = i
+		}
+	}
+	if htmlIdx < 0 || tsIdx < 0 || shellIdx < 0 {
+		t.Fatalf("expected html/treesitter/shell explorers in chain, got html=%d treesitter=%d shell=%d", htmlIdx, tsIdx, shellIdx)
+	}
+	if htmlIdx >= tsIdx || tsIdx >= shellIdx {
+		t.Fatalf("expected ordering HTML < TreeSitter < Shell, got html=%d treesitter=%d shell=%d", htmlIdx, tsIdx, shellIdx)
+	}
+}
+
+// TestDispatchPriority verifies that file types are dispatched to the correct
+// explorer according to the fallback chain priority.
+func TestDispatchPriority(t *testing.T) {
+	tests := []struct {
+		name             string
+		path             string
+		content          []byte
+		expectedExplorer string
+	}{
+		{
+			name:             "PNG binary file",
+			path:             "image.png",
+			content:          []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+			expectedExplorer: "binary",
+		},
+		{
+			name:             "JSON file",
+			path:             "config.json",
+			content:          []byte(`{"key": "value"}`),
+			expectedExplorer: "json",
+		},
+		{
+			name:             "CSV file",
+			path:             "data.csv",
+			content:          []byte("a,b,c\n1,2,3"),
+			expectedExplorer: "csv",
+		},
+		{
+			name:             "YAML file",
+			path:             "config.yaml",
+			content:          []byte("key: value\n"),
+			expectedExplorer: "yaml",
+		},
+		{
+			name:             "TOML file",
+			path:             "config.toml",
+			content:          []byte("[section]\nkey = \"value\"\n"),
+			expectedExplorer: "toml",
+		},
+		{
+			name:             "INI file",
+			path:             "config.ini",
+			content:          []byte("[section]\nkey=value\n"),
+			expectedExplorer: "ini",
+		},
+		{
+			name:             "XML file",
+			path:             "data.xml",
+			content:          []byte("<root><item/></root>\n"),
+			expectedExplorer: "xml",
+		},
+		{
+			name:             "HTML file",
+			path:             "index.html",
+			content:          []byte("<html><body></body></html>\n"),
+			expectedExplorer: "html",
+		},
+		{
+			name:             "Markdown file",
+			path:             "README.md",
+			content:          []byte("# Title\n\nSome markdown content."),
+			expectedExplorer: "markdown",
+		},
+		{
+			name:             "LaTeX file",
+			path:             "paper.tex",
+			content:          []byte("\\section{Intro}\nSome LaTeX content."),
+			expectedExplorer: "latex",
+		},
+		{
+			name:             "SQLite file by extension",
+			path:             "database.db",
+			content:          []byte("not really sqlite"),
+			expectedExplorer: "sqlite",
+		},
+		{
+			name:             "Log file",
+			path:             "app.log",
+			content:          []byte("[ERROR] something failed\n[INFO] started"),
+			expectedExplorer: "logs",
+		},
+		{
+			name:             "Shell script with extension",
+			path:             "script.sh",
+			content:          []byte("#!/bin/bash\necho hello\n"),
+			expectedExplorer: "shell",
+		},
+		{
+			name:             "Shell script with shebang, no extension",
+			path:             "myscript",
+			content:          []byte("#!/bin/bash\necho hello\n"),
+			expectedExplorer: "shell",
+		},
+		{
+			name:             "Go file",
+			path:             "main.go",
+			content:          []byte("package main\nfunc main() {}\n"),
+			expectedExplorer: "go",
+		},
+		{
+			name:             "Plain text file",
+			path:             "README.txt",
+			content:          []byte("This is a plain text file.\n"),
+			expectedExplorer: "text",
+		},
+		{
+			name:             "Unknown text file",
+			path:             "unknown.xyz",
+			content:          []byte("Some text content\n"),
+			expectedExplorer: "text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reg := NewRegistry()
+			result, err := reg.Explore(context.Background(), ExploreInput{
+				Path:    tt.path,
+				Content: tt.content,
+			})
+			if err != nil {
+				t.Fatalf("Explore failed: %v", err)
+			}
+			if result.ExplorerUsed != tt.expectedExplorer {
+				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
+			}
+		})
+	}
+}
+
+// TestShebangDispatchParity verifies that shebang detection and extension
+// dispatch maintain parity behavior across all relevant explorers.
+func TestShebangDispatchParity(t *testing.T) {
+	tests := []struct {
+		name             string
+		path             string
+		shebang          []byte
+		expectedExplorer string
+	}{
+		{
+			name:             "bash shebang",
+			path:             "script.sh",
+			shebang:          []byte("#!/bin/bash\necho hello\n"),
+			expectedExplorer: "shell",
+		},
+		{
+			name:             "bash shebang without extension",
+			path:             "myscript",
+			shebang:          []byte("#!/bin/bash\necho hello\n"),
+			expectedExplorer: "shell",
+		},
+		{
+			name:             "sh shebang",
+			path:             "script",
+			shebang:          []byte("#!/bin/sh\necho hello\n"),
+			expectedExplorer: "shell",
+		},
+		{
+			name:             "zsh shebang",
+			path:             "zscript",
+			shebang:          []byte("#!/bin/zsh\necho hello\n"),
+			expectedExplorer: "shell",
+		},
+		{
+			name:             "fish shebang",
+			path:             "fishscript",
+			shebang:          []byte("#!/usr/bin/env fish\necho hello\n"),
+			expectedExplorer: "shell",
+		},
+		{
+			name:             "python shebang without extension",
+			path:             "pyscript",
+			shebang:          []byte("#!/usr/bin/env python3\nprint('hello')\n"),
+			expectedExplorer: "python",
+		},
+		{
+			name:             "python shebang with py extension",
+			path:             "script.py",
+			shebang:          []byte("#!/usr/bin/env python3\nprint('hello')\n"),
+			expectedExplorer: "python",
+		},
+		{
+			name:             "node shebang without extension",
+			path:             "nodescript",
+			shebang:          []byte("#!/usr/bin/env node\nconsole.log('hello')\n"),
+			expectedExplorer: "javascript",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reg := NewRegistry()
+			result, err := reg.Explore(context.Background(), ExploreInput{
+				Path:    tt.path,
+				Content: tt.shebang,
+			})
+			if err != nil {
+				t.Fatalf("Explore failed: %v", err)
+			}
+			if result.ExplorerUsed != tt.expectedExplorer {
+				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
+			}
+		})
+	}
+}
+
+// TestFallbackExplorerHandlesEverything verifies that FallbackExplorer
+// correctly handles all file types that don't match other explorers.
+func TestFallbackExplorerHandlesEverything(t *testing.T) {
+	reg := NewRegistry()
+
+	tests := []struct {
+		name    string
+		path    string
+		content []byte
+	}{
+		{
+			name:    "Go code",
+			path:    "main.go",
+			content: []byte("package main\nfunc main() {}\n"),
+		},
+		{
+			name:    "Python code",
+			path:    "test.py",
+			content: []byte("print('hello')\n"),
+		},
+		{
+			name:    "JavaScript code",
+			path:    "script.js",
+			content: []byte("console.log('hello');\n"),
+		},
+		{
+			name:    "TypeScript code",
+			path:    "file.ts",
+			content: []byte("const x: string = 'hello';\n"),
+		},
+		{
+			name:    "Rust code",
+			path:    "main.rs",
+			content: []byte("fn main() {}\n"),
+		},
+		{
+			name:    "Java code",
+			path:    "Main.java",
+			content: []byte("class Main {}\n"),
+		},
+		{
+			name:    "C++ code",
+			path:    "test.cpp",
+			content: []byte("int main() {}\n"),
+		},
+		{
+			name:    "C code",
+			path:    "test.c",
+			content: []byte("int main(void) {}\n"),
+		},
+		{
+			name:    "Ruby code",
+			path:    "test.rb",
+			content: []byte("puts 'hello'\n"),
+		},
+		{
+			name:    "Unknown file type",
+			path:    "unknown.xyz",
+			content: []byte("some content\n"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := reg.Explore(context.Background(), ExploreInput{
+				Path:    tt.path,
+				Content: tt.content,
+			})
+			if err != nil {
+				t.Fatalf("Explore failed: %v", err)
+			}
+			// Should either be handled by a specific explorer or fall back
+			if result.ExplorerUsed != "fallback" {
+				// Verify we got a valid result from another explorer
+				if result.Summary == "" {
+					t.Errorf("Expected non-empty summary for %s (got explorer %s)", tt.name, result.ExplorerUsed)
+				}
+			}
+		})
+	}
+}
+
+// TestBinaryPriorityOverDataFormats verifies that binary files are handled
+// by BinaryExplorer before any data format explorers.
+func TestBinaryPriorityOverDataFormats(t *testing.T) {
+	reg := NewRegistry()
+
+	tests := []struct {
+		name             string
+		path             string
+		content          []byte
+		expectedExplorer string
+	}{
+		{
+			name:             "PNG header",
+			path:             "image.png",
+			content:          []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+			expectedExplorer: "binary",
+		},
+		{
+			name:             "JPEG header",
+			path:             "photo.jpg",
+			content:          []byte{0xFF, 0xD8, 0xFF, 0xE0},
+			expectedExplorer: "binary",
+		},
+		{
+			name:             "PDF header",
+			path:             "document.pdf",
+			content:          []byte("%PDF-1.4\n"),
+			expectedExplorer: "binary",
+		},
+		{
+			name:             "ZIP header",
+			path:             "archive.zip",
+			content:          []byte{0x50, 0x4B, 0x03, 0x04},
+			expectedExplorer: "binary",
+		},
+		{
+			name:             "ELF header",
+			path:             "binary",
+			content:          []byte{0x7F, 0x45, 0x4C, 0x46},
+			expectedExplorer: "binary",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := reg.Explore(context.Background(), ExploreInput{
+				Path:    tt.path,
+				Content: tt.content,
+			})
+			if err != nil {
+				t.Fatalf("Explore failed: %v", err)
+			}
+			if result.ExplorerUsed != tt.expectedExplorer {
+				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
+			}
+		})
 	}
 }

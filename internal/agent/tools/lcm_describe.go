@@ -9,9 +9,12 @@ import (
 	"charm.land/fantasy"
 )
 
+var errLCMAccessDenied = fmt.Errorf("lcm access denied")
+
 const (
 	LcmDescribeToolName       = "lcm_describe"
 	maxDescribeContentPreview = 2000
+	lcmMissingSessionIDError  = "Session ID not found in context"
 )
 
 type LcmDescribeParams struct {
@@ -43,20 +46,39 @@ func NewLcmDescribeTool(sqlDB *sql.DB) fantasy.AgentTool {
 				return fantasy.NewTextErrorResponse("id is required"), nil
 			}
 
+			sessionID := GetSessionFromContext(ctx)
+			if sessionID == "" {
+				return fantasy.NewTextErrorResponse(lcmMissingSessionIDError), nil
+			}
+
 			// Dispatch based on prefix
 			if strings.HasPrefix(params.ID, "file_") {
-				return describeFile(ctx, sqlDB, params.ID)
+				return describeFile(ctx, sqlDB, sessionID, params.ID)
 			} else if strings.HasPrefix(params.ID, "sum_") {
-				return describeSummary(ctx, sqlDB, params.ID)
+				return describeSummary(ctx, sqlDB, sessionID, params.ID)
 			} else {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Invalid ID format: %s (must start with file_ or sum_)", params.ID)), nil
 			}
 		})
 }
 
-func describeFile(ctx context.Context, db *sql.DB, fileID string) (fantasy.ToolResponse, error) {
-	query := `SELECT original_path, content, token_count, exploration_summary, explorer_used
-	          FROM lcm_large_files WHERE file_id = ?`
+func describeFile(ctx context.Context, db *sql.DB, callerSessionID, fileID string) (fantasy.ToolResponse, error) {
+	query := `SELECT lf.original_path, lf.content, lf.token_count, lf.exploration_summary, lf.explorer_used
+	          FROM lcm_large_files lf
+	          WHERE lf.file_id = ?
+	          AND EXISTS (
+	            WITH RECURSIVE lineage(id) AS (
+	                SELECT ?
+	                UNION
+	                SELECT s.parent_session_id
+	                FROM sessions s
+	                JOIN lineage l ON s.id = l.id
+	                WHERE s.parent_session_id IS NOT NULL
+	            )
+	            SELECT 1
+	            FROM lineage
+	            WHERE id = lf.session_id
+	          )`
 
 	var originalPath string
 	var content sql.NullString
@@ -64,11 +86,18 @@ func describeFile(ctx context.Context, db *sql.DB, fileID string) (fantasy.ToolR
 	var explorationSummary sql.NullString
 	var explorerUsed sql.NullString
 
-	err := db.QueryRowContext(ctx, query, fileID).Scan(
+	err := db.QueryRowContext(ctx, query, fileID, callerSessionID).Scan(
 		&originalPath, &content, &tokenCount, &explorationSummary, &explorerUsed,
 	)
 
 	if err == sql.ErrNoRows {
+		exists, checkErr := lcmFileExists(ctx, db, fileID)
+		if checkErr != nil {
+			return fantasy.ToolResponse{}, fmt.Errorf("error checking file existence: %w", checkErr)
+		}
+		if exists {
+			return fantasy.NewTextErrorResponse(fmt.Sprintf("Access denied: %s is outside this session lineage", fileID)), nil
+		}
 		return fantasy.NewTextErrorResponse(fmt.Sprintf("File not found: %s", fileID)), nil
 	}
 	if err != nil {
@@ -102,18 +131,40 @@ func describeFile(ctx context.Context, db *sql.DB, fileID string) (fantasy.ToolR
 	return fantasy.NewTextResponse(output.String()), nil
 }
 
-func describeSummary(ctx context.Context, db *sql.DB, summaryID string) (fantasy.ToolResponse, error) {
+func describeSummary(ctx context.Context, db *sql.DB, callerSessionID, summaryID string) (fantasy.ToolResponse, error) {
 	// Get summary info
-	query := `SELECT kind, content, token_count, file_ids FROM lcm_summaries WHERE summary_id = ?`
+	query := `SELECT ls.kind, ls.content, ls.token_count, ls.file_ids
+	          FROM lcm_summaries ls
+	          WHERE ls.summary_id = ?
+	          AND EXISTS (
+	            WITH RECURSIVE lineage(id) AS (
+	                SELECT ?
+	                UNION
+	                SELECT s.parent_session_id
+	                FROM sessions s
+	                JOIN lineage l ON s.id = l.id
+	                WHERE s.parent_session_id IS NOT NULL
+	            )
+	            SELECT 1
+	            FROM lineage
+	            WHERE id = ls.session_id
+	          )`
 
 	var kind string
 	var content string
 	var tokenCount int64
 	var fileIDs string
 
-	err := db.QueryRowContext(ctx, query, summaryID).Scan(&kind, &content, &tokenCount, &fileIDs)
+	err := db.QueryRowContext(ctx, query, summaryID, callerSessionID).Scan(&kind, &content, &tokenCount, &fileIDs)
 
 	if err == sql.ErrNoRows {
+		exists, checkErr := lcmSummaryExists(ctx, db, summaryID)
+		if checkErr != nil {
+			return fantasy.ToolResponse{}, fmt.Errorf("error checking summary existence: %w", checkErr)
+		}
+		if exists {
+			return fantasy.NewTextErrorResponse(fmt.Sprintf("Access denied: %s is outside this session lineage", summaryID)), nil
+		}
 		return fantasy.NewTextErrorResponse(fmt.Sprintf("Summary not found: %s", summaryID)), nil
 	}
 	if err != nil {
@@ -160,4 +211,45 @@ func describeSummary(ctx context.Context, db *sql.DB, summaryID string) (fantasy
 	fmt.Fprintf(&output, "\nContent:\n%s\n", content)
 
 	return fantasy.NewTextResponse(output.String()), nil
+}
+
+func lcmFileExists(ctx context.Context, db *sql.DB, fileID string) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM lcm_large_files WHERE file_id = ?)`
+	if err := db.QueryRowContext(ctx, query, fileID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func lcmSummaryExists(ctx context.Context, db *sql.DB, summaryID string) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM lcm_summaries WHERE summary_id = ?)`
+	if err := db.QueryRowContext(ctx, query, summaryID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func lcmSummaryInSessionLineage(ctx context.Context, db *sql.DB, callerSessionID, summaryID string) (bool, error) {
+	var inLineage bool
+	query := `
+SELECT EXISTS (
+    WITH RECURSIVE lineage(id) AS (
+        SELECT ?
+        UNION
+        SELECT s.parent_session_id
+        FROM sessions s
+        JOIN lineage l ON s.id = l.id
+        WHERE s.parent_session_id IS NOT NULL
+    )
+    SELECT 1
+    FROM lcm_summaries ls
+    WHERE ls.summary_id = ?
+      AND ls.session_id IN (SELECT id FROM lineage)
+)`
+	if err := db.QueryRowContext(ctx, query, callerSessionID, summaryID).Scan(&inLineage); err != nil {
+		return false, err
+	}
+	return inLineage, nil
 }

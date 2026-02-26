@@ -1,0 +1,11 @@
+id,name,email,department,hire_date,salary,active
+1,Alice Johnson,alice@example.com,Engineering,2020-01-15,120000,true
+2,Bob Smith,bob@example.com,Sales,2019-03-22,95000,true
+3,Charlie Brown,charlie@example.com,Marketing,2021-07-10,85000,true
+4,Diana Prince,diana@example.com,Engineering,2018-11-05,130000,true
+5,Eve Davis,eve@example.com,HR,2020-06-20,75000,false
+6,Frank Miller,frank@example.com,Sales,2019-09-30,98000,true
+7,Grace Lee,grace@example.com,Engineering,2022-02-28,115000,true
+8,Henry Wilson,henry@example.com,Operations,2020-12-01,80000,true
+9,Ivy Chen,ivy@example.com,Marketing,2021-04-15,88000,true
+10,Jack Robinson,jack@example.com,Engineering,2019-01-10,125000,true

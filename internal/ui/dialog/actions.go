@@ -66,6 +66,7 @@ type (
 	}
 	// ActionRunCustomCommand is a message to run a custom command.
 	ActionRunCustomCommand struct {
+		CommandID string
 		Content   string
 		Arguments []commands.Argument
 		Args      map[string]string // Actual argument values

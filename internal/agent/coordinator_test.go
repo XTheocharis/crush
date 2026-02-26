@@ -5,9 +5,64 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/agent/tools"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/stretchr/testify/require"
 )
+
+func toolNames(ts []fantasy.AgentTool) []string {
+	names := make([]string, 0, len(ts))
+	for _, t := range ts {
+		names = append(names, t.Info().Name)
+	}
+	return names
+}
+
+func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
+	env := testEnv(t)
+
+	cfgDisabled, err := config.Init(env.workingDir, "", false)
+	require.NoError(t, err)
+	cfgDisabled.Options.DisabledTools = []string{"map_refresh"}
+	cfgDisabled.SetupAgents()
+
+	cDisabled := &coordinator{
+		cfg:         cfgDisabled,
+		sessions:    env.sessions,
+		messages:    env.messages,
+		permissions: permission.NewPermissionService(env.workingDir, true, nil),
+		history:     env.history,
+		filetracker: *env.filetracker,
+	}
+
+	coderTools, err := cDisabled.buildTools(t.Context(), cfgDisabled.Agents[config.AgentCoder])
+	require.NoError(t, err)
+	require.NotContains(t, toolNames(coderTools), tools.MapRefreshToolName)
+
+	cfgEnabled, err := config.Init(env.workingDir, "", false)
+	require.NoError(t, err)
+	cfgEnabled.SetupAgents()
+
+	cEnabled := &coordinator{
+		cfg:         cfgEnabled,
+		sessions:    env.sessions,
+		messages:    env.messages,
+		permissions: permission.NewPermissionService(env.workingDir, true, nil),
+		history:     env.history,
+		filetracker: *env.filetracker,
+	}
+
+	coderTools, err = cEnabled.buildTools(t.Context(), cfgEnabled.Agents[config.AgentCoder])
+	require.NoError(t, err)
+	require.Contains(t, toolNames(coderTools), tools.MapRefreshToolName)
+
+	taskTools, err := cEnabled.buildTools(t.Context(), cfgEnabled.Agents[config.AgentTask])
+	require.NoError(t, err)
+	require.NotContains(t, toolNames(taskTools), tools.MapRefreshToolName)
+	require.NotContains(t, toolNames(taskTools), "map_reset")
+}
 
 func TestRecoverSession(t *testing.T) {
 	t.Run("no messages", func(t *testing.T) {
@@ -330,7 +385,8 @@ func (a *dummyAgent) SetModels(large, small Model) {}
 
 func (a *dummyAgent) SetTools(tools []fantasy.AgentTool) {}
 
-func (a *dummyAgent) SetSystemPrompt(systemPrompt string) {}
+func (a *dummyAgent) SetSystemPrompt(systemPrompt string)         {}
+func (a *dummyAgent) SetPrepareStepHooks(hooks []PrepareStepHook) {}
 
 func (a *dummyAgent) Cancel(sessionID string) {}
 

@@ -68,6 +68,7 @@ type coordinator struct {
 
 	lcm        lcm.Manager
 	extraTools []fantasy.AgentTool
+	repoMapSvc RepoMapService
 
 	currentAgent SessionAgent
 	agents       map[string]SessionAgent
@@ -86,6 +87,7 @@ func NewCoordinator(
 	lspManager *lsp.Manager,
 	lcm lcm.Manager,
 	extraTools []fantasy.AgentTool,
+	opts ...CoordinatorOption,
 ) (Coordinator, error) {
 	c := &coordinator{
 		cfg:         cfg,
@@ -98,6 +100,11 @@ func NewCoordinator(
 		lcm:         lcm,
 		extraTools:  extraTools,
 		agents:      make(map[string]SessionAgent),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(c)
+		}
 	}
 
 	agentCfg, ok := cfg.Agents[config.AgentCoder]
@@ -352,6 +359,11 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 		Messages:             c.messages,
 		Tools:                nil,
 	})
+	if !isSubAgent {
+		if hook := c.buildRepoMapHook(); hook != nil {
+			result.SetPrepareStepHooks([]PrepareStepHook{hook})
+		}
+	}
 
 	c.readyWg.Go(func() error {
 		systemPrompt, err := prompt.Build(ctx, large.Model.Provider(), large.Model.Model(), *c.cfg)
@@ -381,9 +393,6 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		if err != nil {
 			return nil, err
 		}
-		// Append extra tools (e.g., LCM tools).
-		allTools = append(allTools, c.extraTools...)
-
 		allTools = append(allTools, agentTool)
 	}
 
@@ -403,6 +412,21 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		}
 	}
 
+	var mapRefreshSync tools.MapRefreshFn
+	var mapRefreshAsync tools.MapRefreshFn
+	if c.repoMapSvc != nil {
+		mapRefreshSync = func(callCtx context.Context, sessionID string) error {
+			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, 0, 0, true)
+			_, _, err := c.repoMapSvc.Refresh(callCtx, sessionID, opts)
+			return err
+		}
+		mapRefreshAsync = func(callCtx context.Context, sessionID string) error {
+			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, 0, 0, true)
+			c.repoMapSvc.RefreshAsync(sessionID, opts)
+			return nil
+		}
+	}
+
 	allTools = append(allTools,
 		tools.NewBashTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Options.Attribution, modelName),
 		tools.NewJobOutputTool(),
@@ -418,7 +442,11 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		tools.NewTodosTool(c.sessions),
 		tools.NewViewTool(c.lspManager, c.permissions, c.filetracker, c.cfg.WorkingDir(), c.cfg.Options.SkillsPaths...),
 		tools.NewWriteTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
+		tools.NewMapRefreshTool(mapRefreshSync, mapRefreshAsync),
 	)
+
+	// Append extra tools (e.g., LCM tools).
+	allTools = append(allTools, c.extraTools...)
 
 	// Add LSP tools if user has configured LSPs or auto_lsp is enabled (nil or true).
 	if len(c.cfg.LSP) > 0 || c.cfg.Options.AutoLSP == nil || *c.cfg.Options.AutoLSP {

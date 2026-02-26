@@ -1,0 +1,27 @@
+## Log file: app.log
+
+### Overview
+- Size: 1077 bytes
+- Total lines: 16
+
+### Level distribution
+- DEBUG: 3 (18.8%)
+- ERROR: 4 (25.0%)
+- INFO: 4 (25.0%)
+- TRACE: 1 (6.2%)
+- WARN: 3 (18.8%)
+
+### Timestamp patterns
+- CommonLog: 1 occurrences
+- ISO8601: 12 occurrences
+- RFC3339: 1 occurrences
+- Syslog: 1 occurrences
+
+### Sample errors/warnings
+- 1. 2024-01-15 10:30:45.123 [ERROR] Failed to connect to database: connection timeout
+- 2. 2024-01-15 10:30:49.345 [ERROR] Authentication failed for user: admin
+- 3. 2024-01-15 10:30:54.890 [ERROR] Failed to parse JSON response: invalid token at position 42
+- 4. 15/Jan/2024:10:30:58 +0000 [ERROR] Common log format error message
+- 5. 2024-01-15 10:30:47.789 [WARN] Memory usage at 80%, approaching limit
+- 6. 2024-01-15 10:30:53.567 [WARN] Slow query detected: SELECT * FROM large_table (250ms)
+- 7. Jan 15 10:30:57 hostname service[1234]: [WARN] Syslog formatted warning message

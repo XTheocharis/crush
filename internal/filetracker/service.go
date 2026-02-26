@@ -26,19 +26,21 @@ type Service interface {
 }
 
 type service struct {
-	q *db.Queries
+	q          *db.Queries
+	workingDir string
 }
 
 // NewService creates a new file tracker service.
-func NewService(q *db.Queries) Service {
-	return &service{q: q}
+// workingDir is the base directory used for path relativization.
+func NewService(q *db.Queries, workingDir string) Service {
+	return &service{q: q, workingDir: workingDir}
 }
 
 // RecordRead records when a file was read.
 func (s *service) RecordRead(ctx context.Context, sessionID, path string) {
 	if err := s.q.RecordFileRead(ctx, db.RecordFileReadParams{
 		SessionID: sessionID,
-		Path:      relpath(path),
+		Path:      relpath(path, s.workingDir),
 	}); err != nil {
 		slog.Error("Error recording file read", "error", err, "file", path)
 	}
@@ -49,7 +51,7 @@ func (s *service) RecordRead(ctx context.Context, sessionID, path string) {
 func (s *service) LastReadTime(ctx context.Context, sessionID, path string) time.Time {
 	readFile, err := s.q.GetFileRead(ctx, db.GetFileReadParams{
 		SessionID: sessionID,
-		Path:      relpath(path),
+		Path:      relpath(path, s.workingDir),
 	})
 	if err != nil {
 		return time.Time{}
@@ -58,12 +60,17 @@ func (s *service) LastReadTime(ctx context.Context, sessionID, path string) time
 	return time.Unix(readFile.ReadAt, 0)
 }
 
-func relpath(path string) string {
+func relpath(path string, workingDir string) string {
 	path = filepath.Clean(path)
-	basepath, err := os.Getwd()
-	if err != nil {
-		slog.Warn("Error getting basepath", "error", err)
-		return path
+	basepath := workingDir
+	if basepath == "" {
+		// Fallback to os.Getwd() if workingDir is empty for backward compatibility
+		var err error
+		basepath, err = os.Getwd()
+		if err != nil {
+			slog.Warn("Error getting basepath", "error", err)
+			return path
+		}
 	}
 	relpath, err := filepath.Rel(basepath, path)
 	if err != nil {
@@ -80,9 +87,14 @@ func (s *service) ListReadFiles(ctx context.Context, sessionID string) ([]string
 		return nil, fmt.Errorf("listing read files: %w", err)
 	}
 
-	basepath, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("getting working directory: %w", err)
+	basepath := s.workingDir
+	if basepath == "" {
+		// Fallback to os.Getwd() if workingDir is empty for backward compatibility
+		var err error
+		basepath, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("getting working directory: %w", err)
+		}
 	}
 
 	paths := make([]string, 0, len(readFiles))
