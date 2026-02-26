@@ -52,3 +52,8 @@ completions/crush.*sh
 .prettierignore
 .task
 profiles/
+
+# Local assistant state
+.serena/
+tasks_backup.jsonl
+docs/
