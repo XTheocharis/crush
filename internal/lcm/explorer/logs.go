@@ -12,7 +12,9 @@ import (
 
 // LogsExplorer handles log files, analyzing log levels, timestamp patterns,
 // and sampling error/warning messages.
-type LogsExplorer struct{}
+type LogsExplorer struct {
+	formatterProfile OutputProfile
+}
 
 // logLevels captures common log level patterns, ordered by severity (highest first).
 // Patterns are ordered so bracketed patterns are matched first to capture
@@ -131,6 +133,10 @@ const (
 	logDetectionThreshold = 0.15
 	// maxLinesToScan is the maximum number of lines to scan for detection.
 	maxLinesToScan = 500
+	// maxSignatures is the maximum number of error signatures to display.
+	maxSignatures = 10
+	// maxSignatureLength is the maximum length of a signature to display.
+	maxSignatureLength = 150
 )
 
 // CanHandle returns true if the file appears to be a log file based on
@@ -154,7 +160,7 @@ func (e *LogsExplorer) CanHandle(path string, content []byte) bool {
 	matchingLines := 0
 	linesToCheck := min(len(lines), maxLinesToScan)
 
-	for i := 0; i < linesToCheck; i++ {
+	for i := range linesToCheck {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
 			continue
@@ -195,18 +201,14 @@ func (e *LogsExplorer) Explore(ctx context.Context, input ExploreInput) (Explore
 	tsPatternCounts := make(map[string]int)
 
 	// Count log levels.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		countLogLevels(lines, levelCounts)
-	}()
+	})
 
 	// Count timestamp patterns.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		countTimestampPatterns(lines, tsPatternCounts)
-	}()
+	})
 
 	wg.Wait()
 
@@ -242,6 +244,26 @@ func (e *LogsExplorer) Explore(ctx context.Context, input ExploreInput) (Explore
 		summary.WriteString("\nSample errors/warnings:\n")
 		for i, sample := range samples {
 			fmt.Fprintf(&summary, "  %d. %s\n", i+1, sample)
+		}
+	}
+
+	// EXCEED MODE: Repeated error-signature aggregation
+	if e.formatterProfile == OutputProfileEnhancement {
+		signatures := aggregateErrorSignatures(lines)
+		if len(signatures) > 0 {
+			summary.WriteString("\nRepeated error signatures:\n")
+			for i, sig := range signatures {
+				if i >= maxSignatures {
+					overflow := overflowMarker(OutputProfileEnhancement, len(signatures)-maxSignatures, false)
+					fmt.Fprintf(&summary, "  %s\n", overflow)
+					break
+				}
+				sigDisplay := sig.signature
+				if len(sigDisplay) > maxSignatureLength {
+					sigDisplay = sigDisplay[:maxSignatureLength] + "..."
+				}
+				fmt.Fprintf(&summary, "  %s: %d occurrences\n", sigDisplay, sig.count)
+			}
 		}
 	}
 
@@ -429,6 +451,122 @@ func sortedTimestampPatternNames(counts map[string]int) []string {
 	})
 
 	return names
+}
+
+// errorSignature represents an error signature with its occurrence count.
+type errorSignature struct {
+	signature string
+	count     int
+}
+
+// aggregateErrorSignatures aggregates error and warning messages into signatures,
+// removing dynamic elements like timestamps, IDs, paths, and UUIDs for exceed mode.
+func aggregateErrorSignatures(lines []string) []errorSignature {
+	sigCounts := make(map[string]int)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Check if this is an error or warning line
+		isError := false
+		for _, lvl := range logLevels[0].patterns {
+			if lvl.MatchString(line) {
+				isError = true
+				break
+			}
+		}
+		if !isError {
+			for _, lvl := range logLevels[1].patterns {
+				if lvl.MatchString(line) {
+					isError = true
+					break
+				}
+			}
+		}
+		if !isError {
+			continue
+		}
+
+		// Generate signature by normalizing the line
+		signature := normalizeForSignature(line)
+		sigCounts[signature]++
+	}
+
+	// Build sorted list by count (descending)
+	signatures := make([]errorSignature, 0, len(sigCounts))
+	for sig, count := range sigCounts {
+		if count >= 2 { // Only include repeated errors (2+ occurrences)
+			signatures = append(signatures, errorSignature{
+				signature: sig,
+				count:     count,
+			})
+		}
+	}
+
+	// Sort by count (descending)
+	sort.Slice(signatures, func(i, j int) bool {
+		if signatures[i].count != signatures[j].count {
+			return signatures[i].count > signatures[j].count
+		}
+		return signatures[i].signature < signatures[j].signature
+	})
+
+	return signatures
+}
+
+// normalizeForSignature normalizes a log line to create a signature by removing
+// dynamic elements like timestamps, IDs, paths, and UUIDs.
+func normalizeForSignature(line string) string {
+	sig := line
+
+	// Remove timestamps (all timestamp patterns)
+	for _, ts := range timestampPatterns {
+		sig = ts.pattern.ReplaceAllString(sig, `<ts:`+ts.name+`>`)
+	}
+
+	// Remove UUID-like patterns (8-4-4-4-12 hex)
+	sig = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`).ReplaceAllString(sig, `<uuid>`)
+
+	// Remove hexadecimal IDs (commonly used for hashes, object IDs)
+	sig = regexp.MustCompile(`\b0x[0-9a-fA-F]+\b`).ReplaceAllString(sig, `<hex>`)
+	sig = regexp.MustCompile(`\b[0-9a-fA-F]{16,}\b`).ReplaceAllString(sig, `<hex>`) // Long hex strings
+
+	// Remove numeric IDs (sequences of 3+ digits)
+	sig = regexp.MustCompile(`\b[0-9]{3,}\b`).ReplaceAllString(sig, `<num>`)
+
+	// Remove IPv4 addresses
+	sig = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`).ReplaceAllString(sig, `<ip>`)
+
+	// Remove IPv6 addresses (simplified)
+	sig = regexp.MustCompile(`\b[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){1,7}\b`).ReplaceAllString(sig, `<ip6>`)
+
+	// Remove file paths with varying names
+	sig = regexp.MustCompile(`(/[a-zA-Z0-9_\-\.]+)+(/[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,})?`).ReplaceAllString(sig, `<path>`)
+	sig = regexp.MustCompile(`[A-Za-z]:\\([a-zA-Z0-9_\-\.]+\\)+`).ReplaceAllString(sig, `<path>`)
+
+	// Remove common variable patterns like ${VAR} or %VAR%
+	sig = regexp.MustCompile(`\$\{[^}]+\}`).ReplaceAllString(sig, `<env>`)
+	sig = regexp.MustCompile(`%[^%]+%`).ReplaceAllString(sig, `<env>`)
+
+	// Remove memory addresses (0x7ff...)
+	sig = regexp.MustCompile(`0x[0-9a-f]{10,16}p?`).ReplaceAllString(sig, `<addr>`)
+
+	// Remove port numbers after colons (common in URLs)
+	sig = regexp.MustCompile(`:\d{2,5}\b`).ReplaceAllString(sig, `:<port>`)
+
+	// Trim and collapse multiple spaces
+	sig = regexp.MustCompile(`\s+`).ReplaceAllString(sig, ` `)
+	sig = strings.TrimSpace(sig)
+
+	// Add prefix to indicate signature type
+	prefix := "SIG:"
+	if strings.Contains(sig, "[W") || strings.Contains(sig, "[WARN") {
+		prefix = "WARN-SIG:"
+	}
+	return prefix + sig
 }
 
 // parseLogLine extracts components from a log line for analysis.

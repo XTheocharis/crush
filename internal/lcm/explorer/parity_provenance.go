@@ -11,6 +11,24 @@ var (
 	voltSHA256Pattern = regexp.MustCompile(`\A[0-9a-fA-F]{64}\z`)
 )
 
+func isPlaceholderCommitSHA(sha string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(sha))
+	return trimmed == strings.Repeat("0", 40) ||
+		trimmed == strings.Repeat("c", 40)
+}
+
+func isPlaceholderFixtureHash(hash string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(hash))
+	return trimmed == strings.Repeat("d", 64) ||
+		trimmed == "placeholder_compute_before_use"
+}
+
+func isPlaceholderComparatorPath(path string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(path))
+	return strings.Contains(trimmed, "/tree/"+strings.Repeat("0", 40)) ||
+		strings.Contains(trimmed, "placeholder")
+}
+
 // ParityProvenanceBundle contains provenance required by Volt parity adjudication.
 type ParityProvenanceBundle struct {
 	VoltCommitSHA     string `json:"volt_commit_sha"`
@@ -45,11 +63,20 @@ func (b ParityProvenanceBundle) Validate(requireComparatorTuple bool) error {
 	if !voltGitSHAPattern.MatchString(strings.TrimSpace(b.VoltCommitSHA)) {
 		return fmt.Errorf("invalid volt_commit_sha: expected 40-char hex commit SHA")
 	}
+	if isPlaceholderCommitSHA(b.VoltCommitSHA) {
+		return fmt.Errorf("invalid volt_commit_sha: placeholder value is not allowed")
+	}
 	if strings.TrimSpace(b.ComparatorPath) == "" {
 		return fmt.Errorf("missing comparator_path")
 	}
+	if isPlaceholderComparatorPath(b.ComparatorPath) {
+		return fmt.Errorf("invalid comparator_path: placeholder value is not allowed")
+	}
 	if !voltSHA256Pattern.MatchString(strings.TrimSpace(b.FixturesSHA256)) {
 		return fmt.Errorf("invalid fixtures_sha256: expected 64-char hex SHA-256")
+	}
+	if isPlaceholderFixtureHash(b.FixturesSHA256) {
+		return fmt.Errorf("invalid fixtures_sha256: placeholder value is not allowed")
 	}
 	if requireComparatorTuple {
 		if strings.TrimSpace(b.GrepASTProvenance) == "" {
@@ -119,6 +146,13 @@ func validateParityTokenizerTuple(bundle ParityProvenanceBundle, requireComparat
 func validateParityCorpus(basePath string) error {
 	cfg := NewDefaultParityFixtureConfig(basePath)
 	loader := NewParityFixtureLoader(cfg)
+	index, err := loader.LoadIndex()
+	if err != nil {
+		return fmt.Errorf("corpus readiness failed: %w", err)
+	}
+	if err := VerifyFixturesIntegrity(index, cfg); err != nil {
+		return fmt.Errorf("corpus readiness failed: fixture integrity check failed: %w", err)
+	}
 	fixtures, err := loader.LoadAllFixtures()
 	if err != nil {
 		return fmt.Errorf("corpus readiness failed: %w", err)

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -41,12 +43,35 @@ type RuntimeInventory struct {
 	Paths                   []RuntimeIngestionPath `json:"paths"`
 }
 
+// RuntimePersistencePolicy is the persistence contract for a resolved runtime path.
+type RuntimePersistencePolicy struct {
+	PathID   string
+	PathKind string
+	Explorer string
+	Persist  bool
+}
+
+// RuntimePersistenceMatrix resolves path-level persistence behavior by profile.
+type RuntimePersistenceMatrix struct {
+	version           string
+	profile           OutputProfile
+	policyByExplorer  map[string]RuntimePersistencePolicy
+	defaultNonPersist RuntimePersistencePolicy
+}
+
 // LoadRuntimeInventory loads the runtime inventory from disk.
 func LoadRuntimeInventory() (*RuntimeInventory, error) {
-	artifactPath := RuntimeInventoryPath
-	content, err := os.ReadFile(artifactPath)
+	content, err := os.ReadFile(RuntimeInventoryPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read runtime inventory: %w", err)
+		_, thisFile, _, ok := runtime.Caller(0)
+		if !ok {
+			return nil, fmt.Errorf("failed to read runtime inventory: %w", err)
+		}
+		altPath := filepath.Join(filepath.Dir(thisFile), RuntimeInventoryPath)
+		content, err = os.ReadFile(altPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read runtime inventory: %w", err)
+		}
 	}
 
 	var inventory RuntimeInventory
@@ -55,6 +80,203 @@ func LoadRuntimeInventory() (*RuntimeInventory, error) {
 	}
 
 	return &inventory, nil
+}
+
+// LoadRuntimePersistenceMatrix builds a versioned runtime persistence matrix
+// from the runtime inventory.
+func LoadRuntimePersistenceMatrix(profile OutputProfile) (*RuntimePersistenceMatrix, error) {
+	inventory, err := LoadRuntimeInventory()
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateInventory(inventory); err != nil {
+		return nil, fmt.Errorf("invalid runtime inventory for persistence matrix: %w", err)
+	}
+
+	resolvedProfile := strings.ToLower(strings.TrimSpace(string(profile)))
+	if resolvedProfile == "" {
+		resolvedProfile = strings.ToLower(strings.TrimSpace(inventory.Profile))
+	}
+
+	matrix := &RuntimePersistenceMatrix{
+		version:          strings.TrimSpace(inventory.Version),
+		profile:          OutputProfile(resolvedProfile),
+		policyByExplorer: make(map[string]RuntimePersistencePolicy, len(inventory.Paths)),
+		defaultNonPersist: RuntimePersistencePolicy{
+			Persist: false,
+		},
+	}
+
+	for _, path := range inventory.Paths {
+		explorer := strings.TrimSpace(path.Explorer)
+		if explorer == "" {
+			continue
+		}
+
+		persist := path.LLMEnhancement
+		if matrix.profile == OutputProfileParity {
+			persist = false
+		}
+		policy := RuntimePersistencePolicy{
+			PathID:   strings.TrimSpace(path.ID),
+			PathKind: strings.TrimSpace(path.PathKind),
+			Explorer: explorer,
+			Persist:  persist,
+		}
+		matrix.policyByExplorer[explorer] = policy
+		if runtimeKey := runtimeExplorerKeyFromInventoryExplorer(explorer); runtimeKey != "" {
+			matrix.policyByExplorer[runtimeKey] = policy
+		}
+	}
+
+	return matrix, nil
+}
+
+// Version returns the version string tied to the matrix artifact.
+func (m *RuntimePersistenceMatrix) Version() string {
+	if m == nil {
+		return ""
+	}
+	return m.version
+}
+
+// PolicyForExplorer resolves deterministic persistence policy for explorerUsed.
+// Unknown explorers are treated as non-persisted.
+func (m *RuntimePersistenceMatrix) PolicyForExplorer(explorerUsed string) RuntimePersistencePolicy {
+	if m == nil {
+		return RuntimePersistencePolicy{Persist: false}
+	}
+
+	normalized := strings.TrimSpace(explorerUsed)
+	if normalized == "" {
+		return m.defaultNonPersist
+	}
+	if idx := strings.Index(normalized, "+"); idx >= 0 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+	if policy, ok := m.policyByExplorer[normalized]; ok {
+		return policy
+	}
+	if inventoryName := runtimeExplorerKeyToInventoryExplorer(normalized); inventoryName != "" {
+		if policy, ok := m.policyByExplorer[inventoryName]; ok {
+			return policy
+		}
+	}
+	return m.defaultNonPersist
+}
+
+func runtimeExplorerKeyFromInventoryExplorer(explorer string) string {
+	switch strings.TrimSpace(explorer) {
+	case "BinaryExplorer":
+		return "binary"
+	case "JSONExplorer":
+		return "json"
+	case "CSVExplorer":
+		return "csv"
+	case "YAMLExplorer":
+		return "yaml"
+	case "TOMLExplorer":
+		return "toml"
+	case "INIExplorer":
+		return "ini"
+	case "XMLExplorer":
+		return "xml"
+	case "HTMLExplorer":
+		return "html"
+	case "MarkdownExplorer":
+		return "markdown"
+	case "LatexExplorer":
+		return "latex"
+	case "SQLiteExplorer":
+		return "sqlite"
+	case "LogsExplorer":
+		return "logs"
+	case "GoExplorer":
+		return "go"
+	case "PythonExplorer":
+		return "python"
+	case "JavaScriptExplorer":
+		return "javascript"
+	case "TypeScriptExplorer":
+		return "typescript"
+	case "RustExplorer":
+		return "rust"
+	case "JavaExplorer":
+		return "java"
+	case "CppExplorer":
+		return "cpp"
+	case "CExplorer":
+		return "c"
+	case "RubyExplorer":
+		return "ruby"
+	case "TreeSitterExplorer":
+		return "treesitter"
+	case "ShellExplorer":
+		return "shell"
+	case "TextExplorer":
+		return "text"
+	case "FallbackExplorer":
+		return "fallback"
+	default:
+		return ""
+	}
+}
+
+func runtimeExplorerKeyToInventoryExplorer(explorerUsed string) string {
+	switch strings.TrimSpace(explorerUsed) {
+	case "binary":
+		return "BinaryExplorer"
+	case "json":
+		return "JSONExplorer"
+	case "csv":
+		return "CSVExplorer"
+	case "yaml":
+		return "YAMLExplorer"
+	case "toml":
+		return "TOMLExplorer"
+	case "ini":
+		return "INIExplorer"
+	case "xml":
+		return "XMLExplorer"
+	case "html":
+		return "HTMLExplorer"
+	case "markdown":
+		return "MarkdownExplorer"
+	case "latex":
+		return "LatexExplorer"
+	case "sqlite":
+		return "SQLiteExplorer"
+	case "logs":
+		return "LogsExplorer"
+	case "go":
+		return "GoExplorer"
+	case "python":
+		return "PythonExplorer"
+	case "javascript":
+		return "JavaScriptExplorer"
+	case "typescript":
+		return "TypeScriptExplorer"
+	case "rust":
+		return "RustExplorer"
+	case "java":
+		return "JavaExplorer"
+	case "cpp":
+		return "CppExplorer"
+	case "c":
+		return "CExplorer"
+	case "ruby":
+		return "RubyExplorer"
+	case "treesitter":
+		return "TreeSitterExplorer"
+	case "shell":
+		return "ShellExplorer"
+	case "text":
+		return "TextExplorer"
+	case "fallback":
+		return "FallbackExplorer"
+	default:
+		return ""
+	}
 }
 
 // DriftReport describes drift between discovered and artifact paths.

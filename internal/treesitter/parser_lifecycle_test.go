@@ -149,6 +149,34 @@ func TestParserCloseIsIdempotent(t *testing.T) {
 	require.NoError(t, p.Close())
 }
 
+func TestNewParserWithConfigUsesPoolSize(t *testing.T) {
+	t.Parallel()
+
+	p := NewParserWithConfig(ParserConfig{PoolSize: 3})
+	t.Cleanup(func() {
+		require.NoError(t, p.Close())
+	})
+
+	concrete, ok := p.(*parser)
+	require.True(t, ok)
+	require.NotNil(t, concrete.pool)
+	require.Equal(t, 3, concrete.pool.Capacity())
+}
+
+func TestNewParserWithConfigUsesDefaultForNonPositivePoolSize(t *testing.T) {
+	t.Parallel()
+
+	p := NewParserWithConfig(ParserConfig{PoolSize: 0})
+	t.Cleanup(func() {
+		require.NoError(t, p.Close())
+	})
+
+	concrete, ok := p.(*parser)
+	require.True(t, ok)
+	require.NotNil(t, concrete.pool)
+	require.Equal(t, defaultParserPoolSize(), concrete.pool.Capacity())
+}
+
 func TestParserAnalyzeReturnsContextErrorWhenAcquireCanceled(t *testing.T) {
 	t.Parallel()
 
@@ -182,11 +210,9 @@ func TestParserPoolCloseIsSafeConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = pool.Close()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -291,4 +317,106 @@ def make():
 	}
 	require.True(t, hasItemSymbol)
 	require.True(t, hasMakeSymbol)
+}
+
+func TestParserSupportsManifestRuntimeLanguages(t *testing.T) {
+	t.Parallel()
+
+	p := NewParser()
+	t.Cleanup(func() {
+		require.NoError(t, p.Close())
+	})
+
+	require.True(t, p.SupportsLanguage("typescript"))
+	require.True(t, p.SupportsLanguage("tsx"), "alias should resolve to typescript")
+	require.True(t, p.SupportsLanguage("csharp"))
+	require.True(t, p.SupportsLanguage("c_sharp"), "alias should resolve to csharp")
+}
+
+func TestParserAnalyzeTypeScriptViaMapPathAndAlias(t *testing.T) {
+	t.Parallel()
+
+	p := NewParser()
+	t.Cleanup(func() {
+		require.NoError(t, p.Close())
+	})
+
+	src := []byte(`class User {}
+function build() {
+	return new User();
+}
+build();
+`)
+
+	analysis, err := p.Analyze(context.Background(), "/tmp/main.tsx", src)
+	require.NoError(t, err)
+	require.NotNil(t, analysis)
+	require.Equal(t, "typescript", analysis.Language)
+	require.NotEmpty(t, analysis.Tags)
+
+	hasUserClassDef := false
+	hasBuildFunctionDef := false
+	for _, tag := range analysis.Tags {
+		if tag.Name == "User" && tag.Kind == "def" && tag.NodeType == "class" {
+			hasUserClassDef = true
+		}
+		if tag.Name == "build" && tag.Kind == "def" && tag.NodeType == "function" {
+			hasBuildFunctionDef = true
+		}
+	}
+	require.True(t, hasUserClassDef)
+	require.True(t, hasBuildFunctionDef)
+}
+
+func TestParserAnalyzeCSharpViaMapPath(t *testing.T) {
+	t.Parallel()
+
+	p := NewParser()
+	t.Cleanup(func() {
+		require.NoError(t, p.Close())
+	})
+
+	src := []byte(`class Item {}
+class Program {
+	void Run() {}
+}
+`)
+
+	analysis, err := p.Analyze(context.Background(), "/tmp/main.cs", src)
+	require.NoError(t, err)
+	require.NotNil(t, analysis)
+	require.Equal(t, "csharp", analysis.Language)
+	require.NotEmpty(t, analysis.Tags)
+
+	hasItemClassDef := false
+	hasRunMethodDef := false
+	for _, tag := range analysis.Tags {
+		if tag.Name == "Item" && tag.Kind == "def" && tag.NodeType == "class" {
+			hasItemClassDef = true
+		}
+		if tag.Name == "Run" && tag.Kind == "def" && tag.NodeType == "method" {
+			hasRunMethodDef = true
+		}
+	}
+	require.True(t, hasItemClassDef)
+	require.True(t, hasRunMethodDef)
+}
+
+func TestParserAnalyzeManifestLanguageWithoutRuntimeGrammarIsGraceful(t *testing.T) {
+	t.Parallel()
+
+	p := NewParser()
+	t.Cleanup(func() {
+		require.NoError(t, p.Close())
+	})
+
+	require.True(t, p.SupportsLanguage("swift"), "manifest-supported language should remain listed")
+	require.True(t, p.HasTags("swift"), "embedded query should exist for swift")
+
+	analysis, err := p.Analyze(context.Background(), "/tmp/check.swift", []byte("class Test {}"))
+	require.NoError(t, err)
+	require.NotNil(t, analysis)
+	require.Equal(t, "swift", analysis.Language)
+	require.Empty(t, analysis.Tags)
+	require.Empty(t, analysis.Symbols)
 }

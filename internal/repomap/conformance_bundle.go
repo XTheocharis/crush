@@ -81,11 +81,20 @@ func ValidateSignOffBundle(bundle *SignOffBundle) error {
 	if strings.TrimSpace(bundle.RepoMap.AiderCommitSHA) == "" || strings.TrimSpace(bundle.Explorer.VoltCommitSHA) == "" {
 		return fmt.Errorf("sign-off bundle missing comparator commit shas")
 	}
+	if isPlaceholderCommitSHA(bundle.RepoMap.AiderCommitSHA) || isPlaceholderCommitSHA(bundle.Explorer.VoltCommitSHA) {
+		return fmt.Errorf("sign-off bundle contains placeholder comparator commit sha")
+	}
 	if strings.TrimSpace(bundle.RepoMap.FixturesSHA256) == "" || strings.TrimSpace(bundle.Explorer.FixturesSHA256) == "" {
 		return fmt.Errorf("sign-off bundle missing fixture hashes")
 	}
+	if isPlaceholderFixtureHash(bundle.RepoMap.FixturesSHA256) || isPlaceholderFixtureHash(bundle.Explorer.FixturesSHA256) {
+		return fmt.Errorf("sign-off bundle contains placeholder fixture hash")
+	}
 	if strings.TrimSpace(bundle.RepoMap.ComparatorPath) == "" || strings.TrimSpace(bundle.Explorer.ComparatorPath) == "" {
 		return fmt.Errorf("sign-off bundle missing comparator paths")
+	}
+	if isPlaceholderComparatorPath(bundle.RepoMap.ComparatorPath) || isPlaceholderComparatorPath(bundle.Explorer.ComparatorPath) {
+		return fmt.Errorf("sign-off bundle contains placeholder comparator path")
 	}
 
 	if !bundle.RepoMap.DeterministicMode || strings.ToLower(strings.TrimSpace(bundle.RepoMap.EnhancementTiersEnabled)) != "none" {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -12,9 +13,28 @@ import (
 	"sync"
 	"sync/atomic"
 
+	tree_sitter_dart "github.com/UserNobody14/tree-sitter-dart/bindings/go"
+	tree_sitter_arduino "github.com/tree-sitter-grammars/tree-sitter-arduino/bindings/go"
+	tree_sitter_chatito "github.com/tree-sitter-grammars/tree-sitter-chatito/bindings/go"
+	tree_sitter_hcl "github.com/tree-sitter-grammars/tree-sitter-hcl/bindings/go"
+	tree_sitter_lua "github.com/tree-sitter-grammars/tree-sitter-lua/bindings/go"
+	tree_sitter_properties "github.com/tree-sitter-grammars/tree-sitter-properties/bindings/go"
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	tree_sitter_c_sharp "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
+	tree_sitter_c "github.com/tree-sitter/tree-sitter-c/bindings/go"
+	tree_sitter_cpp "github.com/tree-sitter/tree-sitter-cpp/bindings/go"
 	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	tree_sitter_haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
+	tree_sitter_java "github.com/tree-sitter/tree-sitter-java/bindings/go"
+	tree_sitter_javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
+	tree_sitter_julia "github.com/tree-sitter/tree-sitter-julia/bindings/go"
+	tree_sitter_ocaml "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
+	tree_sitter_php "github.com/tree-sitter/tree-sitter-php/bindings/go"
 	tree_sitter_python "github.com/tree-sitter/tree-sitter-python/bindings/go"
+	tree_sitter_ruby "github.com/tree-sitter/tree-sitter-ruby/bindings/go"
+	tree_sitter_rust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
+	tree_sitter_scala "github.com/tree-sitter/tree-sitter-scala/bindings/go"
+	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
 var (
@@ -84,9 +104,29 @@ type ParserPool struct {
 	factory     func() *languageParser
 }
 
-// NewParserPool creates a parser pool scaffold.
+// ParserConfig configures parser lifecycle/performance behavior.
+type ParserConfig struct {
+	// PoolSize controls the parser pool capacity.
+	// Zero or negative values fall back to runtime defaults.
+	PoolSize int
+}
+
+// NewParserPool creates a parser pool using runtime defaults.
 func NewParserPool() *ParserPool {
-	return newParserPoolWithFactory(runtime.NumCPU(), nil)
+	return NewParserPoolWithSize(defaultParserPoolSize())
+}
+
+// NewParserPoolWithSize creates a parser pool with explicit capacity.
+func NewParserPoolWithSize(size int) *ParserPool {
+	return newParserPoolWithFactory(size, nil)
+}
+
+func defaultParserPoolSize() int {
+	size := runtime.NumCPU()
+	if size <= 0 {
+		return 1
+	}
+	return size
 }
 
 func newParserPoolWithFactory(size int, factory func() *languageParser) *ParserPool {
@@ -241,9 +281,19 @@ func (p *ParserPool) Close() error {
 
 // NewParser creates a Parser scaffold.
 func NewParser() Parser {
+	return NewParserWithConfig(ParserConfig{})
+}
+
+// NewParserWithConfig creates a Parser scaffold with performance options.
+func NewParserWithConfig(cfg ParserConfig) Parser {
+	poolSize := cfg.PoolSize
+	if poolSize <= 0 {
+		poolSize = defaultParserPoolSize()
+	}
+
 	languages, langSet := loadSupportedLanguages()
 	pr := &parser{
-		pool:        NewParserPool(),
+		pool:        NewParserPoolWithSize(poolSize),
 		languages:   languages,
 		langSet:     langSet,
 		treeCache:   NewCache(0, 0),
@@ -256,14 +306,14 @@ func NewParser() Parser {
 
 func (p *parser) initLanguages() {
 	p.languageInit.Do(func() {
-		goLang := tree_sitter.NewLanguage(tree_sitter_go.Language())
-		pythonLang := tree_sitter.NewLanguage(tree_sitter_python.Language())
-
-		p.treeLangs["go"] = goLang
-		p.treeLangs["python"] = pythonLang
-
-		p.queryLoader.RegisterLanguage("go", goLang)
-		p.queryLoader.RegisterLanguage("python", pythonLang)
+		for _, lang := range p.languages {
+			tsLang := languageForQueryKey(lang)
+			if tsLang == nil {
+				continue
+			}
+			p.treeLangs[lang] = tsLang
+			p.queryLoader.RegisterLanguage(lang, tsLang)
+		}
 	})
 }
 
@@ -420,9 +470,7 @@ func loadSupportedLanguages() ([]string, map[string]struct{}) {
 
 	// Return copies to prevent mutation of cached values
 	setCopy := make(map[string]struct{}, len(cachedSupportedLanguageSet))
-	for k, v := range cachedSupportedLanguageSet {
-		setCopy[k] = v
-	}
+	maps.Copy(setCopy, cachedSupportedLanguageSet)
 	langCopy := make([]string, len(cachedSupportedLanguages))
 	copy(langCopy, cachedSupportedLanguages)
 
@@ -452,4 +500,55 @@ func loadSupportedLanguagesImpl() ([]string, map[string]struct{}) {
 	sort.Strings(languages)
 
 	return languages, set
+}
+
+func languageForQueryKey(queryKey string) *tree_sitter.Language {
+	switch queryKey {
+	case "arduino":
+		return tree_sitter.NewLanguage(tree_sitter_arduino.Language())
+	case "c":
+		return tree_sitter.NewLanguage(tree_sitter_c.Language())
+	case "chatito":
+		return tree_sitter.NewLanguage(tree_sitter_chatito.LanguageChatito())
+	case "cpp":
+		return tree_sitter.NewLanguage(tree_sitter_cpp.Language())
+	case "csharp":
+		return tree_sitter.NewLanguage(tree_sitter_c_sharp.Language())
+	case "dart":
+		return tree_sitter.NewLanguage(tree_sitter_dart.Language())
+	case "go":
+		return tree_sitter.NewLanguage(tree_sitter_go.Language())
+	case "haskell":
+		return tree_sitter.NewLanguage(tree_sitter_haskell.Language())
+	case "hcl":
+		return tree_sitter.NewLanguage(tree_sitter_hcl.Language())
+	case "java":
+		return tree_sitter.NewLanguage(tree_sitter_java.Language())
+	case "javascript":
+		return tree_sitter.NewLanguage(tree_sitter_javascript.Language())
+	case "julia":
+		return tree_sitter.NewLanguage(tree_sitter_julia.Language())
+	case "lua":
+		return tree_sitter.NewLanguage(tree_sitter_lua.Language())
+	case "ocaml":
+		return tree_sitter.NewLanguage(tree_sitter_ocaml.LanguageOCaml())
+	case "ocaml_interface":
+		return tree_sitter.NewLanguage(tree_sitter_ocaml.LanguageOCamlInterface())
+	case "php":
+		return tree_sitter.NewLanguage(tree_sitter_php.LanguagePHP())
+	case "properties":
+		return tree_sitter.NewLanguage(tree_sitter_properties.Language())
+	case "python":
+		return tree_sitter.NewLanguage(tree_sitter_python.Language())
+	case "ruby":
+		return tree_sitter.NewLanguage(tree_sitter_ruby.Language())
+	case "rust":
+		return tree_sitter.NewLanguage(tree_sitter_rust.Language())
+	case "scala":
+		return tree_sitter.NewLanguage(tree_sitter_scala.Language())
+	case "typescript":
+		return tree_sitter.NewLanguage(tree_sitter_typescript.LanguageTypescript())
+	default:
+		return nil
+	}
 }

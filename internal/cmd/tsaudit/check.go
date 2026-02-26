@@ -32,7 +32,11 @@ type languagesManifest struct {
 }
 
 type manifestLanguage struct {
-	Name string `json:"name"`
+	Name          string `json:"name"`
+	GrammarModule string `json:"grammar_module,omitempty"`
+	GrammarRev    string `json:"grammar_rev,omitempty"`
+	GrammarDir    string `json:"grammar_dir,omitempty"`
+	QuerySource   string `json:"query_source,omitempty"`
 }
 
 type languageListFile struct {

@@ -288,10 +288,7 @@ func runGateA5Determinism(t *testing.T) error {
 	}
 
 	for _, profile := range fx.Profiles {
-		runs := profile.RepeatRuns
-		if runs < 10 {
-			runs = 10
-		}
+		runs := max(profile.RepeatRuns, 10)
 		seen := make(map[string]struct{}, runs)
 		for i := 0; i < runs; i++ {
 			result := runVerticalSliceHarness(fx, profile)

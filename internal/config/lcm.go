@@ -14,6 +14,11 @@ type LCMOptions struct {
 	// LargeToolOutputTokenThreshold is the token count threshold above which
 	// tool output is stored in LCM instead of passed inline (default: 10000).
 	LargeToolOutputTokenThreshold int `json:"large_tool_output_token_threshold,omitempty"`
+
+	// ExplorerOutputProfile controls runtime formatter profile for large-output
+	// exploration summaries. Accepted values: "enhancement" (default) or
+	// "parity".
+	ExplorerOutputProfile string `json:"explorer_output_profile,omitempty"`
 }
 
 // DefaultLCMOptions returns LCMOptions with default values applied.
@@ -21,5 +26,6 @@ func DefaultLCMOptions() LCMOptions {
 	return LCMOptions{
 		CtxCutoffThreshold:            0.6,
 		LargeToolOutputTokenThreshold: 10000,
+		ExplorerOutputProfile:         "enhancement",
 	}
 }

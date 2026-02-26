@@ -3,6 +3,7 @@ package repomap
 import (
 	"context"
 	"math"
+	"strings"
 )
 
 // BudgetProfile controls fit-mode behavior.
@@ -210,11 +211,11 @@ func renderStageEntries(entries []StageEntry) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	out := ""
+	var out strings.Builder
 	for _, l := range lines {
-		out += l + "\n"
+		out.WriteString(l + "\n")
 	}
-	return out
+	return out.String()
 }
 
 func minInt(a, b int) int {

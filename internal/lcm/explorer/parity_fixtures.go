@@ -1,10 +1,13 @@
 package explorer
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -80,11 +83,20 @@ func ValidateFixtureMetadata(meta FixtureMetadata) error {
 	if meta.VoltCommitSHA == "" {
 		return fmt.Errorf("metadata missing volt_commit_sha")
 	}
+	if isPlaceholderCommitSHA(meta.VoltCommitSHA) {
+		return fmt.Errorf("metadata contains placeholder volt_commit_sha")
+	}
 	if meta.FixturesSHA256 == "" {
 		return fmt.Errorf("metadata missing fixtures_sha256")
 	}
+	if isPlaceholderFixtureHash(meta.FixturesSHA256) {
+		return fmt.Errorf("metadata contains placeholder fixtures_sha256")
+	}
 	if meta.ComparatorPath == "" {
 		return fmt.Errorf("metadata missing comparator_path")
+	}
+	if isPlaceholderComparatorPath(meta.ComparatorPath) {
+		return fmt.Errorf("metadata contains placeholder comparator_path")
 	}
 	if meta.Version == "" {
 		return fmt.Errorf("metadata missing version")
@@ -268,8 +280,95 @@ func GenerateFixtureIndex(cfg ParityTestFixtureConfig, meta FixtureMetadata) (*P
 			index.Format["yaml"] = name
 		case "format_employees.csv":
 			index.Format["csv"] = name
+		case "format_research.tex":
+			index.Format["latex"] = name
+		case "format_service.log":
+			index.Format["logs"] = name
+		case "format_sqlite_seed.sql":
+			index.Format["sqlite_seed"] = name
 		}
 	}
 
 	return index, nil
+}
+
+func normalizeFixtureJSONForHash(data []byte) ([]byte, error) {
+	var payload any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	stripFixtureHashFields(payload)
+	return json.Marshal(payload)
+}
+
+func stripFixtureHashFields(v any) {
+	switch typed := v.(type) {
+	case map[string]any:
+		for k, child := range typed {
+			if k == "fixtures_sha256" {
+				delete(typed, k)
+				continue
+			}
+			stripFixtureHashFields(child)
+		}
+	case []any:
+		for _, child := range typed {
+			stripFixtureHashFields(child)
+		}
+	}
+}
+
+func ComputeFixturesSHA256(fixturesDir string) (string, error) {
+	paths, err := filepath.Glob(filepath.Join(fixturesDir, "*"))
+	if err != nil {
+		return "", fmt.Errorf("glob fixtures: %w", err)
+	}
+
+	sort.Strings(paths)
+	combined := strings.Builder{}
+	for _, path := range paths {
+		info, statErr := os.Stat(path)
+		if statErr != nil || info.IsDir() {
+			continue
+		}
+
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return "", fmt.Errorf("read fixture %q: %w", path, readErr)
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		normalized := data
+		if ext == ".json" {
+			normalized, err = normalizeFixtureJSONForHash(data)
+			if err != nil {
+				return "", fmt.Errorf("normalize fixture %q for hash: %w", path, err)
+			}
+		}
+
+		combined.Write(normalized)
+	}
+
+	sum := sha256.Sum256([]byte(combined.String()))
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func VerifyFixturesIntegrity(index *ParityFixtureIndex, cfg ParityTestFixtureConfig) error {
+	if index == nil {
+		return fmt.Errorf("fixture index is nil")
+	}
+	expected := strings.TrimSpace(index.Metadata.FixturesSHA256)
+	if expected == "" || isPlaceholderFixtureHash(expected) {
+		return fmt.Errorf("fixture index has empty or placeholder fixtures_sha256")
+	}
+
+	computed, err := ComputeFixturesSHA256(cfg.FixturesDir)
+	if err != nil {
+		return fmt.Errorf("compute fixtures sha256: %w", err)
+	}
+	if computed != expected {
+		return fmt.Errorf("fixtures_sha256 mismatch: expected=%s computed=%s", expected, computed)
+	}
+
+	return nil
 }

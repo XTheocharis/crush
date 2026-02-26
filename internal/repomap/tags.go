@@ -13,6 +13,29 @@ import (
 	"github.com/charmbracelet/crush/internal/treesitter"
 )
 
+// stringInterner interns repeated short strings to reduce allocations.
+type stringInterner struct {
+	pool map[string]string
+}
+
+func newStringInterner(capacity int) *stringInterner {
+	if capacity < 0 {
+		capacity = 0
+	}
+	return &stringInterner{pool: make(map[string]string, capacity)}
+}
+
+func (i *stringInterner) Intern(value string) string {
+	if i == nil || value == "" {
+		return value
+	}
+	if interned, ok := i.pool[value]; ok {
+		return interned
+	}
+	i.pool[value] = value
+	return value
+}
+
 // extractTags derives defs/refs from the file universe, normalizes all paths,
 // persists incremental updates in repo_map tables, and returns a deterministic
 // tag slice for downstream graph construction.
@@ -77,15 +100,16 @@ func (s *Service) extractTags(ctx context.Context, rootDir string, fileUniverse 
 	}
 	committed = true
 
+	interner := newStringInterner(len(tagRows) * 2)
 	tags := make([]treesitter.Tag, 0, len(tagRows))
 	for _, row := range tagRows {
 		tags = append(tags, treesitter.Tag{
-			RelPath:  row.RelPath,
-			Name:     row.Name,
-			Kind:     row.Kind,
+			RelPath:  interner.Intern(row.RelPath),
+			Name:     interner.Intern(row.Name),
+			Kind:     interner.Intern(row.Kind),
 			Line:     int(row.Line),
-			Language: row.Language,
-			NodeType: row.NodeType,
+			Language: interner.Intern(row.Language),
+			NodeType: interner.Intern(row.NodeType),
 		})
 	}
 	sortTagsDeterministic(tags)
@@ -138,15 +162,23 @@ func (s *Service) upsertPathTags(ctx context.Context, qtx *db.Queries, parser tr
 	if analysis != nil {
 		tagsCap = len(analysis.Tags)
 	}
+	interner := newStringInterner(tagsCap + 8)
+	internedRelPath := interner.Intern(relPath)
+	internedLanguage := interner.Intern(language)
 	tags := make([]treesitter.Tag, 0, tagsCap)
 	if analysis != nil {
 		for _, tag := range analysis.Tags {
 			if tag.Kind != "def" && tag.Kind != "ref" {
 				continue
 			}
-			tag.RelPath = relPath
+			tag.RelPath = internedRelPath
+			tag.Name = interner.Intern(tag.Name)
+			tag.Kind = interner.Intern(tag.Kind)
+			tag.NodeType = interner.Intern(tag.NodeType)
 			if tag.Language == "" {
-				tag.Language = language
+				tag.Language = internedLanguage
+			} else {
+				tag.Language = interner.Intern(tag.Language)
 			}
 			tags = append(tags, tag)
 		}
@@ -237,7 +269,15 @@ func (s *Service) ensureParser() treesitter.Parser {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.parser == nil {
-		s.parser = treesitter.NewParser()
+		poolSize := 0
+		if s.cfg != nil {
+			poolSize = s.cfg.ParserPoolSize
+		}
+		factory := s.newParserWithCfg
+		if factory == nil {
+			factory = treesitter.NewParserWithConfig
+		}
+		s.parser = factory(treesitter.ParserConfig{PoolSize: poolSize})
 	}
 	return s.parser
 }

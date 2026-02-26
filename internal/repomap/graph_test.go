@@ -131,7 +131,7 @@ func TestBuildGraphAppliesHighFrequencyDefinitionAttenuation(t *testing.T) {
 	t.Parallel()
 
 	tags := make([]treesitter.Tag, 0, 16)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		path := "def/" + string(rune('a'+i)) + ".go"
 		tags = append(tags,
 			treesitter.Tag{RelPath: path, Name: "Common", Kind: "def"},
@@ -143,7 +143,7 @@ func TestBuildGraphAppliesHighFrequencyDefinitionAttenuation(t *testing.T) {
 	g := buildGraph(tags, nil, nil)
 	require.NotNil(t, g)
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		to := "def/" + string(rune('a'+i)) + ".go"
 		e := findEdge(t, g, "ref/caller.go", to, "Common")
 		require.Equal(t, 1, e.RefCount)
@@ -181,7 +181,7 @@ func TestBuildGraphDeterministicAcrossRuns(t *testing.T) {
 	first := buildGraph(tags, []string{"c/c.go"}, []string{"MainHandler"})
 	require.NotNil(t, first)
 
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		got := buildGraph(tags, []string{"c/c.go"}, []string{"MainHandler"})
 		require.Equal(t, first.Nodes, got.Nodes)
 		require.Equal(t, first.Edges, got.Edges)

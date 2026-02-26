@@ -82,6 +82,41 @@ func loadRuntimeInventoryAtBase(basePath string) (*RuntimeInventory, error) {
 	return &inventory, nil
 }
 
+type explorerParityProvenanceFile struct {
+	VoltCommitSHA  string `json:"volt_commit_sha"`
+	ComparatorPath string `json:"comparator_path"`
+	FixturesSHA256 string `json:"fixtures_sha256"`
+}
+
+func loadParityProvenanceBundle(path string) (*explorerParityProvenanceFile, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var bundle explorerParityProvenanceFile
+	if err := json.Unmarshal(content, &bundle); err != nil {
+		return nil, err
+	}
+	return &bundle, nil
+}
+
+func validateProvenanceBundleConsistency(path string, expected ParityProvenanceBundle) error {
+	bundle, err := loadParityProvenanceBundle(path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(bundle.VoltCommitSHA) != strings.TrimSpace(expected.VoltCommitSHA) {
+		return fmt.Errorf("volt_commit_sha mismatch between fixture index and provenance bundle")
+	}
+	if strings.TrimSpace(bundle.ComparatorPath) != strings.TrimSpace(expected.ComparatorPath) {
+		return fmt.Errorf("comparator_path mismatch between fixture index and provenance bundle")
+	}
+	if strings.TrimSpace(bundle.FixturesSHA256) != strings.TrimSpace(expected.FixturesSHA256) {
+		return fmt.Errorf("fixtures_sha256 mismatch between fixture index and provenance bundle")
+	}
+	return nil
+}
+
 func tokenizerTupleSupported(ts *TokenizerSupport, tokenizerID, tokenizerVersion string) bool {
 	for _, fam := range ts.SupportedFamilies {
 		if fam.TokenizerID == tokenizerID && fam.TokenizerVersion == tokenizerVersion {
@@ -135,6 +170,17 @@ func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
 		GrepASTProvenance: "grep-ast@v1.2.3",
 		TokenizerID:       "cl100k_base",
 		TokenizerVersion:  "v0.1.0",
+	}
+	if !strings.Contains(index.Metadata.ComparatorPath, index.Metadata.VoltCommitSHA) {
+		return nil, fmt.Errorf("volt parity comparator_path does not include volt_commit_sha")
+	}
+	provenanceBundlePath := filepath.Join(basePath, "testdata", "parity_volt", "provenance_bundle.v1.json")
+	if err := validateProvenanceBundleConsistency(provenanceBundlePath, bundle); err != nil {
+		return nil, fmt.Errorf("volt parity provenance bundle consistency failed: %w", err)
+	}
+
+	if err := VerifyFixturesIntegrity(index, cfg); err != nil {
+		return nil, fmt.Errorf("volt fixture integrity validation failed: %w", err)
 	}
 
 	profile := &ParityPreflightProfile{

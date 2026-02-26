@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"io/fs"
+	"math"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -63,15 +64,16 @@ type GenerateOpts struct {
 
 // Service handles repo-map generation and lifecycle.
 type Service struct {
-	parser       treesitter.Parser
-	db           *db.Queries
-	rawDB        *sql.DB
-	rootDir      string
-	cfg          *config.RepoMapOptions
-	lifecycleCtx context.Context
-	serviceCtx   context.Context
-	cancel       context.CancelFunc
-	closed       chan struct{}
+	parser           treesitter.Parser
+	newParserWithCfg func(cfg treesitter.ParserConfig) treesitter.Parser
+	db               *db.Queries
+	rawDB            *sql.DB
+	rootDir          string
+	cfg              *config.RepoMapOptions
+	lifecycleCtx     context.Context
+	serviceCtx       context.Context
+	cancel           context.CancelFunc
+	closed           chan struct{}
 
 	wg sync.WaitGroup
 
@@ -107,6 +109,7 @@ func NewService(cfg *config.Config, q *db.Queries, rawDB *sql.DB, rootDir string
 	close(preIndexDone)
 
 	return &Service{
+		newParserWithCfg:     treesitter.NewParserWithConfig,
 		db:                   q,
 		rawDB:                rawDB,
 		rootDir:              rootDir,
@@ -133,49 +136,124 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return "", 0, nil
 	}
 
-	mode := "auto"
-	if s.cfg != nil {
-		mode = strings.ToLower(strings.TrimSpace(s.cfg.RefreshMode))
-	}
-	if mode == "" {
-		mode = "auto"
-	}
+	mode := s.refreshMode()
 
 	lastMap, lastTok := s.sessionCaches.Load(sessionID)
 	cacheKey := buildRenderCacheKey(mode, opts)
 	renderCache := s.renderCaches.GetOrCreate(sessionID)
 
-	switch mode {
-	case "manual":
+	loadRenderCache := func() (string, int, bool) {
+		if cacheKey == "" {
+			return "", 0, false
+		}
+		m, tok, ok := renderCache.Get(cacheKey)
+		if ok {
+			s.sessionCaches.Store(sessionID, m, tok)
+		}
+		return m, tok, ok
+	}
+
+	fallback := func(genErr error) (string, int, error) {
 		if lastMap != "" || lastTok > 0 {
 			return lastMap, lastTok, nil
 		}
-		return "", 0, nil
-	case "files", "auto":
-		if lastMap != "" || lastTok > 0 {
-			return lastMap, lastTok, nil
+		if m, tok, ok := loadRenderCache(); ok {
+			return m, tok, nil
 		}
-		if cacheKey != "" {
-			if m, tok, ok := renderCache.Get(cacheKey); ok {
-				s.sessionCaches.Store(sessionID, m, tok)
-				return m, tok, nil
-			}
-		}
-		return "", 0, nil
-	case "always":
-		return lastMap, lastTok, nil
-	default:
-		if lastMap != "" || lastTok > 0 {
-			return lastMap, lastTok, nil
-		}
-		if cacheKey != "" {
-			if m, tok, ok := renderCache.Get(cacheKey); ok {
-				s.sessionCaches.Store(sessionID, m, tok)
-				return m, tok, nil
-			}
+		if genErr != nil {
+			return "", 0, genErr
 		}
 		return "", 0, nil
 	}
+
+	if !opts.ForceRefresh {
+		switch mode {
+		case "manual":
+			if lastMap != "" || lastTok > 0 {
+				return lastMap, lastTok, nil
+			}
+			return "", 0, nil
+		case "files", "auto":
+			if lastMap != "" || lastTok > 0 {
+				return lastMap, lastTok, nil
+			}
+			if m, tok, ok := loadRenderCache(); ok {
+				return m, tok, nil
+			}
+		case "always":
+			if lastMap != "" || lastTok > 0 {
+				return lastMap, lastTok, nil
+			}
+		default:
+			if lastMap != "" || lastTok > 0 {
+				return lastMap, lastTok, nil
+			}
+			if m, tok, ok := loadRenderCache(); ok {
+				return m, tok, nil
+			}
+		}
+	} else {
+		s.sessionCaches.Clear(sessionID)
+		s.renderCaches.Clear(sessionID)
+		lastMap, lastTok = "", 0
+		renderCache = s.renderCaches.GetOrCreate(sessionID)
+	}
+
+	if s.db == nil || s.rawDB == nil || strings.TrimSpace(s.rootDir) == "" {
+		return fallback(nil)
+	}
+
+	fileUniverse := s.AllFiles(ctx)
+	if len(fileUniverse) == 0 {
+		fileUniverse = s.walkAllFiles(ctx)
+	}
+	if len(fileUniverse) == 0 {
+		return fallback(nil)
+	}
+
+	tags, err := s.extractTags(ctx, s.rootDir, fileUniverse, opts.ForceRefresh)
+	if err != nil {
+		return fallback(err)
+	}
+
+	graph := buildGraph(tags, opts.ChatFiles, opts.MentionedIdents)
+	personalization := BuildPersonalization(fileUniverse, opts.ChatFiles, opts.MentionedFnames, opts.MentionedIdents)
+	rankedDefs := Rank(graph, personalization)
+	rankedFiles := AggregateRankedFiles(rankedDefs, tags)
+
+	specialPrelude := BuildSpecialPrelude(fileUniverse, rankedFilePaths(rankedFiles), false)
+	entries := AssembleStageEntries(
+		specialPrelude,
+		rankedDefs,
+		graph.Nodes,
+		fileUniverse,
+		opts.ChatFiles,
+		false,
+	)
+
+	budgetProfile := BudgetProfile{
+		ParityMode:   false,
+		TokenBudget:  resolveTokenBudget(s.cfg, opts),
+		LanguageHint: "default",
+	}
+	fit, err := FitToBudget(ctx, entries, budgetProfile, nil)
+	if err != nil {
+		return fallback(err)
+	}
+
+	mapText := renderStageEntries(fit.Entries)
+	tokenCount := fit.SafetyTokens
+
+	s.sessionCaches.Store(sessionID, mapText, tokenCount)
+	if cacheKey != "" {
+		renderCache.Set(cacheKey, mapText, tokenCount)
+	}
+
+	repoKey := repoKeyForRoot(s.rootDir)
+	readOnly := append(append([]string(nil), opts.ChatFiles...), opts.MentionedFnames...)
+	s.persistSessionArtifacts(ctx, sessionID, repoKey, rankedFiles, readOnly)
+
+	return mapText, tokenCount, nil
 }
 
 // Available returns whether repo-map service is ready.
@@ -262,7 +340,7 @@ func (s *Service) RefreshAsync(sessionID string, opts GenerateOpts) {
 	s.wg.Add(1)
 	go func(key string, sid string, o GenerateOpts) {
 		defer s.wg.Done()
-		_, _, _ = s.refreshFlight.Do(key, func() (interface{}, error) {
+		_, _, _ = s.refreshFlight.Do(key, func() (any, error) {
 			if s.onRefreshRun != nil {
 				s.onRefreshRun()
 			}
@@ -278,6 +356,11 @@ func (s *Service) Refresh(ctx context.Context, sessionID string, opts GenerateOp
 		opts.SessionID = sessionID
 	}
 
+	if opts.ForceRefresh {
+		s.sessionCaches.Clear(opts.SessionID)
+		s.renderCaches.Clear(opts.SessionID)
+	}
+
 	m, tok, err := s.Generate(ctx, opts)
 	if err != nil {
 		return "", 0, err
@@ -285,23 +368,14 @@ func (s *Service) Refresh(ctx context.Context, sessionID string, opts GenerateOp
 
 	if opts.SessionID != "" {
 		s.sessionCaches.Store(opts.SessionID, m, tok)
-		mode := "auto"
-		if s.cfg != nil {
-			mode = strings.ToLower(strings.TrimSpace(s.cfg.RefreshMode))
-		}
-		if mode == "" {
-			mode = "auto"
-		}
-		key := buildRenderCacheKey(mode, opts)
+		key := buildRenderCacheKey(s.refreshMode(), opts)
 		if key != "" {
-			s.renderCaches.GetOrCreate(opts.SessionID).Set(key, m, tok)
+			if m != "" || tok > 0 {
+				s.renderCaches.GetOrCreate(opts.SessionID).Set(key, m, tok)
+			} else {
+				s.renderCaches.GetOrCreate(opts.SessionID).Delete(key)
+			}
 		}
-	}
-
-	repoKey := repoKeyForRoot(s.rootDir)
-	if repoKey != "" && s.db != nil && opts.SessionID != "" {
-		_ = s.db.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: opts.SessionID})
-		_ = s.db.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: opts.SessionID})
 	}
 
 	return m, tok, nil
@@ -344,9 +418,7 @@ func (s *Service) PreIndex() {
 	s.preIndexRunning = true
 	s.mu.Unlock()
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		defer func() {
 			s.mu.Lock()
 			s.preIndexRunning = false
@@ -354,7 +426,7 @@ func (s *Service) PreIndex() {
 			s.mu.Unlock()
 		}()
 
-		_, _, _ = s.preIndexFlight.Do(repoKeyForRoot(s.rootDir), func() (interface{}, error) {
+		_, _, _ = s.preIndexFlight.Do(repoKeyForRoot(s.rootDir), func() (any, error) {
 			if s.onPreIndexRun != nil {
 				s.onPreIndexRun()
 			}
@@ -364,7 +436,7 @@ func (s *Service) PreIndex() {
 			s.mu.Unlock()
 			return nil, nil
 		})
-	}()
+	})
 }
 
 // Close releases resources.
@@ -542,13 +614,7 @@ func normalizeUniqueStrings(values []string) []string {
 }
 
 func (s *Service) buildRefreshFlightKey(sessionID string, opts GenerateOpts) string {
-	mode := "auto"
-	if s != nil && s.cfg != nil {
-		mode = strings.ToLower(strings.TrimSpace(s.cfg.RefreshMode))
-	}
-	if mode == "" {
-		mode = "auto"
-	}
+	mode := s.refreshMode()
 	cacheKey := buildRenderCacheKey(mode, opts)
 	if cacheKey == "" {
 		cacheKey = strings.Join([]string{
@@ -566,4 +632,83 @@ func (s *Service) buildRefreshFlightKey(sessionID string, opts GenerateOpts) str
 		repoKey = repoKeyForRoot(s.rootDir)
 	}
 	return strings.Join([]string{repoKey, sessionID, cacheKey}, "|")
+}
+
+func (s *Service) refreshMode() string {
+	if s != nil && s.cfg != nil {
+		if mode := strings.ToLower(strings.TrimSpace(s.cfg.RefreshMode)); mode != "" {
+			return mode
+		}
+	}
+	return "auto"
+}
+
+func resolveTokenBudget(cfg *config.RepoMapOptions, opts GenerateOpts) int {
+	if opts.TokenBudget > 0 {
+		return opts.TokenBudget
+	}
+	if cfg != nil && cfg.MaxTokens > 0 {
+		return cfg.MaxTokens
+	}
+	contextWindow := opts.MaxContextWindow
+	if cfg != nil && len(opts.ChatFiles) == 0 && cfg.MapMulNoFiles > 0 {
+		adjusted := int(math.Ceil(float64(contextWindow) * cfg.MapMulNoFiles))
+		if adjusted > contextWindow {
+			contextWindow = adjusted
+		}
+	}
+	return config.DefaultRepoMapMaxTokens(contextWindow)
+}
+
+func rankedFilePaths(files []RankedFile) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		rel := normalizeGraphRelPath(f.Path)
+		if rel == "" {
+			continue
+		}
+		paths = append(paths, rel)
+	}
+	return normalizeUniqueGraphPaths(paths)
+}
+
+func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKey string, ranked []RankedFile, readOnlyPaths []string) {
+	if s == nil || s.db == nil || repoKey == "" || strings.TrimSpace(sessionID) == "" {
+		return
+	}
+
+	if err := s.db.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
+		return
+	}
+	if err := s.db.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
+		return
+	}
+
+	for _, file := range ranked {
+		rel := normalizeGraphRelPath(file.Path)
+		if rel == "" {
+			continue
+		}
+		if err := s.db.UpsertSessionRanking(ctx, db.UpsertSessionRankingParams{
+			RepoKey:   repoKey,
+			SessionID: sessionID,
+			RelPath:   rel,
+			Rank:      file.Rank,
+		}); err != nil {
+			return
+		}
+	}
+
+	for _, p := range normalizeUniqueGraphPaths(readOnlyPaths) {
+		if err := s.db.UpsertSessionReadOnlyPath(ctx, db.UpsertSessionReadOnlyPathParams{
+			RepoKey:   repoKey,
+			SessionID: sessionID,
+			RelPath:   p,
+		}); err != nil {
+			return
+		}
+	}
 }

@@ -305,7 +305,7 @@ func TestSampleContent(t *testing.T) {
 }
 
 // TestFallbackChainOrder verifies Phase 2A fallback chain ordering:
-// Binary -> JSON/CSV/YAML/TOML/INI/XML/HTML -> code explorers -> TreeSitterExplorer -> Shell -> Text -> Fallback.
+// Binary -> JSON/CSV/YAML/TOML/INI/XML/HTML/Markdown/LaTeX/SQLite/Logs -> code explorers -> TreeSitterExplorer -> Shell -> Text -> Fallback.
 func TestFallbackChainOrder(t *testing.T) {
 	reg := NewRegistry()
 
@@ -371,10 +371,10 @@ func TestFallbackChainOrder(t *testing.T) {
 	mockParser := &mockTreeSitterParser{supports: map[string]bool{}, hasTags: map[string]bool{}}
 	regWithTS := NewRegistry(WithTreeSitter(mockParser))
 
-	htmlIdx, tsIdx, shellIdx := -1, -1, -1
+	logsIdx, tsIdx, shellIdx := -1, -1, -1
 	for i, e := range regWithTS.explorers {
-		if _, ok := e.(*HTMLExplorer); ok {
-			htmlIdx = i
+		if _, ok := e.(*LogsExplorer); ok {
+			logsIdx = i
 		}
 		if _, ok := e.(*TreeSitterExplorer); ok {
 			tsIdx = i
@@ -383,11 +383,11 @@ func TestFallbackChainOrder(t *testing.T) {
 			shellIdx = i
 		}
 	}
-	if htmlIdx < 0 || tsIdx < 0 || shellIdx < 0 {
-		t.Fatalf("expected html/treesitter/shell explorers in chain, got html=%d treesitter=%d shell=%d", htmlIdx, tsIdx, shellIdx)
+	if logsIdx < 0 || tsIdx < 0 || shellIdx < 0 {
+		t.Fatalf("expected logs/treesitter/shell explorers in chain, got logs=%d treesitter=%d shell=%d", logsIdx, tsIdx, shellIdx)
 	}
-	if htmlIdx >= tsIdx || tsIdx >= shellIdx {
-		t.Fatalf("expected ordering HTML < TreeSitter < Shell, got html=%d treesitter=%d shell=%d", htmlIdx, tsIdx, shellIdx)
+	if logsIdx >= tsIdx || tsIdx >= shellIdx {
+		t.Fatalf("expected ordering Logs < TreeSitter < Shell, got logs=%d treesitter=%d shell=%d", logsIdx, tsIdx, shellIdx)
 	}
 }
 

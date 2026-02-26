@@ -29,6 +29,20 @@ func TestMapExtension_OverrideExtensions(t *testing.T) {
 		{"tf maps to hcl", "tf", "hcl"},
 		{"tfvars maps to hcl", "tfvars", "hcl"},
 		{"hcl maps to hcl", "hcl", "hcl"},
+		{"ino maps to arduino", "ino", "arduino"},
+		{"m maps to matlab", "m", "matlab"},
+		{"ql maps to ql", "ql", "ql"},
+		{"rkt maps to racket", "rkt", "racket"},
+		{"sol maps to solidity", "sol", "solidity"},
+		{"cht maps to chatito", "cht", "chatito"},
+		{"lisp maps to commonlisp", "lisp", "commonlisp"},
+		{"lsp maps to commonlisp", "lsp", "commonlisp"},
+		{"jl maps to julia", "jl", "julia"},
+		{"gleam maps to gleam", "gleam", "gleam"},
+		{"elm maps to elm", "elm", "elm"},
+		{"ex maps to elixir", "ex", "elixir"},
+		{"exs maps to elixir", "exs", "elixir"},
+		{"rules maps to udev", "rules", "udev"},
 	}
 
 	for _, tt := range tests {
@@ -61,6 +75,14 @@ func TestMapExtension_BaseExtensions(t *testing.T) {
 		{"cpp", "cpp", "cpp"},
 		{"rs", "rs", "rust"},
 		{"php", "php", "php"},
+		{"d language", "d", "d"},
+		{"d interface", "di", "d"},
+		{"dart", "dart", "dart"},
+		{"haskell", "hs", "haskell"},
+		{"haskell lhs", "lhs", "haskell"},
+		{"lua", "lua", "lua"},
+		{"r language", "r", "r"},
+		{"properties", "properties", "properties"},
 	}
 
 	for _, tt := range tests {
@@ -135,6 +157,28 @@ func TestMapPath(t *testing.T) {
 		{"ocaml interface", "main.mli", "ocaml_interface"},
 		{"terraform file", "main.tf", "hcl"},
 		{"kotlin file", "Main.kt", "kotlin"},
+		{"kotlin script", "script.kts", "kotlin"},
+		{"arduino file", "sketch.ino", "arduino"},
+		{"matlab file", "script.m", "matlab"},
+		{"codeql file", "query.ql", "ql"},
+		{"racket file", "main.rkt", "racket"},
+		{"solidity file", "contract.sol", "solidity"},
+		{"chatito file", "training.cht", "chatito"},
+		{"commonlisp file", "main.lisp", "commonlisp"},
+		{"commonlisp alt", "main.lsp", "commonlisp"},
+		{"julia file", "main.jl", "julia"},
+		{"gleam file", "main.gleam", "gleam"},
+		{"elm file", "Main.elm", "elm"},
+		{"elixir file", "main.ex", "elixir"},
+		{"elixir script", "script.exs", "elixir"},
+		{"udev file", "99-custom.rules", "udev"},
+		{"d language file", "main.d", "d"},
+		{"d interface file", "module.di", "d"},
+		{"dart file", "main.dart", "dart"},
+		{"haskell source", "Main.hs", "haskell"},
+		{"haskell module", "module.lhs", "haskell"},
+		{"lua file", "main.lua", "lua"},
+		{"properties file", "config.properties", "properties"},
 		{"no extension", "Makefile", ""},
 		{"empty path", "", ""},
 	}
@@ -159,9 +203,21 @@ func TestGetQueryKey_LanguageAliases(t *testing.T) {
 		{"tsx aliased to typescript", "tsx", "typescript"},
 		{"tsx uppercase", "TSX", "typescript"},
 		{"tsx with spaces", " tsx ", "typescript"},
+		{"jsx aliased to javascript", "jsx", "javascript"},
+		{"jsx uppercase", "JSX", "javascript"},
 		{"go no alias", "go", "go"},
 		{"python no alias", "python", "python"},
 		{"javascript no alias", "javascript", "javascript"},
+		{"csharp canonical", "csharp", "csharp"},
+		{"c_sharp aliased to csharp", "c_sharp", "csharp"},
+		{"kotlin canonical", "kotlin", "kotlin"},
+		{"fortran canonical", "fortran", "fortran"},
+		{"julia canonical", "julia", "julia"},
+		{"php canonical", "php", "php"},
+		{"scala canonical", "scala", "scala"},
+		{"zig canonical", "zig", "zig"},
+		{"ql canonical", "ql", "ql"},
+		{"haskell canonical", "haskell", "haskell"},
 	}
 
 	for _, tt := range tests {
@@ -231,7 +287,7 @@ func TestGetTagsQueryPath(t *testing.T) {
 func TestExtensionOverridesCompleteness(t *testing.T) {
 	t.Parallel()
 
-	// Verify all required overrides from the plan are present
+	// Verify all required overrides for manifest languages
 	requiredOverrides := map[string]string{
 		"jsx":    "javascript",
 		"tsx":    "typescript",
@@ -243,6 +299,20 @@ func TestExtensionOverridesCompleteness(t *testing.T) {
 		"hcl":    "hcl",
 		"tfvars": "hcl",
 		"kts":    "kotlin",
+		"ino":    "arduino",
+		"m":      "matlab",
+		"ql":     "ql",
+		"rkt":    "racket",
+		"sol":    "solidity",
+		"cht":    "chatito",
+		"lisp":   "commonlisp",
+		"lsp":    "commonlisp",
+		"jl":     "julia",
+		"gleam":  "gleam",
+		"elm":    "elm",
+		"ex":     "elixir",
+		"exs":    "elixir",
+		"rules":  "udev",
 	}
 
 	for ext, expectedLang := range requiredOverrides {
@@ -287,6 +357,23 @@ func TestHasTags(t *testing.T) {
 	require.True(t, HasTags("csharp"), "csharp should have tags")
 	require.True(t, HasTags("c_sharp"), "c_sharp should alias to csharp tags")
 	require.True(t, HasTags("zig"), "zig fallback query should be available")
+
+	// Additional manifest language coverage
+	languagesWithTags := []string{
+		"arduino", "chatito", "commonlisp", "d", "dart", "elisp",
+		"elixir", "elm", "fortran", "gleam", "haskell", "hcl",
+		"java", "javascript", "julia", "kotlin", "lua", "matlab",
+		"ocaml", "ocaml_interface", "php", "properties", "ql", "r",
+		"racket", "ruby", "rust", "scala", "solidity", "swift",
+		"udev",
+	}
+
+	for _, lang := range languagesWithTags {
+		t.Run(lang+" has tags", func(t *testing.T) {
+			t.Parallel()
+			require.True(t, HasTags(lang), lang+" should have tags query")
+		})
+	}
 }
 
 func TestOverridePriority(t *testing.T) {
@@ -343,7 +430,6 @@ func TestVendoredTagsQueries_NoInheritsDirective(t *testing.T) {
 	require.Len(t, entries, 39, "expected vendored query count to match manifest")
 
 	for _, entry := range entries {
-		entry := entry
 		t.Run(entry, func(t *testing.T) {
 			t.Parallel()
 			content, err := queriesFS.ReadFile(entry)
@@ -485,4 +571,90 @@ func TestExtensionMappingGolden_TSX_CSExpectations(t *testing.T) {
 	require.Equal(t, "csharp", MapExtension("cs"), "cs extension must map to csharp")
 	require.Equal(t, "csharp", MapExtension(".cs"), ".cs must map to csharp")
 	require.Equal(t, "csharp", MapExtension(".CS"), "case insensitive .CS must map to csharp")
+}
+
+func TestExtensionMappingDeterministic(t *testing.T) {
+	t.Parallel()
+
+	// Ensure extension mappings are deterministic and consistent
+	// by calling MapExtension multiple times and verifying consistent results
+	extensions := []string{"go", "py", "rs", "java", "cpp", "tsx", "jsx", "cs", "kt", "tf", "hcl", "ql", "ino", "m", "rkt", "sol"}
+
+	for _, ext := range extensions {
+		t.Run(ext, func(t *testing.T) {
+			t.Parallel()
+			first := MapExtension(ext)
+			second := MapExtension(ext)
+			third := MapExtension(ext)
+			require.Equal(t, first, second, "extension %s should map consistently")
+			require.Equal(t, second, third, "extension %s should map consistently")
+			require.NotEmpty(t, first, "extension %s should map to a language", ext)
+		})
+	}
+}
+
+func TestGetQueryKeyDeterministic(t *testing.T) {
+	t.Parallel()
+
+	// Ensure query key resolution is deterministic and consistent
+	languages := []string{
+		"go", "python", "rust", "java", "cpp", "typescript", "javascript",
+		"csharp", "c_sharp", "tsx", "jsx", "kotlin", "ql", "zig", "arduino",
+		"haskell", "fortran", "julia", "php", "scala",
+	}
+
+	for _, lang := range languages {
+		t.Run(lang, func(t *testing.T) {
+			t.Parallel()
+			first := GetQueryKey(lang)
+			second := GetQueryKey(lang)
+			third := GetQueryKey(lang)
+			require.Equal(t, first, second, "language %s should resolve to consistent query key", lang)
+			require.Equal(t, second, third, "language %s should resolve to consistent query key", lang)
+			require.NotEmpty(t, first, "language %s should resolve to non-empty query key", lang)
+		})
+	}
+}
+
+func TestHasTagsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	// Ensure HasTags returns consistent results across multiple calls
+	languages := []string{
+		"go", "python", "rust", "java", "cpp", "typescript", "javascript",
+		"csharp", "tsx", "kotlin", "zig", "ql", "arduino", "haskell", "fortran",
+	}
+
+	for _, lang := range languages {
+		t.Run(lang, func(t *testing.T) {
+			t.Parallel()
+			first := HasTags(lang)
+			second := HasTags(lang)
+			third := HasTags(lang)
+			require.Equal(t, first, second, "HasTags(%s) should return consistent result", lang)
+			require.Equal(t, second, third, "HasTags(%s) should return consistent result", lang)
+			require.True(t, first, "language %s should have tags query", lang)
+		})
+	}
+}
+
+func TestManifestLanguageCoverage(t *testing.T) {
+	t.Parallel()
+
+	// Ensure all manifest languages either have extension mappings
+	// or are valid query keys for HasTags()
+	manifest, err := LoadLanguagesManifest()
+	require.NoError(t, err)
+
+	for _, lang := range manifest.Languages {
+		t.Run(lang.Name, func(t *testing.T) {
+			t.Parallel()
+
+			queryKey := GetQueryKey(lang.Name)
+			require.NotEmpty(t, queryKey, "language %s should resolve to non-empty query key", lang.Name)
+
+			hasTags := HasTagsQuery(queryKey)
+			require.True(t, hasTags, "language %s (queried as %s) should have tags query", lang.Name, queryKey)
+		})
+	}
 }

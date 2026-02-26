@@ -344,11 +344,11 @@ func (e *MarkdownExplorer) extractFencedCodeBlocks(content string) []codeBlock {
 
 	for _, line := range lines {
 		trimmed := strings.TrimLeft(line, " \t")
-		if strings.HasPrefix(trimmed, "```") {
+		if after, ok := strings.CutPrefix(trimmed, "```"); ok {
 			if !inBlock {
 				// Opening fence - extract language spec
 				inBlock = true
-				langSpec := strings.TrimPrefix(trimmed, "```")
+				langSpec := after
 				currentLang = strings.TrimSpace(langSpec)
 				// Language can be empty or contain multiple words
 				if currentLang != "" {

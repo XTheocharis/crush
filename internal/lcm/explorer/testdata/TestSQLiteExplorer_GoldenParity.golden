@@ -32,3 +32,12 @@
 - email TEXT
 - id INTEGER (PK)
 - name TEXT NOT NULL
+
+### comments
+- (empty table)
+
+### posts
+- (empty table)
+
+### users
+- (empty table)

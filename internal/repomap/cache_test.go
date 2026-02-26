@@ -54,7 +54,7 @@ func TestSessionCacheConcurrentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(idx int) {
 			defer wg.Done()
 			mapStr := mapStr(idx)
@@ -88,7 +88,7 @@ func TestSessionCacheConcurrentReadWrites(t *testing.T) {
 	// Write goroutine that increments value
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < writes; i++ {
+		for i := range writes {
 			cache.Store("map-"+string([]byte{byte(i % 256)}), i)
 		}
 		close(done)
@@ -97,7 +97,7 @@ func TestSessionCacheConcurrentReadWrites(t *testing.T) {
 	// Reader goroutines
 	var wg sync.WaitGroup
 	wg.Add(readers)
-	for i := 0; i < readers; i++ {
+	for range readers {
 		go func() {
 			defer wg.Done()
 			for {
@@ -122,7 +122,7 @@ func TestSessionCacheConsistency(t *testing.T) {
 	cache := NewSessionCache()
 	const iterations = 1000
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		expectedMap := "map-" + string([]byte{byte(i % 256)})
 		expectedTok := i
 
@@ -266,7 +266,7 @@ func TestSessionCacheSetConcurrentAccess(t *testing.T) {
 	wg.Add(goroutines)
 
 	// Spawn many goroutines doing random operations
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(idx int) {
 			defer wg.Done()
 			sessionID := "sess" + string([]byte{byte(idx % sessions)})
@@ -286,7 +286,7 @@ func TestSessionCacheSetConcurrentAccess(t *testing.T) {
 	wg.Wait()
 
 	// Verify final state is consistent with last writes
-	for i := 0; i < sessions; i++ {
+	for i := range sessions {
 		sessionID := "sess" + string([]byte{byte(i)})
 		s, tok := set.Load(sessionID)
 		// Either non-empty (was written) or empty (was never written)
@@ -353,11 +353,11 @@ func TestServiceLastGoodConsistency(t *testing.T) {
 	wg.Add(sessions)
 
 	// Concurrent writes to multiple sessions
-	for sessIdx := 0; sessIdx < sessions; sessIdx++ {
+	for sessIdx := range sessions {
 		sessionID := "sess" + string([]byte{byte(sessIdx)})
 		go func(sid string, startTok int) {
 			defer wg.Done()
-			for i := 0; i < writesPerSession; i++ {
+			for i := range writesPerSession {
 				tok := startTok + i
 				svc.sessionCaches.Store(sid, "map", tok)
 			}
@@ -367,7 +367,7 @@ func TestServiceLastGoodConsistency(t *testing.T) {
 	wg.Wait()
 
 	// Verify each session has consistent map/token pairs
-	for sessIdx := 0; sessIdx < sessions; sessIdx++ {
+	for sessIdx := range sessions {
 		sessionID := "sess" + string([]byte{byte(sessIdx)})
 		lastMap := svc.LastGoodMap(sessionID)
 		lastTok := svc.LastTokenCount(sessionID)
@@ -468,7 +468,7 @@ func TestServiceConcurrentResetAndAccess(t *testing.T) {
 	// Accessor goroutine
 	go func() {
 		defer wg.Done()
-		for i := 0; i < operations; i++ {
+		for range operations {
 			svc.LastGoodMap("sess1")
 			svc.LastTokenCount("sess1")
 			readCount.Add(1)
@@ -478,7 +478,7 @@ func TestServiceConcurrentResetAndAccess(t *testing.T) {
 	// Reset goroutine
 	go func() {
 		defer wg.Done()
-		for i := 0; i < operations/10; i++ {
+		for range operations / 10 {
 			_ = svc.Reset(context.Background(), "sess1")
 			resetCount.Add(1)
 		}
@@ -497,7 +497,7 @@ func TestCacheAtomicInvariants(t *testing.T) {
 	cache := NewSessionCache()
 	const iterations = 10000
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		// Store is atomic: both values update together
 		mapVal := "map-" + string([]byte{byte(i % 256)})
 		tokVal := i
@@ -521,12 +521,12 @@ func TestMultipleSessionIsolation(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(sessions)
 
-	for i := 0; i < sessions; i++ {
+	for i := range sessions {
 		go func(sessionIdx int) {
 			defer wg.Done()
 			sessionID := "sess" + string([]byte{byte(sessionIdx)})
 
-			for j := 0; j < 100; j++ {
+			for j := range 100 {
 				expectedMap := "map-" + string([]byte{byte(j % 256)})
 				expectedTok := j
 
@@ -544,7 +544,7 @@ func TestMultipleSessionIsolation(t *testing.T) {
 	wg.Wait()
 
 	// Final state: each session has its last value
-	for i := 0; i < sessions; i++ {
+	for i := range sessions {
 		sessionID := "sess" + string([]byte{byte(i)})
 		gotMap, gotTok := set.Load(sessionID)
 
@@ -570,7 +570,7 @@ func TestClearAllDuringOperations(t *testing.T) {
 	// Writer goroutine
 	go func() {
 		defer wg.Done()
-		for i := 0; i < operations; i++ {
+		for i := range operations {
 			sessionID := "sess" + string([]byte{byte(i % sessions)})
 			set.Store(sessionID, "map", i)
 			set.Load(sessionID)
@@ -581,7 +581,7 @@ func TestClearAllDuringOperations(t *testing.T) {
 	// ClearAll goroutine
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			set.ClearAll()
 		}
 	}()
@@ -602,7 +602,7 @@ func TestNoDataRaceWriteWrite(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(idx int) {
 			defer wg.Done()
 			cache.Store("map-"+string([]byte{byte(idx % 256)}), idx)
@@ -626,7 +626,7 @@ func TestNoDataRaceReadWrite(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines * 2)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		// Writers
 		go func(idx int) {
 			defer wg.Done()
@@ -655,7 +655,7 @@ func TestNoDataRaceClearRead(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines * 2)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		// Clearers
 		go func(idx int) {
 			defer wg.Done()

@@ -26,8 +26,8 @@ func TestRefreshAsyncSingleflightDedup(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 	}
 
-	opts := GenerateOpts{SessionID: "sess-1", ChatFiles: []string{"a.go"}, TokenBudget: 100}
-	for i := 0; i < 32; i++ {
+	opts := GenerateOpts{SessionID: "sess-1", ChatFiles: []string{"a.go"}, TokenBudget: 100, ForceRefresh: true}
+	for range 32 {
 		svc.RefreshAsync("sess-1", opts)
 	}
 
@@ -56,7 +56,7 @@ func TestPreIndexSingleflightDedup(t *testing.T) {
 		<-release
 	}
 
-	for i := 0; i < 32; i++ {
+	for range 32 {
 		svc.PreIndex()
 	}
 

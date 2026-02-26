@@ -1,0 +1,361 @@
+{
+  "version": "1",
+  "generated_at": "2026-02-26T12:51:09Z",
+  "gate_id": "C-0C-GATE",
+  "artifact_sha256": "6c98a70400304f14636b637c8287aebfc005d2b2d9293d23251455d921384860",
+  "runtime_inventory_version": "1",
+  "evidence": {
+    "runtime_persistence_wiring": {
+      "binary_explorer": {
+        "passed": true,
+        "adapter_available": true,
+        "explore_called": true,
+        "persist_called": true,
+        "explorer_identified": "binary",
+        "should_persist": false
+      },
+      "go_explorer": {
+        "passed": true,
+        "adapter_available": true,
+        "explore_called": true,
+        "persist_called": true,
+        "explorer_identified": "go",
+        "should_persist": true
+      },
+      "json_explorer": {
+        "passed": true,
+        "adapter_available": true,
+        "explore_called": true,
+        "persist_called": true,
+        "explorer_identified": "json",
+        "should_persist": true
+      },
+      "text_explorer": {
+        "passed": true,
+        "adapter_available": true,
+        "explore_called": true,
+        "persist_called": true,
+        "explorer_identified": "text",
+        "should_persist": true
+      },
+      "yaml_explorer": {
+        "passed": true,
+        "adapter_available": true,
+        "explore_called": true,
+        "persist_called": true,
+        "explorer_identified": "yaml",
+        "should_persist": true
+      }
+    },
+    "matrix_enforcement": {
+      "matrix_binary": {
+        "passed": true,
+        "policy_id": "path_BinaryExplorer",
+        "path_kind": "native_binary",
+        "should_persist": false,
+        "actual_persist": false
+      },
+      "matrix_c": {
+        "passed": true,
+        "policy_id": "path_CExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_cpp": {
+        "passed": true,
+        "policy_id": "path_CppExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_csv": {
+        "passed": true,
+        "policy_id": "path_CsvExplorer",
+        "path_kind": "data_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_fallback": {
+        "passed": true,
+        "policy_id": "path_FallbackExplorer",
+        "path_kind": "fallback_final",
+        "should_persist": false,
+        "actual_persist": false
+      },
+      "matrix_go": {
+        "passed": true,
+        "policy_id": "path_GoExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_html": {
+        "passed": true,
+        "policy_id": "path_HtmlExplorer",
+        "path_kind": "data_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_ini": {
+        "passed": true,
+        "policy_id": "path_IniExplorer",
+        "path_kind": "data_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_java": {
+        "passed": true,
+        "policy_id": "path_JavaExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_javascript": {
+        "passed": true,
+        "policy_id": "path_JavascriptExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_json": {
+        "passed": true,
+        "policy_id": "path_JsonExplorer",
+        "path_kind": "data_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_python": {
+        "passed": true,
+        "policy_id": "path_PythonExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_ruby": {
+        "passed": true,
+        "policy_id": "path_RubyExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_rust": {
+        "passed": true,
+        "policy_id": "path_RustExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_shell": {
+        "passed": true,
+        "policy_id": "path_ShellExplorer",
+        "path_kind": "shell_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_text": {
+        "passed": true,
+        "policy_id": "path_TextExplorer",
+        "path_kind": "text_format_generic",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_toml": {
+        "passed": true,
+        "policy_id": "path_TomlExplorer",
+        "path_kind": "data_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_typescript": {
+        "passed": true,
+        "policy_id": "path_TypescriptExplorer",
+        "path_kind": "code_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_xml": {
+        "passed": true,
+        "policy_id": "path_XmlExplorer",
+        "path_kind": "data_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      },
+      "matrix_yaml": {
+        "passed": true,
+        "policy_id": "path_YamlExplorer",
+        "path_kind": "data_format_native",
+        "should_persist": true,
+        "actual_persist": true
+      }
+    },
+    "profile_behavior": {
+      "profile_binary": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "binary",
+        "parity_persist": false,
+        "enhance_persist": false
+      },
+      "profile_c": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "c",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_cpp": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "cpp",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_csv": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "csv",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_fallback": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "fallback",
+        "parity_persist": false,
+        "enhance_persist": false
+      },
+      "profile_go": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "go",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_html": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "html",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_ini": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "ini",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_java": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "java",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_javascript": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "javascript",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_json": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "json",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_python": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "python",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_ruby": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "ruby",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_rust": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "rust",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_shell": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "shell",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_text": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "text",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_toml": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "toml",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_typescript": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "typescript",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_xml": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "xml",
+        "parity_persist": false,
+        "enhance_persist": true
+      },
+      "profile_yaml": {
+        "passed": true,
+        "profile": "comparison",
+        "explorer": "yaml",
+        "parity_persist": false,
+        "enhance_persist": true
+      }
+    },
+    "tested_explorers": [
+      "text",
+      "go",
+      "python",
+      "javascript",
+      "typescript",
+      "rust",
+      "java",
+      "cpp",
+      "c",
+      "ruby",
+      "shell",
+      "json",
+      "yaml",
+      "csv",
+      "markdown",
+      "latex",
+      "sqlite",
+      "logs",
+      "toml",
+      "ini",
+      "xml",
+      "html",
+      "binary",
+      "fallback"
+    ]
+  }
+}

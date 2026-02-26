@@ -149,7 +149,7 @@ tasks:
       PARITY_MODE: true
     cmds:
       - test "$CGO_ENABLED" = "1" || { echo "parity:bundle requires CGO_ENABLED=1"; exit 1; }
-      - go test -failfast ./internal/repomap/... ./internal/lcm/explorer/... -run 'Conformance|Bundle|Manifest' -count=1 {{.CLI_ARGS}}
+      - go test -failfast ./internal/repomap/... ./internal/lcm/explorer/... -run 'Parity|Conformance|Bundle|Manifest|Gate' -count=1 {{.CLI_ARGS}}
 
   test:exceed:
     desc: Run exceed mode tests (parity_mode=false, requires CGO)

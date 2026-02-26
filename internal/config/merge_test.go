@@ -263,6 +263,25 @@ func TestConfigMerging(t *testing.T) {
 		require.Equal(t, 3.0, c.Tools.RepoMap.MapMulNoFiles, "map_mul_no_files should use second value")
 	})
 
+	t.Run("repo_map_parser_pool_size_last_non_zero", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Tools: Tools{
+				RepoMap: RepoMapOptions{ParserPoolSize: 4},
+			},
+		}, Config{
+			Tools: Tools{
+				RepoMap: RepoMapOptions{ParserPoolSize: 0},
+			},
+		}, Config{
+			Tools: Tools{
+				RepoMap: RepoMapOptions{ParserPoolSize: 8},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.Equal(t, 8, c.Tools.RepoMap.ParserPoolSize)
+	})
+
 	t.Run("repo_map_second_wins_nonzero", func(t *testing.T) {
 		c := exerciseMerge(t, Config{
 			Tools: Tools{
@@ -889,6 +908,24 @@ func TestConfigMerging(t *testing.T) {
 		require.Equal(t, 5000, c.Options.LCM.LargeToolOutputTokenThreshold)
 	})
 
+	t.Run("lcm_explorer_output_profile_last_non_empty", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				LCM: &LCMOptions{ExplorerOutputProfile: "enhancement"},
+				TUI: &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				LCM: &LCMOptions{ExplorerOutputProfile: "parity"},
+				TUI: &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.NotNil(t, c.Options.LCM)
+		require.Equal(t, "parity", c.Options.LCM.ExplorerOutputProfile)
+	})
+
 	t.Run("lcm_disable_large_tool_output_true_if_any", func(t *testing.T) {
 		c := exerciseMerge(t, Config{
 			Options: &Options{
@@ -961,6 +998,29 @@ func TestConfigMerging(t *testing.T) {
 		require.Equal(t, "manual", c.Options.RepoMap.RefreshMode)
 		require.Equal(t, 3.5, c.Options.RepoMap.MapMulNoFiles)
 		require.Equal(t, []string{"*.min.js", "dist/**", "vendor/**"}, c.Options.RepoMap.ExcludeGlobs)
+	})
+
+	t.Run("repo_map_parser_pool_size_options_last_non_zero", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{ParserPoolSize: 2},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{ParserPoolSize: 0},
+				TUI:     &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				RepoMap: &RepoMapOptions{ParserPoolSize: 6},
+				TUI:     &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.NotNil(t, c.Options.RepoMap)
+		require.Equal(t, 6, c.Options.RepoMap.ParserPoolSize)
 	})
 
 	t.Run("repo_map_disabled_or_latch", func(t *testing.T) {

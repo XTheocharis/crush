@@ -267,7 +267,6 @@ func TestParityAiderFixtureValidate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -333,7 +332,7 @@ func TestVerifyFixturesIntegrity(t *testing.T) {
 			FixtureID: "test_fixture",
 			Provenance: ParityProvenanceBundle{
 				AiderCommitSHA:    strings.Repeat("a", 40),
-				ComparatorPath:    "../aider",
+				ComparatorPath:    "../aider/tree/" + strings.Repeat("a", 40),
 				FixturesSHA256:    expectedHash,
 				GrepASTProvenance: "grep-ast@v1.2.3",
 				TokenizerID:       "cl100k_base",
@@ -352,7 +351,7 @@ func TestVerifyFixturesIntegrity(t *testing.T) {
 			FixtureID: "test_fixture",
 			Provenance: ParityProvenanceBundle{
 				AiderCommitSHA:    strings.Repeat("a", 40),
-				ComparatorPath:    "../aider",
+				ComparatorPath:    "../aider/tree/" + strings.Repeat("a", 40),
 				FixturesSHA256:    strings.Repeat("c", 64),
 				GrepASTProvenance: "grep-ast@v1.2.3",
 				TokenizerID:       "cl100k_base",
@@ -362,7 +361,27 @@ func TestVerifyFixturesIntegrity(t *testing.T) {
 
 		err := VerifyFixturesIntegrity(fx, tmpDir)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "sha256 mismatch")
+		require.Contains(t, err.Error(), "fixtures_sha256 mismatch")
+	})
+
+	t.Run("invalid integrity - placeholder hash", func(t *testing.T) {
+		t.Parallel()
+
+		fx := ParityAiderFixture{
+			FixtureID: "test_fixture",
+			Provenance: ParityProvenanceBundle{
+				AiderCommitSHA:    strings.Repeat("a", 40),
+				ComparatorPath:    "../aider/tree/" + strings.Repeat("a", 40),
+				FixturesSHA256:    strings.Repeat("d", 64),
+				GrepASTProvenance: "grep-ast@v1.2.3",
+				TokenizerID:       "cl100k_base",
+				TokenizerVersion:  "v0.1.0",
+			},
+		}
+
+		err := VerifyFixturesIntegrity(fx, tmpDir)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "placeholder")
 	})
 }
 
@@ -378,7 +397,6 @@ func TestParityFixtureHarnessIntegration(t *testing.T) {
 			t.Parallel()
 
 			for _, profile := range fx.Profiles {
-				profile := profile
 				t.Run(profile.ProfileID, func(t *testing.T) {
 					t.Parallel()
 

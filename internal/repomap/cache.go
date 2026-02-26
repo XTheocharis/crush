@@ -95,6 +95,15 @@ func (c *RenderCache) Set(key, mapString string, tokenCount int) {
 	c.entries[key] = renderCacheEntry{mapString: mapString, tokenCount: tokenCount}
 }
 
+func (c *RenderCache) Delete(key string) {
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.entries, key)
+}
+
 func (c *RenderCache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

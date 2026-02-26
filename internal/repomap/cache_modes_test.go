@@ -96,3 +96,64 @@ func TestRefreshStoresRenderCacheForKeyedModes(t *testing.T) {
 	require.Equal(t, "last", cachedMap)
 	require.Equal(t, 7, cachedTok)
 }
+
+func TestGenerateForceRefreshInvalidatesSessionAndRenderCaches(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{Options: &config.Options{RepoMap: &config.RepoMapOptions{RefreshMode: "auto"}}}
+	svc := NewService(cfg, nil, nil, ".", context.Background())
+
+	opts := GenerateOpts{
+		SessionID:       "s",
+		ChatFiles:       []string{"a.go"},
+		MentionedFnames: []string{"b.go"},
+		MentionedIdents: []string{"Foo"},
+		TokenBudget:     100,
+	}
+	key := buildRenderCacheKey("auto", opts)
+	svc.sessionCaches.Store("s", "last", 9)
+	svc.renderCaches.GetOrCreate("s").Set(key, "cached", 7)
+
+	m, tok, err := svc.Generate(context.Background(), GenerateOpts{
+		SessionID:       "s",
+		ChatFiles:       []string{"a.go"},
+		MentionedFnames: []string{"b.go"},
+		MentionedIdents: []string{"Foo"},
+		TokenBudget:     100,
+		ForceRefresh:    true,
+	})
+	require.NoError(t, err)
+	require.Empty(t, m)
+	require.Zero(t, tok)
+
+	lastMap, lastTok := svc.sessionCaches.Load("s")
+	require.Empty(t, lastMap)
+	require.Zero(t, lastTok)
+
+	_, _, ok := svc.renderCaches.GetOrCreate("s").Get(key)
+	require.False(t, ok)
+}
+
+func TestRefreshForceRefreshInvalidatesCachesBeforeGenerate(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{Options: &config.Options{RepoMap: &config.RepoMapOptions{RefreshMode: "files"}}}
+	svc := NewService(cfg, nil, nil, ".", context.Background())
+	opts := GenerateOpts{SessionID: "s", ChatFiles: []string{"a.go"}, TokenBudget: 100}
+	key := buildRenderCacheKey("files", opts)
+
+	svc.sessionCaches.Store("s", "last", 5)
+	svc.renderCaches.GetOrCreate("s").Set(key, "cached", 6)
+
+	m, tok, err := svc.Refresh(context.Background(), "s", GenerateOpts{SessionID: "s", ChatFiles: []string{"a.go"}, TokenBudget: 100, ForceRefresh: true})
+	require.NoError(t, err)
+	require.Empty(t, m)
+	require.Zero(t, tok)
+
+	lastMap, lastTok := svc.sessionCaches.Load("s")
+	require.Empty(t, lastMap)
+	require.Zero(t, lastTok)
+
+	_, _, ok := svc.renderCaches.GetOrCreate("s").Get(key)
+	require.False(t, ok)
+}

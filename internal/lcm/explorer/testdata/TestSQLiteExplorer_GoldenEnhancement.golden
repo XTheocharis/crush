@@ -32,3 +32,18 @@
 - email TEXT
 - id INTEGER (PK)
 - name TEXT NOT NULL
+
+### comments
+- (empty table)
+
+### posts
+- (empty table)
+
+### users
+- (empty table)
+- Constraints: 1
+- Triggers: 0
+- Views: 0
+
+### users
+- UNIQUE INDEX: sqlite_autoindex_users_1

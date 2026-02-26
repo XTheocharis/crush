@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -234,9 +235,7 @@ func collectQuerySources(primaryDir, fallbackDir string) (map[string]string, err
 		if err != nil {
 			return nil, err
 		}
-		for name, path := range primary {
-			sources[name] = path
-		}
+		maps.Copy(sources, primary)
 	}
 
 	if strings.TrimSpace(fallbackDir) != "" {
@@ -282,9 +281,7 @@ func writeManifestWithTargetNames(path string, targetNames map[string]struct{}) 
 		if err := json.Unmarshal(data, &doc); err != nil {
 			return fmt.Errorf("parse manifest %q: %w", path, err)
 		}
-		for name, entry := range languageEntriesByName(doc["languages"]) {
-			existingByName[name] = entry
-		}
+		maps.Copy(existingByName, languageEntriesByName(doc["languages"]))
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read manifest %q: %w", path, err)
 	}
@@ -345,9 +342,7 @@ func languageEntriesByName(raw any) map[string]map[string]any {
 
 func cloneStringAnyMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }
 

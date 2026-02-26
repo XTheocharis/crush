@@ -1,13 +1,14 @@
 package repomap
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -59,15 +60,9 @@ type fixtureAssertions struct {
 	RequireTrimOrder       []int `json:"require_trim_order"`
 }
 
-type verticalSliceEntry struct {
-	Stage int
-	File  string
-	Ident string
-}
-
 type verticalSliceResult struct {
 	MapText                string
-	Entries                []verticalSliceEntry
+	Entries                []StageEntry
 	ParityTokens           float64
 	SafetyTokens           int
 	RawHash                string
@@ -77,15 +72,6 @@ type verticalSliceResult struct {
 	RenderedFileEntryCount int
 	ComparatorAccepted     bool
 	ComparatorDelta        float64
-}
-
-type verticalSliceCandidate struct {
-	entries            []verticalSliceEntry
-	trimmedStages      []int
-	parityTokens       float64
-	safetyTokens       int
-	comparatorAccepted bool
-	comparatorDelta    float64
 }
 
 // TestStageAssemblyInvariants validates the 3A.0 stage assembly semantics:
@@ -105,16 +91,14 @@ func TestStageAssemblyInvariants(t *testing.T) {
 
 	fixtures := loadVerticalSliceFixtures(t)
 	for _, fx := range fixtures {
-		fx := fx
 		t.Run(fx.Name, func(t *testing.T) {
 			t.Parallel()
 			for _, profile := range fx.Profiles {
-				profile := profile
 				t.Run(profile.Name, func(t *testing.T) {
 					t.Parallel()
 
 					const repeats = 5
-					for run := 0; run < repeats; run++ {
+					for run := range repeats {
 						result := runVerticalSliceHarness(fx, profile)
 
 						// Always assert stage invariants for Stage tests
@@ -144,11 +128,9 @@ func TestVerticalSliceHarnessProfiles(t *testing.T) {
 
 	fixtures := loadVerticalSliceFixtures(t)
 	for _, fx := range fixtures {
-		fx := fx
 		t.Run(fx.Name, func(t *testing.T) {
 			t.Parallel()
 			for _, profile := range fx.Profiles {
-				profile := profile
 				t.Run(profile.Name, func(t *testing.T) {
 					t.Parallel()
 
@@ -257,13 +239,7 @@ func assertStageAssemblyInvariants(t *testing.T, fx verticalSliceFixture, result
 
 		// Verify all fixture stage0 files are in result
 		for _, s0File := range stage0Files {
-			found := false
-			for _, rFile := range resultStage0Files {
-				if rFile == s0File {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(resultStage0Files, s0File)
 			if !found {
 				t.Fatalf("fixture=%q: stage0 file %q from fixture not found in rendered result", fx.Name, s0File)
 			}
@@ -347,192 +323,58 @@ func isNonDecreasing(values []int) bool {
 }
 
 func runVerticalSliceHarness(fx verticalSliceFixture, profile fixtureProfile) verticalSliceResult {
-	extracted := extractFixtureEntries(fx)
-	graph := graphFixtureEntries(extracted)
-	ranked := rankFixtureEntries(graph)
+	entries := extractFixtureEntries(fx)
 
-	selected, parityTokens, safetyTokens, trimmedStages, comparatorAccepted, comparatorDelta := fitFixtureToBudget(ranked, profile)
-	rendered := renderFixtureMap(selected)
+	counter := TokenCounter(nil)
+	model := ""
+	if profile.ParityMode {
+		counter = fakeCounter{out: profile.TokenBudget}
+		model = "fixture-parity"
+	}
+
+	fit, err := FitToBudget(context.Background(), entries, BudgetProfile{
+		ParityMode:   profile.ParityMode,
+		TokenBudget:  profile.TokenBudget,
+		Model:        model,
+		LanguageHint: "default",
+	}, counter)
+	if err != nil {
+		panic(fmt.Sprintf("fit fixture to budget: %v", err))
+	}
+
+	rendered := renderStageEntries(fit.Entries)
 
 	return verticalSliceResult{
 		MapText:                rendered,
-		Entries:                selected,
-		ParityTokens:           parityTokens,
-		SafetyTokens:           safetyTokens,
+		Entries:                fit.Entries,
+		ParityTokens:           fit.ParityTokens,
+		SafetyTokens:           fit.SafetyTokens,
 		RawHash:                stableHash(rendered),
 		NormalizedHash:         stableHash(normalizeParityMap(rendered)),
-		TrimmedStages:          trimmedStages,
-		Stage0Preserved:        allStage0Preserved(extracted, selected),
-		RenderedFileEntryCount: countRenderedFileEntries(selected),
-		ComparatorAccepted:     comparatorAccepted,
-		ComparatorDelta:        comparatorDelta,
+		TrimmedStages:          fit.TrimmedStages,
+		Stage0Preserved:        allStage0Preserved(entries, fit.Entries),
+		RenderedFileEntryCount: countRenderedFileEntries(fit.Entries),
+		ComparatorAccepted:     fit.ComparatorAccepted,
+		ComparatorDelta:        fit.ComparatorDelta,
 	}
 }
 
-func extractFixtureEntries(fx verticalSliceFixture) []verticalSliceEntry {
-	entries := make([]verticalSliceEntry, 0, len(fx.Pipeline.Stage0)+len(fx.Pipeline.Stage1)+len(fx.Pipeline.Stage2)+len(fx.Pipeline.Stage3))
-	for _, file := range fx.Pipeline.Stage0 {
-		entries = append(entries, verticalSliceEntry{Stage: 0, File: file})
-	}
+func extractFixtureEntries(fx verticalSliceFixture) []StageEntry {
+	rankedDefs := make([]RankedDefinition, 0, len(fx.Pipeline.Stage1))
 	for _, def := range fx.Pipeline.Stage1 {
-		entries = append(entries, verticalSliceEntry{Stage: 1, File: def.File, Ident: def.Ident})
+		rankedDefs = append(rankedDefs, RankedDefinition(def))
 	}
-	for _, file := range fx.Pipeline.Stage2 {
-		entries = append(entries, verticalSliceEntry{Stage: 2, File: file})
-	}
-	for _, file := range fx.Pipeline.Stage3 {
-		entries = append(entries, verticalSliceEntry{Stage: 3, File: file})
-	}
-	return entries
+	return AssembleStageEntries(
+		fx.Pipeline.Stage0,
+		rankedDefs,
+		fx.Pipeline.Stage2,
+		fx.Pipeline.Stage3,
+		nil,
+		false,
+	)
 }
 
-func graphFixtureEntries(entries []verticalSliceEntry) []verticalSliceEntry {
-	// For 3A.0 harness scope, graph stage is represented by deterministic
-	// propagation of extracted stage entries.
-	return append([]verticalSliceEntry(nil), entries...)
-}
-
-func rankFixtureEntries(entries []verticalSliceEntry) []verticalSliceEntry {
-	// For 3A.0 harness scope, ranking is fixture-driven and deterministic.
-	return append([]verticalSliceEntry(nil), entries...)
-}
-
-func fitFixtureToBudget(entries []verticalSliceEntry, profile fixtureProfile) ([]verticalSliceEntry, float64, int, []int, bool, float64) {
-	candidates := make([]verticalSliceCandidate, 0, len(entries)+1)
-	working := append([]verticalSliceEntry(nil), entries...)
-	trimmedStages := make([]int, 0, len(entries))
-
-	for {
-		rendered := renderFixtureMap(working)
-		parityTokens := parityTokenCount(rendered)
-		safetyTokens := safetyTokenCount(rendered, parityTokens)
-		delta := comparatorDelta(parityTokens, profile.TokenBudget)
-		accepted := delta <= 0.15
-		candidates = append(candidates, verticalSliceCandidate{
-			entries:            append([]verticalSliceEntry(nil), working...),
-			trimmedStages:      append([]int(nil), trimmedStages...),
-			parityTokens:       parityTokens,
-			safetyTokens:       safetyTokens,
-			comparatorAccepted: accepted,
-			comparatorDelta:    delta,
-		})
-
-		if len(working) == 0 {
-			break
-		}
-
-		idx := indexToTrim(working)
-		if idx < 0 {
-			break
-		}
-		trimmedStages = append(trimmedStages, working[idx].Stage)
-		working = append(working[:idx], working[idx+1:]...)
-	}
-
-	selected := chooseCandidate(candidates, profile)
-	return selected.entries, selected.parityTokens, selected.safetyTokens, selected.trimmedStages, selected.comparatorAccepted, selected.comparatorDelta
-}
-
-func chooseCandidate(candidates []verticalSliceCandidate, profile fixtureProfile) verticalSliceCandidate {
-	if len(candidates) == 0 {
-		return verticalSliceCandidate{}
-	}
-
-	if profile.ParityMode {
-		for _, c := range candidates {
-			if c.comparatorAccepted {
-				return c
-			}
-		}
-		best := candidates[0]
-		for _, c := range candidates[1:] {
-			if c.comparatorDelta < best.comparatorDelta {
-				best = c
-			}
-		}
-		return best
-	}
-
-	for _, c := range candidates {
-		if c.safetyTokens <= profile.TokenBudget {
-			return c
-		}
-	}
-	return candidates[len(candidates)-1]
-}
-
-func indexToTrim(entries []verticalSliceEntry) int {
-	for _, stage := range []int{3, 2, 1} {
-		for i := len(entries) - 1; i >= 0; i-- {
-			if entries[i].Stage == stage {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func renderFixtureMap(entries []verticalSliceEntry) string {
-	if len(entries) == 0 {
-		return ""
-	}
-	lines := make([]string, 0, len(entries))
-	for _, e := range entries {
-		switch e.Stage {
-		case 0:
-			lines = append(lines, fmt.Sprintf("S0|%s", e.File))
-		case 1:
-			lines = append(lines, fmt.Sprintf("S1|%s|%s", e.File, e.Ident))
-		case 2:
-			lines = append(lines, fmt.Sprintf("S2|%s", e.File))
-		case 3:
-			lines = append(lines, fmt.Sprintf("S3|%s", e.File))
-		}
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
-
-func parityTokenCount(text string) float64 {
-	if text == "" {
-		return 0
-	}
-	if len(text) < 200 {
-		return float64(len(text)) / 4.0
-	}
-	lines := strings.SplitAfter(text, "\n")
-	step := len(lines) / 100
-	if step < 1 {
-		step = 1
-	}
-	var sampled strings.Builder
-	for i := 0; i < len(lines); i += step {
-		sampled.WriteString(lines[i])
-	}
-	sample := sampled.String()
-	if sample == "" {
-		return float64(len(text)) / 4.0
-	}
-	sampleTokens := float64(len(sample)) / 4.0
-	return sampleTokens / float64(len(sample)) * float64(len(text))
-}
-
-func safetyTokenCount(text string, parityTokens float64) int {
-	heuristic := math.Ceil((float64(len(text)) / 3.5) * 1.15)
-	parityCeil := math.Ceil(parityTokens)
-	if heuristic > parityCeil {
-		return int(heuristic)
-	}
-	return int(parityCeil)
-}
-
-func comparatorDelta(parityTokens float64, budget int) float64 {
-	if budget <= 0 {
-		return math.Inf(1)
-	}
-	return math.Abs(parityTokens-float64(budget)) / float64(budget)
-}
-
-func allStage0Preserved(original []verticalSliceEntry, selected []verticalSliceEntry) bool {
+func allStage0Preserved(original []StageEntry, selected []StageEntry) bool {
 	need := map[string]struct{}{}
 	for _, e := range original {
 		if e.Stage == 0 {
@@ -550,7 +392,7 @@ func allStage0Preserved(original []verticalSliceEntry, selected []verticalSliceE
 	return len(need) == 0
 }
 
-func countRenderedFileEntries(entries []verticalSliceEntry) int {
+func countRenderedFileEntries(entries []StageEntry) int {
 	count := 0
 	for _, e := range entries {
 		if e.Stage == 1 || e.Stage == 2 || e.Stage == 3 {
@@ -633,11 +475,9 @@ func TestBudget3A0(t *testing.T) {
 
 	fixtures := loadVerticalSliceFixtures(t)
 	for _, fx := range fixtures {
-		fx := fx
 		t.Run(fx.Name, func(t *testing.T) {
 			t.Parallel()
 			for _, profile := range fx.Profiles {
-				profile := profile
 				t.Run(profile.Name, func(t *testing.T) {
 					t.Parallel()
 

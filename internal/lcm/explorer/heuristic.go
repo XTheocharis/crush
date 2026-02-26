@@ -2,6 +2,7 @@ package explorer
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -100,8 +101,8 @@ func parseImportsFromContent(lang, content string) []string {
 		importRe := regexp.MustCompile(`(?m)^\s*import\s+([^\n#]+)`)
 		fromRe := regexp.MustCompile(`(?m)^\s*from\s+([\.\w]+)\s+import\s+`)
 		for _, m := range importRe.FindAllStringSubmatch(content, -1) {
-			parts := strings.Split(m[1], ",")
-			for _, p := range parts {
+			parts := strings.SplitSeq(m[1], ",")
+			for p := range parts {
 				p = strings.TrimSpace(strings.Fields(p)[0])
 				add(strings.Split(p, ".")[0])
 			}
@@ -143,6 +144,44 @@ func parseImportsFromContent(lang, content string) []string {
 		}
 	case "c", "cpp":
 		re := regexp.MustCompile(`(?m)^\s*#include\s+[<"]([^>"]+)[>"]`)
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			add(m[1])
+		}
+	case "kotlin":
+		re := regexp.MustCompile(`(?m)^\s*import\s+([\w.]+)`)
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			add(m[1])
+		}
+	case "scala":
+		re := regexp.MustCompile(`(?m)^\s*import\s+([\w.]+)(?:\s*=>\s*[\w._]+|[._])`)
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			add(m[1])
+		}
+	case "haskell":
+		re := regexp.MustCompile(`(?m)^\s*import\s+(\w+(?:\.\w+)*)`)
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			add(m[1])
+		}
+	case "php":
+		re := regexp.MustCompile(`(?m)^\s*(?:use|require|include)\s+(?:[A-Za-z0-9_\\]+(?:\s+as\s+[A-Za-z0-9_]+)?|["']([^"']+)["'])`)
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			if m[1] != "" {
+				add(m[1])
+			} else if m[0] != "" {
+				parts := strings.Fields(strings.TrimPrefix(m[0], "use "))
+				if len(parts) > 0 {
+					namespace := strings.TrimSuffix(strings.TrimSpace(parts[0]), ";")
+					add(namespace)
+				}
+			}
+		}
+	case "csharp":
+		re := regexp.MustCompile(`(?m)^\s*using\s+([\w.]+)`)
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			add(m[1])
+		}
+	case "swift":
+		re := regexp.MustCompile(`(?m)^\s*import\s+(\w+)(?:\.\w+)*`)
 		for _, m := range re.FindAllStringSubmatch(content, -1) {
 			add(m[1])
 		}
@@ -246,6 +285,54 @@ func classifyImport(lang, imp string) string {
 			return treesitter.ImportCategoryStdlib
 		}
 		return treesitter.ImportCategoryThirdParty
+	case "kotlin":
+		if strings.HasPrefix(imp, ".") {
+			return treesitter.ImportCategoryLocal
+		}
+		if stdlib.IsKotlinStdlib(imp) {
+			return treesitter.ImportCategoryStdlib
+		}
+		return treesitter.ImportCategoryThirdParty
+	case "scala":
+		if strings.HasPrefix(imp, ".") {
+			return treesitter.ImportCategoryLocal
+		}
+		if stdlib.IsScalaStdlib(imp) {
+			return treesitter.ImportCategoryStdlib
+		}
+		return treesitter.ImportCategoryThirdParty
+	case "haskell":
+		if strings.HasPrefix(imp, ".") {
+			return treesitter.ImportCategoryLocal
+		}
+		if stdlib.IsHaskellStdlib(imp) {
+			return treesitter.ImportCategoryStdlib
+		}
+		return treesitter.ImportCategoryThirdParty
+	case "php":
+		if strings.HasPrefix(imp, "./") || strings.HasPrefix(imp, "../") {
+			return treesitter.ImportCategoryLocal
+		}
+		if stdlib.IsPHPStdlib(imp) {
+			return treesitter.ImportCategoryStdlib
+		}
+		return treesitter.ImportCategoryThirdParty
+	case "csharp":
+		if strings.HasPrefix(imp, ".") {
+			return treesitter.ImportCategoryLocal
+		}
+		if stdlib.IsCSharpStdlib(imp) {
+			return treesitter.ImportCategoryStdlib
+		}
+		return treesitter.ImportCategoryThirdParty
+	case "swift":
+		if strings.HasPrefix(imp, ".") {
+			return treesitter.ImportCategoryLocal
+		}
+		if stdlib.IsSwiftStdlib(imp) {
+			return treesitter.ImportCategoryStdlib
+		}
+		return treesitter.ImportCategoryThirdParty
 	default:
 		if strings.HasPrefix(imp, ".") {
 			return treesitter.ImportCategoryLocal
@@ -257,10 +344,8 @@ func classifyImport(lang, imp string) string {
 func detectIdioms(lang, content string) []string {
 	out := []string{}
 	add := func(v string) {
-		for _, cur := range out {
-			if cur == v {
-				return
-			}
+		if slices.Contains(out, v) {
+			return
 		}
 		out = append(out, v)
 	}
@@ -302,10 +387,8 @@ func detectIdioms(lang, content string) []string {
 func detectModulePatterns(lang, content string) []string {
 	out := []string{}
 	add := func(v string) {
-		for _, cur := range out {
-			if cur == v {
-				return
-			}
+		if slices.Contains(out, v) {
+			return
 		}
 		out = append(out, v)
 	}

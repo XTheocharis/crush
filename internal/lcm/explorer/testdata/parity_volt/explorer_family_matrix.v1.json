@@ -194,6 +194,14 @@
       "language_families": ["sqlite"],
       "model_support": "llm_enhanced",
       "description": "Native SQLite database explorer"
+    },
+    {
+      "explorer_id": "LogsExplorer",
+      "explorer_type": "text_format_generic",
+      "supported_extensions": ["log", "stderr", "stdout", "txt"],
+      "language_families": ["logs"],
+      "model_support": "all",
+      "description": "Native logs explorer"
     }
   ]
 }

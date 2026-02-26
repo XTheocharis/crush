@@ -4,7 +4,7 @@
   "generated_at": "2025-02-26T00:00:00Z",
   "aider_reference": {
     "repository_url": "https://github.com/Aider-AI/aider",
-    "target_commit_sha": "0000000000000000000000000000000000000000",
+    "target_commit_sha": "7afaa26f8b8b7b56146f0674d2a67e795b616b7c",
     "entrypoint": "aider_main_cli",
     "map_multiplier": {
       "default": 1.0,

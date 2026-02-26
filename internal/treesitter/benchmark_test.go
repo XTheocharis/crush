@@ -81,6 +81,21 @@ func BenchmarkNewParser(b *testing.B) {
 	}
 }
 
+// BenchmarkNewParserWithConfig benchmarks parser creation with pool-size tuning.
+func BenchmarkNewParserWithConfig(b *testing.B) {
+	b.ReportAllocs()
+	sizes := []int{1, 2, 4}
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("pool_size_%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				p := NewParserWithConfig(ParserConfig{PoolSize: size})
+				require.NoError(b, p.Close())
+			}
+		})
+	}
+}
+
 // BenchmarkNewParser_Parallel benchmarks creating parsers in parallel.
 func BenchmarkNewParser_Parallel(b *testing.B) {
 	b.ReportAllocs()
@@ -97,12 +112,10 @@ func BenchmarkNewParser_Concurrent(b *testing.B) {
 	b.ReportAllocs()
 	var wg sync.WaitGroup
 	for i := 0; i < b.N; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			p := NewParser()
 			require.NoError(b, p.Close())
-		}()
+		})
 	}
 	wg.Wait()
 }

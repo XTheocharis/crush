@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+	"unsafe"
 
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/treesitter"
 	"github.com/stretchr/testify/require"
@@ -34,6 +36,19 @@ func (f *fakeParser) Languages() []string               { return []string{"go"} 
 func (f *fakeParser) SupportsLanguage(lang string) bool { return true }
 func (f *fakeParser) HasTags(lang string) bool          { return true }
 func (f *fakeParser) Close() error                      { return nil }
+
+type fakeParserFactory struct {
+	lastConfig treesitter.ParserConfig
+	parser     treesitter.Parser
+}
+
+func (f *fakeParserFactory) NewParserWithConfig(cfg treesitter.ParserConfig) treesitter.Parser {
+	f.lastConfig = cfg
+	if f.parser != nil {
+		return f.parser
+	}
+	return &fakeParser{}
+}
 
 func TestTagsExtractPersistsAndDeterministicOrder(t *testing.T) {
 	t.Parallel()
@@ -161,4 +176,30 @@ func TestTagsExtractUpdatesChangedFile(t *testing.T) {
 	require.Len(t, stored, 1)
 	require.Equal(t, "New", stored[0].Name)
 	require.EqualValues(t, 2, stored[0].Line)
+}
+
+func TestEnsureParserRespectsConfiguredPoolSize(t *testing.T) {
+	t.Parallel()
+
+	factory := &fakeParserFactory{}
+	svc := &Service{
+		cfg:              &config.RepoMapOptions{ParserPoolSize: 7},
+		newParserWithCfg: factory.NewParserWithConfig,
+	}
+
+	_ = svc.ensureParser()
+	require.Equal(t, 7, factory.lastConfig.PoolSize)
+}
+
+func TestStringInternerDeduplicatesBackingStorage(t *testing.T) {
+	t.Parallel()
+
+	interner := newStringInterner(2)
+	left := interner.Intern("identifier")
+	right := interner.Intern(string([]byte("identifier")))
+
+	leftHdr := (*[2]uintptr)(unsafe.Pointer(&left))
+	rightHdr := (*[2]uintptr)(unsafe.Pointer(&right))
+	require.Equal(t, leftHdr[0], rightHdr[0], "interned strings should share data pointer")
+	require.Equal(t, leftHdr[1], rightHdr[1], "interned strings should share length")
 }

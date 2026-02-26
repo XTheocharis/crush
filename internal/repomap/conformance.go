@@ -64,6 +64,39 @@ func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
 		return nil, fmt.Errorf("validate explorer family matrix: %w", err)
 	}
 
+	for _, fx := range fixtures {
+		if err := VerifyFixturesIntegrity(fx, basePath); err != nil {
+			return nil, fmt.Errorf("fixture integrity check failed for %q: %w", fx.FixtureID, err)
+		}
+		if fx.Provenance.AiderCommitSHA != fixture.Provenance.AiderCommitSHA {
+			return nil, fmt.Errorf("fixture provenance mismatch: aider_commit_sha differs between fixtures")
+		}
+		if fx.Provenance.ComparatorPath != fixture.Provenance.ComparatorPath {
+			return nil, fmt.Errorf("fixture provenance mismatch: comparator_path differs between fixtures")
+		}
+		if fx.Provenance.FixturesSHA256 != fixture.Provenance.FixturesSHA256 {
+			return nil, fmt.Errorf("fixture provenance mismatch: fixtures_sha256 differs between fixtures")
+		}
+	}
+
+	if !strings.Contains(fixture.Provenance.ComparatorPath, fixture.Provenance.AiderCommitSHA) {
+		return nil, fmt.Errorf("comparator_path does not include aider_commit_sha")
+	}
+
+	comparatorCfg, err := loadComparatorConfig(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("load comparator config: %w", err)
+	}
+	if !gitSHAPattern.MatchString(strings.TrimSpace(comparatorCfg.AiderReference.TargetCommitSHA)) {
+		return nil, fmt.Errorf("invalid comparator target_commit_sha: expected 40-char hex commit SHA")
+	}
+	if isPlaceholderCommitSHA(comparatorCfg.AiderReference.TargetCommitSHA) {
+		return nil, fmt.Errorf("invalid comparator target_commit_sha: placeholder value is not allowed")
+	}
+	if comparatorCfg.AiderReference.TargetCommitSHA != fixture.Provenance.AiderCommitSHA {
+		return nil, fmt.Errorf("comparator target_commit_sha does not match fixture aider_commit_sha")
+	}
+
 	profile := parityProfileFromFixture(fixture)
 	if profile == nil {
 		return nil, fmt.Errorf("fixture %q has no parity profile", fixture.FixtureID)
@@ -86,9 +119,12 @@ func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
 		return nil, fmt.Errorf("repomap parity preflight: %w", err)
 	}
 
-	comparatorVersion := "1"
-	if v, err := loadComparatorConfigVersion(basePath); err == nil {
-		comparatorVersion = v
+	comparatorVersion := strings.TrimSpace(comparatorCfg.ParityProtocol.Version)
+	if comparatorVersion == "" {
+		comparatorVersion = strings.TrimSpace(comparatorCfg.Version)
+	}
+	if comparatorVersion == "" {
+		return nil, fmt.Errorf("missing comparator protocol version")
 	}
 
 	return &ConformanceSnapshot{
@@ -119,26 +155,23 @@ func parityProfileFromFixture(fx ParityAiderFixture) *ParityProfile {
 
 type comparatorConfigArtifact struct {
 	Version        string `json:"version"`
+	AiderReference struct {
+		TargetCommitSHA string `json:"target_commit_sha"`
+	} `json:"aider_reference"`
 	ParityProtocol struct {
 		Version string `json:"version"`
 	} `json:"parity_protocol"`
 }
 
-func loadComparatorConfigVersion(basePath string) (string, error) {
+func loadComparatorConfig(basePath string) (*comparatorConfigArtifact, error) {
 	path := filepath.Join(basePath, "testdata", "parity_aider", "comparator_config.v1.json")
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var cfg comparatorConfigArtifact
 	if err := json.Unmarshal(content, &cfg); err != nil {
-		return "", err
+		return nil, err
 	}
-	if strings.TrimSpace(cfg.ParityProtocol.Version) == "" {
-		if strings.TrimSpace(cfg.Version) != "" {
-			return cfg.Version, nil
-		}
-		return "", fmt.Errorf("missing comparator protocol version")
-	}
-	return cfg.ParityProtocol.Version, nil
+	return &cfg, nil
 }

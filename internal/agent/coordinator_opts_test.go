@@ -2,12 +2,19 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/repomap"
+	"github.com/charmbracelet/crush/internal/session"
 	"github.com/stretchr/testify/require"
 )
 
@@ -216,4 +223,134 @@ func TestBuildToolsMapRefreshWiresRepoMapService(t *testing.T) {
 	require.Equal(t, 1, svc.refreshAsyncCalls)
 	require.Equal(t, "sess-1", svc.lastSessionID)
 	require.True(t, svc.lastRefreshOpts.ForceRefresh)
+}
+
+func writeRepoMapFixture(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		abs := filepath.Join(root, rel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
+		require.NoError(t, os.WriteFile(abs, []byte(content), 0o644))
+	}
+}
+
+func TestBuildRepoMapHookSingleInjectionGuardIntegration(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	writeRepoMapFixture(t, repoRoot, map[string]string{
+		"go.mod":    "module example.com/repomap\n\ngo 1.23\n",
+		"main.go":   "package main\n\nfunc Alpha() {}\n",
+		"util.go":   "package main\n\nfunc Beta() {}\n",
+		"README.md": "# fixture\n",
+	})
+
+	cfg, err := config.Init(repoRoot, "", false)
+	require.NoError(t, err)
+	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	svc := repomap.NewService(cfg, db.New(conn), conn, cfg.WorkingDir(), context.Background())
+	t.Cleanup(func() { _ = svc.Close() })
+
+	c := &coordinator{repoMapSvc: svc}
+	hook := c.buildRepoMapHook()
+	require.NotNil(t, hook)
+
+	ctx := context.WithValue(t.Context(), tools.SessionIDContextKey, "sess-guard")
+	ctx = repomap.WithRunInjectionKey(ctx, repomap.RunInjectionKey{RootUserMessageID: "msg-1", QueueGeneration: 0})
+	prepared := fantasy.PrepareStepResult{Messages: []fantasy.Message{
+		fantasy.NewSystemMessage("system"),
+		fantasy.NewUserMessage("inspect Alpha and main.go"),
+	}}
+
+	_, first, err := hook(ctx, fantasy.PrepareStepFunctionOptions{}, prepared)
+	require.NoError(t, err)
+	require.Len(t, first.Messages, 4)
+	require.Equal(t, fantasy.MessageRoleSystem, first.Messages[0].Role)
+	require.Equal(t, fantasy.MessageRoleUser, first.Messages[1].Role)
+	require.Equal(t, fantasy.MessageRoleAssistant, first.Messages[2].Role)
+	require.Equal(t, fantasy.MessageRoleUser, first.Messages[3].Role)
+	require.Contains(t, first.Messages[1].Content[0].(fantasy.TextPart).Text, "<repo-map>")
+
+	_, second, err := hook(ctx, fantasy.PrepareStepFunctionOptions{}, prepared)
+	require.NoError(t, err)
+	require.Equal(t, prepared.Messages, second.Messages)
+}
+
+func TestBuildRepoMapHookUpdatesLCMFromGeneratedTokenCount(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	writeRepoMapFixture(t, repoRoot, map[string]string{
+		"go.mod":     "module example.com/repomap\n\ngo 1.23\n",
+		"service.go": "package main\n\nfunc RepoMapTokenSource() {}\n",
+	})
+
+	cfg, err := config.Init(repoRoot, "", false)
+	require.NoError(t, err)
+	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	q := db.New(conn)
+
+	svc := repomap.NewService(cfg, q, conn, cfg.WorkingDir(), context.Background())
+	t.Cleanup(func() { _ = svc.Close() })
+	mgr := lcm.NewManager(q, conn)
+
+	sessSvc := session.NewService(q, conn)
+	sess, err := sessSvc.Create(t.Context(), "lcm-session")
+	require.NoError(t, err)
+
+	c := &coordinator{repoMapSvc: svc, lcm: mgr}
+	hook := c.buildRepoMapHook()
+	require.NotNil(t, hook)
+
+	sessionID := sess.ID
+	ctx := context.WithValue(t.Context(), tools.SessionIDContextKey, sessionID)
+	ctx = repomap.WithRunInjectionKey(ctx, repomap.RunInjectionKey{RootUserMessageID: "msg-2", QueueGeneration: 0})
+	prepared := fantasy.PrepareStepResult{Messages: []fantasy.Message{
+		fantasy.NewSystemMessage("system"),
+		fantasy.NewUserMessage("inspect RepoMapTokenSource"),
+	}}
+
+	_, out, err := hook(ctx, fantasy.PrepareStepFunctionOptions{}, prepared)
+	require.NoError(t, err)
+	require.Len(t, out.Messages, 4)
+	require.Contains(t, out.Messages[1].Content[0].(fantasy.TextPart).Text, "<repo-map>")
+
+	generated := svc.LastTokenCount(sessionID)
+	if generated == 0 {
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			generated = svc.LastTokenCount(sessionID)
+			if generated > 0 {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	require.Greater(t, generated, 0)
+
+	budget, err := mgr.GetBudget(t.Context(), sessionID)
+	require.NoError(t, err)
+	expectedFromObservedBudget := lcm.ComputeBudget(lcm.BudgetConfig{
+		ContextWindow:    budget.ContextWindow,
+		CutoffThreshold:  0.6,
+		RepoMapTokens:    int64(generated),
+		ModelOutputLimit: 0,
+	})
+	require.Equal(t, expectedFromObservedBudget.SoftThreshold, budget.SoftThreshold)
+	require.Equal(t, expectedFromObservedBudget.HardLimit, budget.HardLimit)
+	base := lcm.ComputeBudget(lcm.BudgetConfig{ContextWindow: budget.ContextWindow, CutoffThreshold: 0.6})
+	require.Less(t, budget.HardLimit, base.HardLimit)
+	require.Less(t, budget.SoftThreshold, base.SoftThreshold)
+
+	mapText := svc.LastGoodMap(sessionID)
+	require.True(t, strings.Contains(mapText, "service.go") || strings.Contains(mapText, "RepoMapTokenSource"))
 }

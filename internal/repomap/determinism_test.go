@@ -24,11 +24,9 @@ func TestVerticalSliceDeterminism(t *testing.T) {
 
 	fixtures := loadVerticalSliceFixtures(t)
 	for _, fx := range fixtures {
-		fx := fx
 		t.Run(fx.Name, func(t *testing.T) {
 			t.Parallel()
 			for _, profile := range fx.Profiles {
-				profile := profile
 				t.Run(profile.Name, func(t *testing.T) {
 					t.Parallel()
 
@@ -126,7 +124,7 @@ func TestVerticalSliceFilesRefreshModeDeterminism(t *testing.T) {
 	rawHashes := make([]string, runs)
 	maps := make([]string, runs)
 
-	for i := 0; i < runs; i++ {
+	for i := range runs {
 		result := runVerticalSliceHarness(fx, fx.Profiles[0])
 		rawHashes[i] = result.RawHash
 		maps[i] = result.MapText
@@ -199,7 +197,7 @@ func TestVerticalSliceParityModeDeterminism(t *testing.T) {
 	const runs = 10
 	normalizedHashes := make([]string, runs)
 
-	for i := 0; i < runs; i++ {
+	for i := range runs {
 		result := runVerticalSliceHarness(fx, fx.Profiles[0])
 		normalizedHashes[i] = result.NormalizedHash
 
@@ -265,7 +263,7 @@ func TestVerticalSliceEnhancementModeDeterminism(t *testing.T) {
 	rawHashes := make([]string, runs)
 	entriesCount := make([]int, runs)
 
-	for i := 0; i < runs; i++ {
+	for i := range runs {
 		result := runVerticalSliceHarness(fx, fx.Profiles[0])
 		rawHashes[i] = result.RawHash
 		entriesCount[i] = len(result.Entries)
@@ -310,7 +308,6 @@ func TestVerticalSliceDeterminismAcrossModes(t *testing.T) {
 	}
 
 	for _, mode := range modes {
-		mode := mode
 		t.Run(mode.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -344,7 +341,7 @@ func TestVerticalSliceDeterminismAcrossModes(t *testing.T) {
 			const runs = 10
 			hashes := make(map[string]int)
 
-			for i := 0; i < runs; i++ {
+			for i := range runs {
 				result := runVerticalSliceHarness(fx, fx.Profiles[0])
 				var hash string
 				if mode.parityMode {

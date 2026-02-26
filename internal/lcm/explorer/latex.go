@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
 // LatexExplorer explores LaTeX document files.
-type LatexExplorer struct{}
+type LatexExplorer struct {
+	formatterProfile OutputProfile
+}
 
 // LatexSection represents a section with its level and title.
 type LatexSection struct {
@@ -29,6 +32,14 @@ type LatexBiblio struct {
 	Addbibresource  []string // Files from \addbibresource{...}
 	CiteCount       int      // Count of \cite-like commands
 	BibliographySty string   // Content from \bibliographystyle{...}
+}
+
+// LatexReferences represents label, reference, and citation metadata.
+type LatexReferences struct {
+	Labels    []string // Labels defined with \label{...}
+	Refs      []string // References with \ref{...}
+	EqRefs    []string // Equation references with \eqref{...}
+	Citations []string // Citation keys from \cite{...}
 }
 
 func (e *LatexExplorer) CanHandle(path string, content []byte) bool {
@@ -119,6 +130,67 @@ func (e *LatexExplorer) Explore(ctx context.Context, input ExploreInput) (Explor
 		}
 		if len(pkgs) > 20 {
 			fmt.Fprintf(&summary, "  ... (%d more)\n", len(pkgs)-20)
+		}
+	}
+
+	// EXCEED MODE: Label, reference, and citation extraction
+	if e.formatterProfile == OutputProfileEnhancement {
+		refs := extractLatexReferences(content)
+
+		if len(refs.Labels) > 0 || len(refs.Refs) > 0 || len(refs.EqRefs) > 0 || len(refs.Citations) > 0 {
+			summary.WriteString("\nReferences:\n")
+		}
+
+		if len(refs.Labels) > 0 {
+			summary.WriteString("  - Labels defined:\n")
+			maxLabels := 20
+			for i, label := range refs.Labels {
+				if i >= maxLabels {
+					overflow := overflowMarker(OutputProfileEnhancement, len(refs.Labels)-maxLabels, false)
+					fmt.Fprintf(&summary, "    %s\n", overflow)
+					break
+				}
+				fmt.Fprintf(&summary, "    - %s\n", label)
+			}
+		}
+
+		if len(refs.Refs) > 0 {
+			summary.WriteString("  - Section/text references (\\ref):\n")
+			maxRefs := 20
+			for i, ref := range refs.Refs {
+				if i >= maxRefs {
+					overflow := overflowMarker(OutputProfileEnhancement, len(refs.Refs)-maxRefs, false)
+					fmt.Fprintf(&summary, "    %s\n", overflow)
+					break
+				}
+				fmt.Fprintf(&summary, "    - %s\n", ref)
+			}
+		}
+
+		if len(refs.EqRefs) > 0 {
+			summary.WriteString("  - Equation references (\\eqref):\n")
+			maxEqRefs := 10
+			for i, eqref := range refs.EqRefs {
+				if i >= maxEqRefs {
+					overflow := overflowMarker(OutputProfileEnhancement, len(refs.EqRefs)-maxEqRefs, false)
+					fmt.Fprintf(&summary, "    %s\n", overflow)
+					break
+				}
+				fmt.Fprintf(&summary, "    - %s\n", eqref)
+			}
+		}
+
+		if len(refs.Citations) > 0 {
+			summary.WriteString("  - Citation keys:\n")
+			maxCites := 25
+			for i, cite := range refs.Citations {
+				if i >= maxCites {
+					overflow := overflowMarker(OutputProfileEnhancement, len(refs.Citations)-maxCites, false)
+					fmt.Fprintf(&summary, "    %s\n", overflow)
+					break
+				}
+				fmt.Fprintf(&summary, "    - %s\n", cite)
+			}
 		}
 	}
 
@@ -243,8 +315,8 @@ func extractLatexBibliography(content string) LatexBiblio {
 	bibRe := regexp.MustCompile(`\\bibliography\s*\{([^}]+)\}`)
 	if matches := bibRe.FindAllStringSubmatch(content, -1); len(matches) > 0 {
 		for _, match := range matches {
-			files := strings.Split(match[1], ",")
-			for _, f := range files {
+			files := strings.SplitSeq(match[1], ",")
+			for f := range files {
 				result.Bibliography = append(result.Bibliography, strings.TrimSpace(f))
 			}
 		}
@@ -283,8 +355,8 @@ func extractLatexPackages(content string) []string {
 	seen := make(map[string]bool)
 	for _, match := range matches {
 		// Split by comma for multiple packages in one command
-		pkgs := strings.Split(match[1], ",")
-		for _, pkg := range pkgs {
+		pkgs := strings.SplitSeq(match[1], ",")
+		for pkg := range pkgs {
 			trimmed := strings.TrimSpace(pkg)
 			// Handle version specifications like package=v1.0
 			if idx := strings.Index(trimmed, "="); idx > 0 {
@@ -300,10 +372,85 @@ func extractLatexPackages(content string) []string {
 	return packages
 }
 
-// min returns the minimum of two ints.
-func min(a, b int) int {
-	if a < b {
-		return a
+// extractLatexReferences extracts labels, references, and citations for exceed mode.
+func extractLatexReferences(content string) LatexReferences {
+	result := LatexReferences{
+		Labels:    make([]string, 0),
+		Refs:      make([]string, 0),
+		EqRefs:    make([]string, 0),
+		Citations: make([]string, 0),
 	}
-	return b
+
+	// Extract \label{...} - labels defined
+	labelRe := regexp.MustCompile(`\\label\s*\{([^}]+)\}`)
+	labelMatches := labelRe.FindAllStringSubmatch(content, -1)
+	for _, match := range labelMatches {
+		if len(match) >= 2 {
+			label := strings.TrimSpace(match[1])
+			result.Labels = append(result.Labels, label)
+		}
+	}
+	sort.Strings(result.Labels)
+	// Deduplicate labels
+	result.Labels = dedupeOrdered(result.Labels)
+
+	// Extract \ref{...} - standard references
+	refRe := regexp.MustCompile(`\\ref\s*\{([^}]+)\}`)
+	refMatches := refRe.FindAllStringSubmatch(content, -1)
+	for _, match := range refMatches {
+		if len(match) >= 2 {
+			ref := strings.TrimSpace(match[1])
+			result.Refs = append(result.Refs, ref)
+		}
+	}
+	sort.Strings(result.Refs)
+	result.Refs = dedupeOrdered(result.Refs)
+
+	// Extract \eqref{...} - equation references
+	eqrefRe := regexp.MustCompile(`\\eqref\s*\{([^}]+)\}`)
+	eqrefMatches := eqrefRe.FindAllStringSubmatch(content, -1)
+	for _, match := range eqrefMatches {
+		if len(match) >= 2 {
+			eqref := strings.TrimSpace(match[1])
+			result.EqRefs = append(result.EqRefs, eqref)
+		}
+	}
+	sort.Strings(result.EqRefs)
+	result.EqRefs = dedupeOrdered(result.EqRefs)
+
+	// Extract citation keys from all \cite-like commands
+	// Matches: \cite{key}, \citep{key}, \citet{key, key2}, \cite[pre][post]{key}, \cite*[key]{key}, etc.
+	citeKeyRe := regexp.MustCompile(`\\(?:cite\*?|citep\*?|citet\*?|citeauthor\*?|citeyear\*?|nocite\*?|Cite)(?:\[[^]]*\])*\{([^}]+)\}`)
+	citeMatches := citeKeyRe.FindAllStringSubmatch(content, -1)
+	for _, match := range citeMatches {
+		if len(match) >= 2 {
+			// Cites can have comma-separated keys: \cite{key1,key2,key3}
+			keys := strings.SplitSeq(match[1], ",")
+			for key := range keys {
+				trimmed := strings.TrimSpace(key)
+				if trimmed != "" {
+					result.Citations = append(result.Citations, trimmed)
+				}
+			}
+		}
+	}
+	sort.Strings(result.Citations)
+	result.Citations = dedupeOrdered(result.Citations)
+
+	return result
+}
+
+// dedupeOrdered removes duplicates from a sorted slice while preserving order.
+func dedupeOrdered[T comparable](items []T) []T {
+	if len(items) == 0 {
+		return items
+	}
+	unique := make([]T, 0, len(items))
+	unique = append(unique, items[0])
+	for i := 1; i < len(items); i++ {
+		if items[i] != items[i-1] {
+			unique = append(unique, items[i])
+		}
+	}
+	return unique
 }

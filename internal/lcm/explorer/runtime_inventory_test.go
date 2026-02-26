@@ -125,7 +125,6 @@ func TestValidateInventory_MissingFields(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			inventory, _ := LoadRuntimeInventory()
@@ -338,6 +337,12 @@ func TestRuntimeInventory_ParityProfileMatch(t *testing.T) {
 	// Artifact currently tracks enhancement profile for non-gate parity operations.
 	require.Equal(t, "enhancement", inventory.Profile)
 	require.Equal(t, "static_code_analysis", inventory.DiscoveryMethod)
+
+	parityMatrix, err := LoadRuntimePersistenceMatrix(OutputProfileParity)
+	require.NoError(t, err)
+	require.NotNil(t, parityMatrix)
+	require.False(t, parityMatrix.PolicyForExplorer("text").Persist)
+	require.False(t, parityMatrix.PolicyForExplorer("go").Persist)
 }
 
 func TestValidateInventory_ParityDeterministicScoringRules(t *testing.T) {
@@ -405,23 +410,23 @@ func TestValidateInventory_ParityDeterministicScoringRules(t *testing.T) {
 func TestRuntimeInventory_PersistenceMatrixContracts(t *testing.T) {
 	t.Parallel()
 
-	inventory, err := LoadRuntimeInventory()
+	matrix, err := LoadRuntimePersistenceMatrix(OutputProfileEnhancement)
 	require.NoError(t, err)
+	require.NotNil(t, matrix)
+	require.Equal(t, "1", matrix.Version())
 
-	byID := make(map[string]RuntimeIngestionPath, len(inventory.Paths))
-	for _, p := range inventory.Paths {
-		byID[p.ID] = p
-	}
-
-	persisted, ok := byID["path_text_generic"]
-	require.True(t, ok, "path_text_generic must exist in runtime inventory")
-	require.True(t, persisted.LLMEnhancement, "text path should persist exploration in enhancement profile")
+	persisted := matrix.PolicyForExplorer("text")
+	require.True(t, persisted.Persist, "text path should persist exploration in enhancement profile")
 	require.Equal(t, "text_format_generic", persisted.PathKind)
+	require.Equal(t, "path_text_generic", persisted.PathID)
 
-	nonPersisted, ok := byID["path_binary_direct"]
-	require.True(t, ok, "path_binary_direct must exist in runtime inventory")
-	require.False(t, nonPersisted.LLMEnhancement, "binary path should remain non-persisted in enhancement profile")
+	nonPersisted := matrix.PolicyForExplorer("binary")
+	require.False(t, nonPersisted.Persist, "binary path should remain non-persisted in enhancement profile")
 	require.Equal(t, "native_binary", nonPersisted.PathKind)
+	require.Equal(t, "path_binary_direct", nonPersisted.PathID)
+
+	unknown := matrix.PolicyForExplorer("definitely_unknown_explorer")
+	require.False(t, unknown.Persist, "unknown explorers should default to non-persist")
 }
 
 func TestRuntimeInventory_AllExplorerIDsPresent(t *testing.T) {

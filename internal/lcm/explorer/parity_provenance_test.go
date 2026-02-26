@@ -9,9 +9,9 @@ import (
 
 func validExplorerBundle() ParityProvenanceBundle {
 	return ParityProvenanceBundle{
-		VoltCommitSHA:     strings.Repeat("c", 40),
+		VoltCommitSHA:     strings.Repeat("a", 40),
 		ComparatorPath:    "../volt",
-		FixturesSHA256:    strings.Repeat("d", 64),
+		FixturesSHA256:    strings.Repeat("b", 64),
 		GrepASTProvenance: "grep-ast@v1.2.3",
 		TokenizerID:       "cl100k_base",
 		TokenizerVersion:  "v0.1.0",
@@ -50,7 +50,6 @@ func TestParityProvenanceBundleValidateRequiredFields(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			bundle := validExplorerBundle()
@@ -99,7 +98,6 @@ func TestParityProvenanceBundleValidateComparatorTupleRequired(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			bundle := validExplorerBundle()
@@ -706,6 +704,10 @@ func TestProtocolArtifact_ExplorerFamilyMatrixMethods(t *testing.T) {
 		}
 	}
 	require.True(t, found, "should find JSONExplorer in data_format_native type")
+
+	logs := efm.GetExplorerByID("LogsExplorer")
+	require.NotNil(t, logs, "should find LogsExplorer")
+	require.Contains(t, logs.LanguageFamilies, "logs")
 }
 
 func TestProtocolArtifact_ValidateGeneratedAt(t *testing.T) {

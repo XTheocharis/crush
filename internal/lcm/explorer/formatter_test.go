@@ -291,7 +291,6 @@ line 17
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			formatted := formatSummary(tt.raw, tt.profile)
@@ -367,7 +366,6 @@ Imports:
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if tt.wantParity != "" {
@@ -485,7 +483,6 @@ Functions:
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			formatted := formatSummary(tt.raw, OutputProfileEnhancement)

@@ -43,9 +43,9 @@ func TestValidateFixtureMetadata_Complete(t *testing.T) {
 	t.Parallel()
 
 	meta := FixtureMetadata{
-		VoltCommitSHA:           strings.Repeat("c", 40),
-		FixturesSHA256:          strings.Repeat("d", 64),
-		ComparatorPath:          "../volt",
+		VoltCommitSHA:           strings.Repeat("a", 40),
+		FixturesSHA256:          strings.Repeat("b", 64),
+		ComparatorPath:          "../volt/tree/" + strings.Repeat("a", 40),
 		Version:                 "1",
 		GeneratedAt:             "2026-02-26T00:00:00Z",
 		Profile:                 "parity",
@@ -136,9 +136,9 @@ func TestValidateFixtureMetadata_MissingFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			meta := FixtureMetadata{
-				VoltCommitSHA:           strings.Repeat("c", 40),
-				FixturesSHA256:          strings.Repeat("d", 64),
-				ComparatorPath:          "../volt",
+				VoltCommitSHA:           strings.Repeat("a", 40),
+				FixturesSHA256:          strings.Repeat("b", 64),
+				ComparatorPath:          "../volt/tree/" + strings.Repeat("a", 40),
 				Version:                 "1",
 				GeneratedAt:             "2026-02-26T00:00:00Z",
 				Profile:                 "parity",
@@ -167,9 +167,9 @@ func TestDefaultFixtureValidator_ValidateIndex(t *testing.T) {
 			Language: map[string]string{"go": "test.go"},
 			Format:   map[string]string{"json": "test.json"},
 			Metadata: FixtureMetadata{
-				VoltCommitSHA:  strings.Repeat("c", 40),
-				FixturesSHA256: strings.Repeat("d", 64),
-				ComparatorPath: "../volt",
+				VoltCommitSHA:  strings.Repeat("a", 40),
+				FixturesSHA256: strings.Repeat("b", 64),
+				ComparatorPath: "../volt/tree/" + strings.Repeat("a", 40),
 				Version:        "1",
 				GeneratedAt:    "2026-02-26T00:00:00Z",
 			},
@@ -204,9 +204,9 @@ func TestDefaultFixtureValidator_ValidateIndex(t *testing.T) {
 			Language: map[string]string{},
 			Format:   map[string]string{"json": "test.json"},
 			Metadata: FixtureMetadata{
-				VoltCommitSHA:  strings.Repeat("c", 40),
-				FixturesSHA256: strings.Repeat("d", 64),
-				ComparatorPath: "../volt",
+				VoltCommitSHA:  strings.Repeat("a", 40),
+				FixturesSHA256: strings.Repeat("b", 64),
+				ComparatorPath: "../volt/tree/" + strings.Repeat("a", 40),
 				Version:        "1",
 				GeneratedAt:    "2026-02-26T00:00:00Z",
 			},
@@ -223,9 +223,9 @@ func TestDefaultFixtureValidator_ValidateIndex(t *testing.T) {
 			Language: map[string]string{"go": "test.go"},
 			Format:   map[string]string{},
 			Metadata: FixtureMetadata{
-				VoltCommitSHA:  strings.Repeat("c", 40),
-				FixturesSHA256: strings.Repeat("d", 64),
-				ComparatorPath: "../volt",
+				VoltCommitSHA:  strings.Repeat("a", 40),
+				FixturesSHA256: strings.Repeat("b", 64),
+				ComparatorPath: "../volt/tree/" + strings.Repeat("a", 40),
 				Version:        "1",
 				GeneratedAt:    "2026-02-26T00:00:00Z",
 			},
@@ -301,9 +301,9 @@ func TestGenerateFixtureIndex(t *testing.T) {
 
 	cfg := NewDefaultParityFixtureConfig(".")
 	meta := FixtureMetadata{
-		VoltCommitSHA:           strings.Repeat("c", 40),
-		FixturesSHA256:          strings.Repeat("d", 64),
-		ComparatorPath:          "../volt",
+		VoltCommitSHA:           strings.Repeat("a", 40),
+		FixturesSHA256:          strings.Repeat("b", 64),
+		ComparatorPath:          "../volt/tree/" + strings.Repeat("a", 40),
 		Version:                 "1",
 		GeneratedAt:             "2026-02-26T00:00:00Z",
 		Profile:                 "parity",
@@ -327,6 +327,9 @@ func TestGenerateFixtureIndex(t *testing.T) {
 	require.Contains(t, index.Format, "json")
 	require.Contains(t, index.Format, "yaml")
 	require.Contains(t, index.Format, "csv")
+	require.Contains(t, index.Format, "latex")
+	require.Contains(t, index.Format, "logs")
+	require.Contains(t, index.Format, "sqlite_seed")
 	require.Contains(t, index.Shell, "deploy_script")
 	require.Contains(t, index.Markdown, "readme")
 }
@@ -419,9 +422,9 @@ func TestParityProvenanceBundle_Validate(t *testing.T) {
 	t.Parallel()
 
 	bundle := ParityProvenanceBundle{
-		VoltCommitSHA:  strings.Repeat("c", 40),
-		ComparatorPath: "../volt",
-		FixturesSHA256: strings.Repeat("d", 64),
+		VoltCommitSHA:  strings.Repeat("e", 40),
+		ComparatorPath: "../volt/tree/" + strings.Repeat("e", 40),
+		FixturesSHA256: strings.Repeat("f", 64),
 	}
 
 	err := bundle.Validate(false)
@@ -432,9 +435,9 @@ func TestParityProvenanceBundle_ComparatorTupleValidation(t *testing.T) {
 	t.Parallel()
 
 	bundle := ParityProvenanceBundle{
-		VoltCommitSHA:     strings.Repeat("c", 40),
-		ComparatorPath:    "../volt",
-		FixturesSHA256:    strings.Repeat("d", 64),
+		VoltCommitSHA:     strings.Repeat("e", 40),
+		ComparatorPath:    "../volt/tree/" + strings.Repeat("e", 40),
+		FixturesSHA256:    strings.Repeat("f", 64),
 		GrepASTProvenance: "grep-ast@v1.2.3",
 		TokenizerID:       "cl100k_base",
 		TokenizerVersion:  "v0.1.0",
@@ -448,9 +451,9 @@ func TestParityProvenanceBundle_MissingComparatorTuple(t *testing.T) {
 	t.Parallel()
 
 	bundle := ParityProvenanceBundle{
-		VoltCommitSHA:  strings.Repeat("c", 40),
-		ComparatorPath: "../volt",
-		FixturesSHA256: strings.Repeat("d", 64),
+		VoltCommitSHA:  strings.Repeat("a", 40),
+		ComparatorPath: "../volt/tree/" + strings.Repeat("a", 40),
+		FixturesSHA256: strings.Repeat("b", 64),
 	}
 
 	err := bundle.Validate(true)

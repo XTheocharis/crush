@@ -108,16 +108,28 @@ func NewRegistry(opts ...RegistryOption) *Registry {
 	for _, opt := range opts {
 		opt(r)
 	}
+	// Apply formatter profile to explorers that need it.
+	// This must be done after options are applied so we have the final profile.
+	for i, e := range r.explorers {
+		if sqlExp, ok := e.(*SQLiteExplorer); ok {
+			sqlExp.formatterProfile = r.formatterProfile
+			r.explorers[i] = sqlExp
+		}
+		if latexExp, ok := e.(*LatexExplorer); ok {
+			latexExp.formatterProfile = r.formatterProfile
+			r.explorers[i] = latexExp
+		}
+	}
 	// If a tree-sitter parser is provided, add TreeSitterExplorer to the chain.
-	// It's inserted after data format explorers to handle code files before
-	// shell-specific handling while preserving data-format-first ordering.
+	// It's inserted after all data format explorers to handle code files
+	// before shell-specific handling while preserving data-format-first ordering.
 	if r.tsParser != nil {
 		tsExp := &TreeSitterExplorer{parser: r.tsParser, formatterProfile: r.formatterProfile}
-		// Insert after HTMLExplorer (last data format) and before ShellExplorer.
+		// Insert after LogsExplorer (last data format) and before ShellExplorer.
 		newExplorers := make([]Explorer, 0, len(r.explorers)+1)
 		for _, e := range r.explorers {
 			newExplorers = append(newExplorers, e)
-			if _, ok := e.(*HTMLExplorer); ok {
+			if _, ok := e.(*LogsExplorer); ok {
 				newExplorers = append(newExplorers, tsExp)
 			}
 		}

@@ -2,7 +2,11 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
@@ -135,6 +139,108 @@ func TestMapResetClearsInjectedRunState(t *testing.T) {
 	err = app.mapReset(t.Context(), sess.ID)
 	require.NoError(t, err)
 	require.True(t, app.repoMapSvc.ShouldInject(sess.ID, runKey))
+}
+
+func TestRunRepoMapControlRefreshResetObservableMapChanges(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/repomap\n\ngo 1.23\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "main.go"), []byte("package main\n\nfunc MainA() {}\n"), 0o644))
+
+	cfg, err := config.Init(repoRoot, "", false)
+	require.NoError(t, err)
+	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual", MaxTokens: 4096}
+	cfg.SetupAgents()
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	q := db.New(conn)
+	app := &App{config: cfg, FileTracker: filetracker.NewService(q, cfg.WorkingDir())}
+	_ = app.initRepoMap(t.Context(), conn)
+	require.NotNil(t, app.repoMapSvc)
+
+	sessSvc := session.NewService(q, conn)
+	sess, err := sessSvc.Create(t.Context(), "map-observable")
+	require.NoError(t, err)
+
+	handled, msg, err := app.RunRepoMapControl(t.Context(), "project:map-refresh", sess.ID)
+	require.True(t, handled)
+	require.NoError(t, err)
+	require.Equal(t, "Repository map refreshed.", msg)
+
+	firstMap := app.repoMapSvc.LastGoodMap(sess.ID)
+	require.NotEmpty(t, firstMap)
+	require.Contains(t, firstMap, "main.go")
+	require.Contains(t, firstMap, "MainA")
+
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "main.go"), []byte("package main\n\nfunc MainB() {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "added.go"), []byte("package main\n\nfunc AddedFromRefresh() {}\n"), 0o644))
+
+	handled, msg, err = app.RunRepoMapControl(t.Context(), "project:map-refresh", sess.ID)
+	require.True(t, handled)
+	require.NoError(t, err)
+	require.Equal(t, "Repository map refreshed.", msg)
+
+	refreshedMap := app.repoMapSvc.LastGoodMap(sess.ID)
+	require.NotEmpty(t, refreshedMap)
+	require.Contains(t, refreshedMap, "MainB")
+	require.NotContains(t, refreshedMap, "MainA")
+
+	prevTokenCount := app.repoMapSvc.LastTokenCount(sess.ID)
+	require.Greater(t, prevTokenCount, 0)
+
+	handled, msg, err = app.RunRepoMapControl(t.Context(), "project:map-reset", sess.ID)
+	require.True(t, handled)
+	require.NoError(t, err)
+	require.Equal(t, "Repository map reset and rebuilt.", msg)
+
+	resetMap := app.repoMapSvc.LastGoodMap(sess.ID)
+	require.NotEmpty(t, resetMap)
+	require.Contains(t, resetMap, "MainB")
+	require.Equal(t, resetMap, app.repoMapSvc.LastGoodMap(sess.ID))
+	require.Greater(t, app.repoMapSvc.LastTokenCount(sess.ID), 0)
+}
+
+func TestMapRefreshAsyncSchedulesAndUpdatesObservableMap(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/repomap\n\ngo 1.23\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "async.go"), []byte("package main\n\nfunc AsyncBefore() {}\n"), 0o644))
+
+	cfg, err := config.Init(repoRoot, "", false)
+	require.NoError(t, err)
+	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	q := db.New(conn)
+	app := &App{config: cfg, FileTracker: filetracker.NewService(q, cfg.WorkingDir())}
+	_ = app.initRepoMap(t.Context(), conn)
+
+	sessSvc := session.NewService(q, conn)
+	sess, err := sessSvc.Create(t.Context(), "map-async")
+	require.NoError(t, err)
+
+	require.NoError(t, app.mapRefreshSync(t.Context(), sess.ID))
+	initial := app.repoMapSvc.LastGoodMap(sess.ID)
+	require.Contains(t, initial, "AsyncBefore")
+
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "async.go"), []byte("package main\n\nfunc AsyncAfter() {}\n"), 0o644))
+
+	require.NoError(t, app.mapRefreshAsync(t.Context(), sess.ID))
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		updated := app.repoMapSvc.LastGoodMap(sess.ID)
+		if strings.Contains(updated, "AsyncAfter") {
+			require.NotContains(t, updated, "AsyncBefore")
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for async map refresh to update map; latest map: %q", updated)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func TestIsRepoMapResetCommand(t *testing.T) {

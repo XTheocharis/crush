@@ -576,7 +576,7 @@ func TestLogsExplorer_DeterministicSampling(t *testing.T) {
 	content := buildLogWithManyErrors(30, 15)
 
 	results := make([]string, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		exp := &LogsExplorer{}
 		result, err := exp.Explore(context.Background(), ExploreInput{
 			Path:    "test.log",
@@ -1004,7 +1004,7 @@ func TestDeterministicallySample(t *testing.T) {
 
 	// More items than limit - should select N items deterministically.
 	items = make([]string, 100)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		items[i] = fmt.Sprintf("item-%d", i)
 	}
 
@@ -1021,7 +1021,7 @@ func TestDeterministicallySample(t *testing.T) {
 	}
 
 	// Verify results are identical (deterministic).
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if result1[i] != result2[i] {
 			t.Errorf("Deterministic sampling failed: result1[%d] = %q, result2[%d] = %q",
 				i, result1[i], i, result2[i])
@@ -1032,10 +1032,10 @@ func TestDeterministicallySample(t *testing.T) {
 // Helper function to build a log with many errors.
 func buildLogWithManyErrors(errorCount, warnCount int) []byte {
 	var lines []string
-	for i := 0; i < errorCount; i++ {
+	for i := range errorCount {
 		lines = append(lines, fmt.Sprintf("[ERROR] Error number %d: Something went wrong with more details", i+1))
 	}
-	for i := 0; i < warnCount; i++ {
+	for i := range warnCount {
 		lines = append(lines, fmt.Sprintf("[WARN] Warning number %d: This is a warning message", i+1))
 	}
 	return []byte(strings.Join(lines, "\n"))

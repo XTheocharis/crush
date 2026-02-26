@@ -1,17 +1,18 @@
 package lcm
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/lcm/explorer"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/treesitter"
 )
 
 // Compile-time check that messageDecorator implements message.Service.
@@ -35,7 +36,7 @@ type messageDecorator struct {
 	querier         db.Querier
 	sqlDB           *sql.DB
 	cfg             MessageDecoratorConfig
-	explorers       *explorer.Registry
+	runtimeAdapter  *explorer.RuntimeAdapter
 	initSessions    sync.Map // sessionID -> struct{} (tracks lazily initialized sessions)
 }
 
@@ -43,6 +44,8 @@ type messageDecorator struct {
 type MessageDecoratorConfig struct {
 	DisableLargeToolOutput        bool
 	LargeToolOutputTokenThreshold int
+	Parser                        treesitter.Parser
+	ExplorerOutputProfile         explorer.OutputProfile
 }
 
 func (c MessageDecoratorConfig) threshold() int64 {
@@ -54,15 +57,27 @@ func (c MessageDecoratorConfig) threshold() int64 {
 
 // NewMessageDecorator wraps svc with LCM-aware behaviour.
 func NewMessageDecorator(svc message.Service, mgr Manager, queries *db.Queries, sqlDB *sql.DB, cfg MessageDecoratorConfig) message.Service {
+	runtimeAdapter := explorer.NewRuntimeAdapter(
+		explorer.WithRuntimeTreeSitter(cfg.Parser),
+		explorer.WithRuntimeOutputProfile(decoratorOutputProfile(cfg)),
+	)
+
 	return &messageDecorator{
-		Service:   svc,
-		mgr:       mgr,
-		store:     newStore(queries, sqlDB),
-		querier:   queries,
-		sqlDB:     sqlDB,
-		cfg:       cfg,
-		explorers: explorer.NewRegistry(),
+		Service:        svc,
+		mgr:            mgr,
+		store:          newStore(queries, sqlDB),
+		querier:        queries,
+		sqlDB:          sqlDB,
+		cfg:            cfg,
+		runtimeAdapter: runtimeAdapter,
 	}
+}
+
+func decoratorOutputProfile(cfg MessageDecoratorConfig) explorer.OutputProfile {
+	if cfg.ExplorerOutputProfile == "" {
+		return explorer.OutputProfileEnhancement
+	}
+	return cfg.ExplorerOutputProfile
 }
 
 // ensureSessionInit lazily initializes an LCM session on first access.
@@ -304,27 +319,128 @@ func truncateString(s string, maxChars int) string {
 	return string(runes[:maxChars])
 }
 
+// inferFileExtension attempts to detect the content type from the text
+// and returns an appropriate file extension for explorer type detection.
+// Returns ".txt" as default when no specific type is detected.
+func inferFileExtension(content string) string {
+	if len(content) == 0 {
+		return ".txt"
+	}
+	contentBytes := []byte(content)
+
+	// Check for known binary signatures (from BinaryExplorer.hasBinarySignature).
+	binarySignatures := [][]byte{
+		{0x7F, 0x45, 0x4C, 0x46},             // ELF
+		{0x89, 0x50, 0x4E, 0x47},             // PNG
+		{0xFF, 0xD8, 0xFF},                   // JPEG
+		{0x50, 0x4B, 0x03, 0x04},             // ZIP
+		{0x25, 0x50, 0x44, 0x46},             // PDF
+		{0x4D, 0x5A},                         // PE/MZ
+		{0xCA, 0xFE, 0xBA, 0xBE},             // Java class
+		{0x00, 0x61, 0x73, 0x6D},             // WASM
+		{0x1F, 0x8B},                         // gzip
+		{0x52, 0x61, 0x72, 0x21, 0x1A, 0x07}, // RAR
+	}
+	for _, sig := range binarySignatures {
+		if len(contentBytes) >= len(sig) && bytes.HasPrefix(contentBytes, sig) {
+			return ".bin"
+		}
+	}
+
+	// Check if content looks like mostly non-printable characters.
+	// This helps content fall through to FallbackExplorer for unknown binary content.
+	if !looksLikeText(contentBytes) {
+		return ".raw"
+	}
+
+	trimmed := strings.TrimSpace(string(contentBytes))
+
+	// Check for Go code patterns
+	if strings.HasPrefix(trimmed, "package ") || strings.Contains(trimmed, "\npackage ") {
+		return ".go"
+	}
+	// Check for Python shebang or import
+	if strings.HasPrefix(trimmed, "#!/usr/bin/env python") ||
+		strings.HasPrefix(trimmed, "#!/usr/bin/python") ||
+		strings.Contains(trimmed, "import ") ||
+		strings.Contains(trimmed, "from ") {
+		return ".py"
+	}
+	// Check for JavaScript
+	if strings.Contains(trimmed, "const ") && strings.Contains(trimmed, "function ") {
+		return ".js"
+	}
+	// Check for TypeScript
+	if strings.Contains(trimmed, "interface ") && strings.Contains(trimmed, ": string") {
+		return ".ts"
+	}
+	// Check for JSON
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		return ".json"
+	}
+	// Check for YAML
+	if strings.Contains(trimmed, ": ") && strings.Contains(trimmed, "\n  ") {
+		return ".yaml"
+	}
+	// Default to text
+	return ".txt"
+}
+
+// looksLikeText checks if byte content appears to be text (ASCII printable).
+// This mirrors the explorer package's logic for TextExplorer content detection.
+func looksLikeText(content []byte) bool {
+	if len(content) == 0 {
+		return true
+	}
+	// Sample early portion and check for a reasonable printable-to-non-printable ratio.
+	sampleSize := min(len(content), 1024)
+	sample := content[:sampleSize]
+	printable := 0
+	for _, b := range sample {
+		// Check for ASCII printable or common whitespace.
+		if (b >= 32 && b <= 126) || b == '\n' || b == '\r' || b == '\t' {
+			printable++
+		}
+	}
+	// Require 80% printable to be considered text.
+	return printable*100/sampleSize >= 80
+}
+
+// generateExplorationPath creates a synthetic file path with extension
+// for explorer type detection based on content analysis.
+func generateExplorationPath(fileID, content string) string {
+	ext := inferFileExtension(content)
+	return "lcm_output" + ext
+}
+
 func (s *messageDecorator) persistLargeOutputExploration(ctx context.Context, sessionID, fileID, content string) {
-	if s.explorers == nil {
+	if s.runtimeAdapter == nil {
 		return
 	}
 
-	result, err := s.explorers.Explore(ctx, explorer.ExploreInput{
-		Path:      filepath.Base(fileID),
-		Content:   []byte(content),
-		SessionID: sessionID,
-	})
+	// Use a synthetic path with extension for proper explorer type detection.
+	// The fileID is a UUID without extension, so content-based detection
+	// ensures the explorer registry can select the appropriate explorer.
+	explorationPath := generateExplorationPath(fileID, content)
+
+	summary, explorerUsed, persistExploration, err := s.runtimeAdapter.Explore(
+		ctx,
+		sessionID,
+		explorationPath,
+		[]byte(content),
+	)
 	if err != nil {
 		slog.Warn("LCM exploration failed for large tool output",
 			"session_id", sessionID,
 			"file_id", fileID,
+			"exploration_path", explorationPath,
 			"error", err,
 		)
 		return
 	}
-
-	summary := strings.TrimSpace(result.Summary)
-	explorerUsed := strings.TrimSpace(result.ExplorerUsed)
+	if !persistExploration {
+		return
+	}
 	if summary == "" || explorerUsed == "" {
 		return
 	}

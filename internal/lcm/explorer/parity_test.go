@@ -2,8 +2,13 @@ package explorer
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
+	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -11,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
+	_ "modernc.org/sqlite"
 )
 
 type gateB1LanguageScore struct {
@@ -330,7 +337,7 @@ line 17
 }
 
 func verifyParityMarkerClasses(summary string) error {
-	for _, line := range strings.Split(summary, "\n") {
+	for line := range strings.SplitSeq(summary, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.Contains(trimmed, "more") {
 			continue
@@ -368,7 +375,7 @@ func parseNormalizedParityMarker(line string) (disclosureMarkerClass, int, bool)
 }
 
 func verifyCanonicalEnhancementMarkers(summary string) error {
-	for _, line := range strings.Split(summary, "\n") {
+	for line := range strings.SplitSeq(summary, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.Contains(trimmed, "more") {
 			continue
@@ -492,6 +499,20 @@ func validateRuntimeRetrievalPersistenceExpectations(inventory *RuntimeInventory
 	return nil
 }
 
+type gateB4FormatScore struct {
+	Format                string
+	Profile               OutputProfile
+	RequiredFieldCoverage float64
+	MicroF1               float64
+	MacroF1               float64
+	MAPE                  float64
+}
+
+type gateB4FeatureSpec struct {
+	RequiredFields []string
+	ExpectedCounts map[string]float64
+}
+
 func runParityGateB4DataFormatDepthChecks() error {
 	cfg := NewDefaultParityFixtureConfig(".")
 	loader := NewParityFixtureLoader(cfg)
@@ -500,80 +521,488 @@ func runParityGateB4DataFormatDepthChecks() error {
 		return fmt.Errorf("load fixture index: %w", err)
 	}
 
-	for lang, fixture := range index.Language {
-		content, err := LoadFixtureFile(cfg, fixture)
-		if err != nil {
-			return fmt.Errorf("load %s fixture: %w", lang, err)
-		}
-		if err := validateLanguageFixtureDepth(lang, content); err != nil {
-			return fmt.Errorf("language fixture %s failed depth checks: %w", lang, err)
+	fixtureByFormat := map[string]string{
+		"latex":       index.Format["latex"],
+		"logs":        index.Format["logs"],
+		"sqlite_seed": index.Format["sqlite_seed"],
+		"markdown":    index.Markdown["readme"],
+	}
+	for key, fixture := range fixtureByFormat {
+		if strings.TrimSpace(fixture) == "" {
+			return fmt.Errorf("missing required B4 fixture: %s", key)
 		}
 	}
 
-	if jsonFixture, ok := index.Format["json"]; ok {
-		content, err := LoadFixtureFile(cfg, jsonFixture)
-		if err != nil {
-			return err
+	profiles := []OutputProfile{OutputProfileParity, OutputProfileEnhancement}
+	scoresByProfile := make(map[OutputProfile]map[string]gateB4FormatScore, len(profiles))
+
+	for _, profile := range profiles {
+		registry := NewRegistry(WithOutputProfile(profile))
+		profileScores := make(map[string]gateB4FormatScore, len(fixtureByFormat))
+
+		for key, fixtureName := range fixtureByFormat {
+			raw, err := LoadFixtureFile(cfg, fixtureName)
+			if err != nil {
+				return fmt.Errorf("load %s fixture %q: %w", key, fixtureName, err)
+			}
+
+			input, spec, err := buildB4GateInputAndSpec(key, fixtureName, raw, profile)
+			if err != nil {
+				return fmt.Errorf("prepare B4 fixture %s: %w", key, err)
+			}
+
+			result, err := registry.exploreStatic(context.Background(), input)
+			if err != nil {
+				return fmt.Errorf("explore B4 fixture %s (%s): %w", key, profile, err)
+			}
+
+			actualCounts := extractB4ActualCounts(key, result.Summary)
+			score := scoreB4FormatMetrics(key, profile, result.Summary, spec, actualCounts)
+			profileScores[key] = score
 		}
-		if err := validateJSONFixtureDepthAndFields(content); err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("missing json format fixture")
+
+		scoresByProfile[profile] = profileScores
 	}
 
-	if yamlFixture, ok := index.Format["yaml"]; ok {
-		content, err := LoadFixtureFile(cfg, yamlFixture)
-		if err != nil {
+	for _, profile := range profiles {
+		if err := enforceB4Thresholds(profile, scoresByProfile[profile]); err != nil {
 			return err
 		}
-		if err := validateYAMLFixtureDepthAndFields(content); err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("missing yaml format fixture")
 	}
 
-	if csvFixture, ok := index.Format["csv"]; ok {
-		content, err := LoadFixtureFile(cfg, csvFixture)
-		if err != nil {
-			return err
-		}
-		if err := validateCSVFixtureDepthAndFields(content); err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("missing csv format fixture")
+	if err := runGateB4ArtifactCoverageChecks(index); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func validateLanguageFixtureDepth(language string, content []byte) error {
-	text := string(content)
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) < 20 {
-		return fmt.Errorf("fixture quality too low: expected >=20 lines, got %d", len(lines))
+func buildB4GateInputAndSpec(formatKey, fixtureName string, raw []byte, profile OutputProfile) (ExploreInput, gateB4FeatureSpec, error) {
+	switch formatKey {
+	case "markdown":
+		explorer := &MarkdownExplorer{}
+		content := string(raw)
+		_, frontmatter := explorer.extractFrontmatter(content)
+		frontmatterKeys := 0.0
+		if len(frontmatter) > 0 {
+			var parsed map[string]any
+			if err := yamlUnmarshalForB4(frontmatter, &parsed); err == nil {
+				frontmatterKeys = float64(len(parsed))
+			}
+		}
+		headings := explorer.extractHeadings(content)
+		expected := map[string]float64{
+			"frontmatter_keys":      frontmatterKeys,
+			"heading_total":         float64(len(headings)),
+			"inline_links":          float64(explorer.countInlineLinks(content)),
+			"reference_links":       float64(explorer.countReferenceLinks(content)),
+			"autolinks":             float64(explorer.countAutolinks(content)),
+			"reference_definitions": float64(explorer.countReferenceDefinitions(content)),
+		}
+		required := []string{
+			"markdown file",
+			"frontmatter",
+			"heading hierarchy",
+			"links",
+			"inline links (markdown style)",
+			"reference definitions",
+		}
+		return ExploreInput{Path: fixtureName, Content: raw}, gateB4FeatureSpec{RequiredFields: required, ExpectedCounts: expected}, nil
+	case "latex":
+		content := string(raw)
+		sections := extractLatexSections(content)
+		sectionCounts := countSectionsByLevel(sections)
+		envs := extractLatexEnvironments(content)
+		envCounts := make(map[string]float64, len(envs))
+		for _, env := range envs {
+			envCounts[strings.ToLower(env.Name)] = float64(env.Count)
+		}
+		biblio := extractLatexBibliography(content)
+		expected := map[string]float64{
+			"section":       float64(sectionCounts[1]),
+			"subsection":    float64(sectionCounts[2]),
+			"subsubsection": float64(sectionCounts[3]),
+			"citations":     float64(biblio.CiteCount),
+			"env_figure":    envCounts["figure"],
+			"env_table":     envCounts["table"],
+			"env_equation":  envCounts["equation"],
+		}
+		required := []string{
+			"latex file",
+			"section structure",
+			"environments",
+			"citations",
+			"style",
+			"packages",
+			"- \\bibliography",
+		}
+		if profile == OutputProfileEnhancement {
+			required = append(required, "references", "citation keys")
+		}
+		return ExploreInput{Path: fixtureName, Content: raw}, gateB4FeatureSpec{RequiredFields: required, ExpectedCounts: expected}, nil
+	case "logs":
+		lineList := strings.Split(string(raw), "\n")
+		levels := make(map[string]int)
+		countLogLevels(lineList, levels)
+		expected := map[string]float64{
+			"total_lines": float64(len(lineList)),
+			"level_error": float64(levels["ERROR"]),
+			"level_warn":  float64(levels["WARN"]),
+			"level_info":  float64(levels["INFO"]),
+		}
+		required := []string{
+			"log file",
+			"total lines",
+			"level distribution",
+			"timestamp patterns",
+			"sample errors/warnings",
+		}
+		return ExploreInput{Path: fixtureName, Content: raw}, gateB4FeatureSpec{RequiredFields: required, ExpectedCounts: expected}, nil
+	case "sqlite_seed":
+		dbBytes, expected, err := buildSQLiteFixtureFromSeed(raw)
+		if err != nil {
+			return ExploreInput{}, gateB4FeatureSpec{}, err
+		}
+		if profile != OutputProfileEnhancement {
+			delete(expected, "views")
+			delete(expected, "triggers")
+			delete(expected, "constraints")
+			delete(expected, "unique_index")
+		}
+		required := []string{
+			"sqlite database",
+			"tables",
+			"indexes",
+			"table inventory",
+			"index inventory",
+		}
+		if profile == OutputProfileEnhancement {
+			required = append(required, "views", "triggers", "constraints", "unique index")
+		}
+		return ExploreInput{Path: "format_fixture.db", Content: dbBytes}, gateB4FeatureSpec{RequiredFields: required, ExpectedCounts: expected}, nil
+	default:
+		return ExploreInput{}, gateB4FeatureSpec{}, fmt.Errorf("unsupported B4 format key %q", formatKey)
+	}
+}
+
+func scoreB4FormatMetrics(formatKey string, profile OutputProfile, summary string, spec gateB4FeatureSpec, actual map[string]float64) gateB4FormatScore {
+	matched := 0
+	for _, field := range spec.RequiredFields {
+		if strings.Contains(strings.ToLower(summary), strings.ToLower(field)) {
+			matched++
+		}
+	}
+	requiredCount := maxInt(1, len(spec.RequiredFields))
+	coverage := float64(matched) / float64(requiredCount)
+
+	microF1 := 0.0
+	if matched > 0 {
+		microF1 = (2.0 * float64(matched)) / (2.0*float64(matched) + float64(requiredCount-matched))
 	}
 
-	normalized := strings.ToLower(text)
-	switch language {
-	case "go":
-		if strings.Count(normalized, "func ") < 3 {
-			return fmt.Errorf("insufficient go function depth")
-		}
-		if strings.Count(normalized, "type ") < 2 {
-			return fmt.Errorf("insufficient go type depth")
-		}
-	case "python":
-		if strings.Count(normalized, "def ") < 3 {
-			return fmt.Errorf("insufficient python function depth")
-		}
-		if !strings.Contains(normalized, "class ") {
-			return fmt.Errorf("missing python class depth")
+	macroSum := 0.0
+	for _, field := range spec.RequiredFields {
+		if strings.Contains(strings.ToLower(summary), strings.ToLower(field)) {
+			macroSum += 1.0
 		}
 	}
+	macroF1 := macroSum / float64(requiredCount)
+
+	mape, _ := computeMAPE(spec.ExpectedCounts, actual)
+
+	return gateB4FormatScore{
+		Format:                formatKey,
+		Profile:               profile,
+		RequiredFieldCoverage: coverage,
+		MicroF1:               microF1,
+		MacroF1:               macroF1,
+		MAPE:                  mape,
+	}
+}
+
+func runGateB4ArtifactCoverageChecks(index *ParityFixtureIndex) error {
+	phasePath := filepath.Join("testdata", "parity_volt", "phase_0c_gate_artifact.v1.json")
+	phaseBytes, err := os.ReadFile(phasePath)
+	if err != nil {
+		return fmt.Errorf("B4 artifact coverage: read %s: %w", phasePath, err)
+	}
+	var phase struct {
+		Evidence struct {
+			TestedExplorers []string `json:"tested_explorers"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(phaseBytes, &phase); err != nil {
+		return fmt.Errorf("B4 artifact coverage: parse %s: %w", phasePath, err)
+	}
+	tested := make(map[string]struct{}, len(phase.Evidence.TestedExplorers))
+	for _, exp := range phase.Evidence.TestedExplorers {
+		tested[strings.ToLower(strings.TrimSpace(exp))] = struct{}{}
+	}
+	for _, req := range []string{"markdown", "latex", "sqlite", "logs"} {
+		if _, ok := tested[req]; !ok {
+			return fmt.Errorf("B4 artifact coverage: tested_explorers missing %q", req)
+		}
+	}
+
+	matrixPath := filepath.Join("testdata", "parity_volt", "explorer_family_matrix.v1.json")
+	matrixBytes, err := os.ReadFile(matrixPath)
+	if err != nil {
+		return fmt.Errorf("B4 artifact coverage: read %s: %w", matrixPath, err)
+	}
+	var matrix ExplorerFamilyMatrix
+	if err := json.Unmarshal(matrixBytes, &matrix); err != nil {
+		return fmt.Errorf("B4 artifact coverage: parse %s: %w", matrixPath, err)
+	}
+	requiredFamilies := map[string]string{
+		"markdownexplorer": "markdown",
+		"latexexplorer":    "latex",
+		"sqliteexplorer":   "sqlite",
+		"logsexplorer":     "logs",
+	}
+	present := map[string]bool{}
+	for _, exp := range matrix.Explorers {
+		id := strings.ToLower(strings.TrimSpace(exp.ExplorerID))
+		if fam, ok := requiredFamilies[id]; ok {
+			for _, language := range exp.LanguageFamilies {
+				if strings.EqualFold(language, fam) {
+					present[fam] = true
+				}
+			}
+		}
+	}
+	for fam := range map[string]struct{}{"markdown": {}, "latex": {}, "sqlite": {}, "logs": {}} {
+		if !present[fam] {
+			return fmt.Errorf("B4 artifact coverage: explorer_family_matrix missing %q family mapping", fam)
+		}
+	}
+
+	if _, ok := index.Markdown["readme"]; !ok {
+		return fmt.Errorf("B4 artifact coverage: fixture index missing markdown.readme")
+	}
+	for _, key := range []string{"latex", "logs", "sqlite_seed"} {
+		if _, ok := index.Format[key]; !ok {
+			return fmt.Errorf("B4 artifact coverage: fixture index missing format.%s", key)
+		}
+	}
+
 	return nil
+}
+
+func enforceB4Thresholds(profile OutputProfile, scores map[string]gateB4FormatScore) error {
+	const (
+		minPerFormatCoverage = 1.00
+		minPerFormatMicroF1  = 0.90
+		minPerFormatMacroF1  = 0.90
+		minMacroCoverage     = 0.95
+		minMacroMicroF1      = 0.90
+		minMacroMacroF1      = 0.90
+	)
+
+	maxPerFormatMAPE := 0.35
+	maxMacroMAPE := 0.30
+	if profile == OutputProfileEnhancement {
+		maxPerFormatMAPE = 0.45
+		maxMacroMAPE = 0.40
+	}
+
+	if len(scores) == 0 {
+		return fmt.Errorf("B4 threshold miss (%s): no scores computed", profile)
+	}
+
+	formats := make([]string, 0, len(scores))
+	for format := range scores {
+		formats = append(formats, format)
+	}
+	sort.Strings(formats)
+
+	macroCoverage := 0.0
+	macroMicroF1 := 0.0
+	macroMacroF1 := 0.0
+	macroMAPE := 0.0
+
+	for _, format := range formats {
+		s := scores[format]
+		if s.RequiredFieldCoverage < minPerFormatCoverage {
+			return fmt.Errorf("B4 threshold miss (%s): %s required-field coverage %.3f < %.3f", profile, format, s.RequiredFieldCoverage, minPerFormatCoverage)
+		}
+		if s.MicroF1 < minPerFormatMicroF1 {
+			return fmt.Errorf("B4 threshold miss (%s): %s micro_f1 %.3f < %.3f", profile, format, s.MicroF1, minPerFormatMicroF1)
+		}
+		if s.MacroF1 < minPerFormatMacroF1 {
+			return fmt.Errorf("B4 threshold miss (%s): %s macro_f1 %.3f < %.3f", profile, format, s.MacroF1, minPerFormatMacroF1)
+		}
+		if s.MAPE > maxPerFormatMAPE {
+			return fmt.Errorf("B4 threshold miss (%s): %s mape %.3f > %.3f", profile, format, s.MAPE, maxPerFormatMAPE)
+		}
+		macroCoverage += s.RequiredFieldCoverage
+		macroMicroF1 += s.MicroF1
+		macroMacroF1 += s.MacroF1
+		macroMAPE += s.MAPE
+	}
+
+	denom := float64(len(formats))
+	macroCoverage /= denom
+	macroMicroF1 /= denom
+	macroMacroF1 /= denom
+	macroMAPE /= denom
+
+	if macroCoverage < minMacroCoverage {
+		return fmt.Errorf("B4 threshold miss (%s): macro required-field coverage %.3f < %.3f", profile, macroCoverage, minMacroCoverage)
+	}
+	if macroMicroF1 < minMacroMicroF1 {
+		return fmt.Errorf("B4 threshold miss (%s): macro micro_f1 %.3f < %.3f", profile, macroMicroF1, minMacroMicroF1)
+	}
+	if macroMacroF1 < minMacroMacroF1 {
+		return fmt.Errorf("B4 threshold miss (%s): macro macro_f1 %.3f < %.3f", profile, macroMacroF1, minMacroMacroF1)
+	}
+	if macroMAPE > maxMacroMAPE {
+		return fmt.Errorf("B4 threshold miss (%s): macro mape %.3f > %.3f", profile, macroMAPE, maxMacroMAPE)
+	}
+
+	return nil
+}
+
+func extractB4ActualCounts(formatKey, summary string) map[string]float64 {
+	switch formatKey {
+	case "markdown":
+		return map[string]float64{
+			"frontmatter_keys":      mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Frontmatter keys:\s+(\d+)`),
+			"heading_total":         mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Total:\s+(\d+)`),
+			"inline_links":          mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Inline links \(markdown style\):\s+(\d+)`),
+			"reference_links":       mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Reference-style links:\s+(\d+)`),
+			"autolinks":             mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Autolinks \(http/https URLs\):\s+(\d+)`),
+			"reference_definitions": mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Reference definitions:\s+(\d+)`),
+		}
+	case "latex":
+		return map[string]float64{
+			"section":       mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?\\section:\s+(\d+)`),
+			"subsection":    mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?\\subsection:\s+(\d+)`),
+			"subsubsection": mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?\\subsubsection:\s+(\d+)`),
+			"citations":     mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Citations:\s+(\d+)`),
+			"env_figure":    mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?figure:\s+(\d+)`),
+			"env_table":     mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?table:\s+(\d+)`),
+			"env_equation":  mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?equation:\s+(\d+)`),
+		}
+	case "logs":
+		return map[string]float64{
+			"total_lines": mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Total lines:\s+(\d+)`),
+			"level_error": mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?ERROR:\s+(\d+)`),
+			"level_warn":  mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?WARN:\s+(\d+)`),
+			"level_info":  mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?INFO:\s+(\d+)`),
+		}
+	case "sqlite_seed":
+		return map[string]float64{
+			"tables":       mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Tables:\s+(\d+)`),
+			"indexes":      mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Indexes:\s+(\d+)`),
+			"views":        mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Views:\s+(\d+)`),
+			"triggers":     mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Triggers:\s+(\d+)`),
+			"constraints":  mustExtractFloat(summary, `(?m)^\s*(?:-\s*)?Constraints:\s+(\d+)`),
+			"unique_index": float64(strings.Count(strings.ToLower(summary), "unique index")),
+		}
+	default:
+		return map[string]float64{}
+	}
+}
+
+func mustExtractFloat(summary, pattern string) float64 {
+	re := regexp.MustCompile(pattern)
+	match := re.FindStringSubmatch(summary)
+	if len(match) != 2 {
+		return 0
+	}
+	v, err := strconv.ParseFloat(match[1], 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func computeMAPE(expected, actual map[string]float64) (float64, int) {
+	totalAPE := 0.0
+	samples := 0
+	for key, exp := range expected {
+		if exp <= 0 {
+			continue
+		}
+		obs := actual[key]
+		totalAPE += math.Abs(obs-exp) / exp
+		samples++
+	}
+	if samples == 0 {
+		return 0, 0
+	}
+	return totalAPE / float64(samples), samples
+}
+
+func buildSQLiteFixtureFromSeed(seedSQL []byte) ([]byte, map[string]float64, error) {
+	tmpDir, err := os.MkdirTemp("", "crush-b4-sqlite-*")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "fixture.db")
+	dsn := fmt.Sprintf("file:%s", url.QueryEscape(dbPath))
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open sqlite db: %w", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, string(seedSQL)); err != nil {
+		return nil, nil, fmt.Errorf("apply sqlite seed: %w", err)
+	}
+
+	explorer := &SQLiteExplorer{}
+	tables, err := explorer.getTables(ctx, db)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query sqlite tables: %w", err)
+	}
+	indexes, err := explorer.getIndexes(ctx, db)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query sqlite indexes: %w", err)
+	}
+	views, err := explorer.getViews(ctx, db)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query sqlite views: %w", err)
+	}
+	triggers, err := explorer.getTriggers(ctx, db)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query sqlite triggers: %w", err)
+	}
+	constraints, err := explorer.getConstraints(ctx, db, tables)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query sqlite constraints: %w", err)
+	}
+	constraintCount := 0
+	for _, cs := range constraints {
+		constraintCount += len(cs)
+	}
+
+	content, err := os.ReadFile(dbPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read sqlite fixture bytes: %w", err)
+	}
+
+	uniqueIndexCount := 0
+	for _, cs := range constraints {
+		for _, c := range cs {
+			if strings.EqualFold(c.Type, "UNIQUE INDEX") {
+				uniqueIndexCount++
+			}
+		}
+	}
+
+	expected := map[string]float64{
+		"tables":       float64(len(tables)),
+		"indexes":      float64(len(indexes)),
+		"views":        float64(len(views)),
+		"triggers":     float64(len(triggers)),
+		"constraints":  float64(constraintCount),
+		"unique_index": float64(uniqueIndexCount),
+	}
+	return content, expected, nil
 }
 
 func validateJSONFixtureDepthAndFields(content []byte) error {
@@ -616,55 +1045,16 @@ func maxJSONDepth(value any, depth int) int {
 	return maxDepth
 }
 
-func validateYAMLFixtureDepthAndFields(content []byte) error {
-	text := string(content)
-	lower := strings.ToLower(text)
-	requiredTokens := []string{"services:", "networks:", "volumes:"}
-	for _, token := range requiredTokens {
-		if !strings.Contains(lower, token) {
-			return fmt.Errorf("yaml missing required field: %s", token)
-		}
+func yamlUnmarshalForB4(in []byte, out *map[string]any) error {
+	parsed := make(map[string]any)
+	if len(in) == 0 {
+		*out = parsed
+		return nil
 	}
-
-	maxIndent := 0
-	for _, line := range strings.Split(text, "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-		if indent > maxIndent {
-			maxIndent = indent
-		}
+	if err := yaml.Unmarshal(in, &parsed); err != nil {
+		return err
 	}
-	if maxIndent < 4 {
-		return fmt.Errorf("yaml depth too shallow: max indentation %d", maxIndent)
-	}
-
-	return nil
-}
-
-func validateCSVFixtureDepthAndFields(content []byte) error {
-	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
-	if len(lines) < 6 {
-		return fmt.Errorf("csv has insufficient rows: %d", len(lines))
-	}
-	columns := strings.Split(lines[0], ",")
-	if len(columns) < 5 {
-		return fmt.Errorf("csv has insufficient columns: %d", len(columns))
-	}
-	requiredColumns := []string{"id", "name", "email"}
-	for _, required := range requiredColumns {
-		found := false
-		for _, col := range columns {
-			if strings.EqualFold(strings.TrimSpace(col), required) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("csv missing required column: %s", required)
-		}
-	}
+	*out = parsed
 	return nil
 }
 
@@ -711,9 +1101,9 @@ func runParityGateB5DeterministicE2EParityCheck() error {
 
 func validParityBundleForGateB() ParityProvenanceBundle {
 	return ParityProvenanceBundle{
-		VoltCommitSHA:     strings.Repeat("c", 40),
-		ComparatorPath:    "../volt",
-		FixturesSHA256:    strings.Repeat("d", 64),
+		VoltCommitSHA:     strings.Repeat("a", 40),
+		ComparatorPath:    "../volt/tree/" + strings.Repeat("a", 40),
+		FixturesSHA256:    strings.Repeat("b", 64),
 		GrepASTProvenance: "grep-ast@v1.2.3",
 		TokenizerID:       "cl100k_base",
 		TokenizerVersion:  "v0.1.0",

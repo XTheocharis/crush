@@ -2,9 +2,9 @@
   "fixture_id": "base_go_parity",
   "description": "Basic Go repository structure for Aider parity testing. Contains a simple project with typical file types: main entrypoint, core service layer, data models, utilities, and configuration.",
   "provenance": {
-    "aider_commit_sha": "0000000000000000000000000000000000000000",
-    "comparator_path": "https://github.com/Aider-AI/aider/tree/0000000000000000000000000000000000000000",
-    "fixtures_sha256": "2d2737a92d8132a0dc50c461a0bcbae7900470d71b32b9b18da83a2964ffba80",
+    "aider_commit_sha": "7afaa26f8b8b7b56146f0674d2a67e795b616b7c",
+    "comparator_path": "https://github.com/Aider-AI/aider/tree/7afaa26f8b8b7b56146f0674d2a67e795b616b7c",
+    "fixtures_sha256": "2c6fc11b2bbb3a4a42d96e86684c9bb7d368866e7147f48d14c0239f6c689c2e",
     "grep_ast_provenance": "grep-ast@v0.8.1",
     "tokenizer_id": "cl100k_base",
     "tokenizer_version": "v0.1.0"

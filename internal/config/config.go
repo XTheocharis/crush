@@ -359,6 +359,7 @@ func (o Options) merge(t Options) Options {
 		o.LCM.CtxCutoffThreshold = cmp.Or(t.LCM.CtxCutoffThreshold, o.LCM.CtxCutoffThreshold)
 		o.LCM.DisableLargeToolOutput = o.LCM.DisableLargeToolOutput || t.LCM.DisableLargeToolOutput
 		o.LCM.LargeToolOutputTokenThreshold = cmp.Or(t.LCM.LargeToolOutputTokenThreshold, o.LCM.LargeToolOutputTokenThreshold)
+		o.LCM.ExplorerOutputProfile = cmp.Or(t.LCM.ExplorerOutputProfile, o.LCM.ExplorerOutputProfile)
 	}
 	if t.RepoMap != nil {
 		if o.RepoMap == nil {
@@ -458,7 +459,7 @@ type Agent struct {
 type Tools struct {
 	Ls      ToolLs         `json:"ls,omitzero"`
 	Grep    ToolGrep       `json:"grep,omitzero"`
-	RepoMap RepoMapOptions `json:"repo_map,omitempty" jsonschema:"description=Repository map generation options"`
+	RepoMap RepoMapOptions `json:"repo_map" jsonschema:"description=Repository map generation options"`
 }
 
 func (o Tools) merge(t Tools) Tools {

@@ -50,7 +50,6 @@ func TestParityProvenanceBundleValidateRequiredFields(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			bundle := validRepomapBundle()
@@ -99,7 +98,6 @@ func TestParityProvenanceBundleValidateComparatorTupleRequired(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			bundle := validRepomapBundle()

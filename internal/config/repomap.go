@@ -15,6 +15,9 @@ type RepoMapOptions struct {
 	RefreshMode string `json:"refresh_mode,omitempty" jsonschema:"description=When to regenerate the repo map: auto files manual or always"`
 	// MapMulNoFiles is the budget multiplier when no files are in chat.
 	MapMulNoFiles float64 `json:"map_mul_no_files,omitempty" jsonschema:"description=Budget multiplier when no files are in chat (default 2.0)"`
+	// ParserPoolSize sets tree-sitter parser pool capacity.
+	// Zero uses the runtime default.
+	ParserPoolSize int `json:"parser_pool_size,omitempty" jsonschema:"description=Tree-sitter parser pool size (0 = runtime default)"`
 }
 
 func (o RepoMapOptions) merge(t RepoMapOptions) RepoMapOptions {
@@ -25,16 +28,14 @@ func (o RepoMapOptions) merge(t RepoMapOptions) RepoMapOptions {
 	if t.MapMulNoFiles != 0 {
 		o.MapMulNoFiles = t.MapMulNoFiles
 	}
+	o.ParserPoolSize = cmp.Or(t.ParserPoolSize, o.ParserPoolSize)
 	return o
 }
 
 // DefaultRepoMapMaxTokens computes the dynamic token budget based on model context
 // window size: min(max(contextWindow/8, 1024), 4096).
 func DefaultRepoMapMaxTokens(modelContextWindow int) int {
-	budget := modelContextWindow / 8
-	if budget < 1024 {
-		budget = 1024
-	}
+	budget := max(modelContextWindow/8, 1024)
 	if budget > 4096 {
 		budget = 4096
 	}

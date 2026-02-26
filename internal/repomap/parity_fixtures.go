@@ -11,6 +11,34 @@ import (
 	"strings"
 )
 
+func normalizeFixtureJSONForHash(data []byte) ([]byte, error) {
+	var payload any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	stripFixtureHashFields(payload)
+	return json.Marshal(payload)
+}
+
+func stripFixtureHashFields(v any) {
+	switch typed := v.(type) {
+	case map[string]any:
+		for k, child := range typed {
+			if k == "fixtures_sha256" ||
+				k == "aider_commit_sha" ||
+				k == "comparator_path" {
+				delete(typed, k)
+				continue
+			}
+			stripFixtureHashFields(child)
+		}
+	case []any:
+		for _, child := range typed {
+			stripFixtureHashFields(child)
+		}
+	}
+}
+
 // ParityAiderFixture represents a complete Aider parity fixture with provenance metadata.
 type ParityAiderFixture struct {
 	FixtureID   string                  `json:"fixture_id"`
@@ -162,7 +190,12 @@ func ComputeFixturesSHA256(dirPath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("read fixture %q: %w", path, err)
 		}
-		combined.Write(data)
+
+		normalized, err := normalizeFixtureJSONForHash(data)
+		if err != nil {
+			return "", fmt.Errorf("normalize fixture %q for hash: %w", path, err)
+		}
+		combined.Write(normalized)
 	}
 
 	sum := sha256.Sum256([]byte(combined.String()))
@@ -172,7 +205,7 @@ func ComputeFixturesSHA256(dirPath string) (string, error) {
 // VerifyFixturesIntegrity checks that the fixtures_sha256 matches the computed value.
 func VerifyFixturesIntegrity(fx ParityAiderFixture, basePath string) error {
 	expected := strings.TrimSpace(fx.Provenance.FixturesSHA256)
-	if expected == "" || expected == "PLACEHOLDER_COMPUTE_BEFORE_USE" {
+	if expected == "" || isPlaceholderFixtureHash(expected) {
 		return fmt.Errorf("fixture has empty or placeholder fixtures_sha256")
 	}
 
@@ -183,7 +216,7 @@ func VerifyFixturesIntegrity(fx ParityAiderFixture, basePath string) error {
 	}
 
 	if computed != expected {
-		return fmt.Errorf("fixtures sha256 mismatch: expected=%s computed=%s", expected, computed)
+		return fmt.Errorf("fixtures_sha256 mismatch: expected=%s computed=%s", expected, computed)
 	}
 
 	return nil

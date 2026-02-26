@@ -6,7 +6,10 @@
   "format": {
     "json": "format_package.json",
     "yaml": "format_docker-compose.yml",
-    "csv": "format_employees.csv"
+    "csv": "format_employees.csv",
+    "latex": "format_research.tex",
+    "logs": "format_service.log",
+    "sqlite_seed": "format_sqlite_seed.sql"
   },
   "binary": {},
   "shell": {
@@ -17,9 +20,9 @@
   },
   "negative": {},
   "metadata": {
-    "volt_commit_sha": "cccccccccccccccccccccccccccccccccccccccc",
-    "fixtures_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-    "comparator_path": "../volt",
+    "volt_commit_sha": "70a5534e06f29937cb3b981af0ce420a565a2d91",
+    "fixtures_sha256": "a83f49ca7b93b9b7d3e10c42ca8f8bf3e21829b34deaf008955083a4dad3c054",
+    "comparator_path": "../volt/tree/70a5534e06f29937cb3b981af0ce420a565a2d91",
     "version": "1",
     "generated_at": "2026-02-26T00:00:00Z",
     "profile": "parity",

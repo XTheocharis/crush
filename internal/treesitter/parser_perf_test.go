@@ -17,7 +17,7 @@ func TestTreeCacheKeyStability(t *testing.T) {
 
 	// Run the function multiple times and ensure it produces identical results
 	var results []string
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		results = append(results, treeCacheKey(path, content))
 	}
 

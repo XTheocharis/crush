@@ -2,6 +2,7 @@ package repomap
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,4 +61,29 @@ func TestWriteAndLoadSignOffBundleManifest(t *testing.T) {
 	require.Equal(t, bundle.Phase5Passed, loaded.Phase5Passed)
 	require.Equal(t, bundle.RepoMap.AiderCommitSHA, loaded.RepoMap.AiderCommitSHA)
 	require.Equal(t, bundle.Explorer.VoltCommitSHA, loaded.Explorer.VoltCommitSHA)
+}
+
+func TestValidateSignOffBundleRejectsPlaceholderProvenance(t *testing.T) {
+	t.Parallel()
+
+	bundle, err := BuildSignOffBundle(".")
+	require.NoError(t, err)
+
+	badSHA := *bundle
+	badSHA.RepoMap.AiderCommitSHA = strings.Repeat("0", 40)
+	err = ValidateSignOffBundle(&badSHA)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "placeholder comparator commit sha")
+
+	badHash := *bundle
+	badHash.Explorer.FixturesSHA256 = strings.Repeat("d", 64)
+	err = ValidateSignOffBundle(&badHash)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "placeholder fixture hash")
+
+	badPath := *bundle
+	badPath.RepoMap.ComparatorPath = "https://github.com/Aider-AI/aider/tree/" + strings.Repeat("0", 40)
+	err = ValidateSignOffBundle(&badPath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "placeholder comparator path")
 }
