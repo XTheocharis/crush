@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/agent/tools"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/repomap"
 )
 
@@ -15,6 +18,7 @@ type RepoMapService interface {
 	Generate(ctx context.Context, opts repomap.GenerateOpts) (string, int, error)
 	LastGoodMap(sessionID string) string
 	LastTokenCount(sessionID string) int
+	SessionReadOnlyFiles(ctx context.Context, sessionID string) []string
 	ShouldInject(sessionID string, runKey repomap.RunInjectionKey) bool
 	RefreshAsync(sessionID string, opts repomap.GenerateOpts)
 	Refresh(ctx context.Context, sessionID string, opts repomap.GenerateOpts) (string, int, error)
@@ -55,15 +59,21 @@ func (c *coordinator) buildRepoMapHook() PrepareStepHook {
 		currentRunMessages := repomap.ExtractCurrentRunMessages(prepared.Messages)
 		mentionText := repomap.ExtractCurrentMessageText(currentRunMessages)
 		allRepoFiles := c.repoMapSvc.AllFiles(callCtx)
-		inChatOrReadOnlyFiles := make([]string, 0, len(prepared.Messages))
-		for _, msg := range prepared.Messages {
-			for _, part := range msg.Content {
-				if textPart, ok := part.(fantasy.TextPart); ok {
-					inChatOrReadOnlyFiles = append(inChatOrReadOnlyFiles, repomap.ExtractMentionedFnames(textPart.Text, allRepoFiles, nil)...)
-				}
-			}
-		}
-		opts := buildRepoMapGenerateOpts(sessionID, nil, mentionText, allRepoFiles, inChatOrReadOnlyFiles, 0, 0, true)
+		chatFiles := c.sessionChatFiles(callCtx, sessionID)
+		readOnlyFiles := c.repoMapSvc.SessionReadOnlyFiles(callCtx, sessionID)
+		inChatOrReadOnlyFiles := unionRepoPaths(chatFiles, readOnlyFiles)
+		addableRepoFiles := subtractRepoPaths(allRepoFiles, inChatOrReadOnlyFiles)
+
+		opts := buildRepoMapGenerateOpts(
+			sessionID,
+			chatFiles,
+			mentionText,
+			allRepoFiles,
+			addableRepoFiles,
+			inChatOrReadOnlyFiles,
+			c.repoMapProfile(),
+			true,
+		)
 		if len(opts.MentionedFnames) > 0 || len(opts.MentionedIdents) > 0 {
 			_, _, _ = c.repoMapSvc.Refresh(callCtx, sessionID, opts)
 		}
@@ -101,28 +111,45 @@ func (c *coordinator) buildRepoMapHook() PrepareStepHook {
 	}
 }
 
+type repoMapProfileOptions struct {
+	TokenBudget          int
+	MaxContextWindow     int
+	Model                string
+	ParityMode           bool
+	PromptCachingEnabled bool
+	EnhancementTiers     string
+	DeterministicMode    bool
+	TokenCounterMode     string
+}
+
 func buildRepoMapGenerateOpts(
 	sessionID string,
 	chatFiles []string,
 	mentionText string,
 	allRepoFiles []string,
+	addableRepoFiles []string,
 	inChatOrReadOnlyFiles []string,
-	budget int,
-	maxContextWindow int,
+	profile repoMapProfileOptions,
 	forceRefresh bool,
 ) repomap.GenerateOpts {
 	opts := repomap.GenerateOpts{
-		SessionID:        sessionID,
-		ChatFiles:        chatFiles,
-		TokenBudget:      budget,
-		MaxContextWindow: maxContextWindow,
-		ForceRefresh:     forceRefresh,
+		SessionID:            sessionID,
+		ChatFiles:            chatFiles,
+		TokenBudget:          profile.TokenBudget,
+		MaxContextWindow:     profile.MaxContextWindow,
+		Model:                profile.Model,
+		ParityMode:           profile.ParityMode,
+		PromptCachingEnabled: profile.PromptCachingEnabled,
+		EnhancementTiers:     profile.EnhancementTiers,
+		DeterministicMode:    profile.DeterministicMode,
+		TokenCounterMode:     profile.TokenCounterMode,
+		ForceRefresh:         forceRefresh,
 	}
 	if mentionText == "" {
 		return opts
 	}
 
-	opts.MentionedFnames = repomap.ExtractMentionedFnames(mentionText, allRepoFiles, inChatOrReadOnlyFiles)
+	opts.MentionedFnames = repomap.ExtractMentionedFnames(mentionText, addableRepoFiles, inChatOrReadOnlyFiles)
 	opts.MentionedIdents = repomap.ExtractIdents(mentionText)
 
 	if identMatches := repomap.IdentFilenameMatches(opts.MentionedIdents, allRepoFiles); len(identMatches) > 0 {
@@ -139,4 +166,101 @@ func buildRepoMapGenerateOpts(
 	}
 
 	return opts
+}
+
+func (c *coordinator) sessionChatFiles(ctx context.Context, sessionID string) []string {
+	if c == nil || c.filetracker == nil || strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	readPaths, err := c.filetracker.ListReadFiles(ctx, sessionID)
+	if err != nil {
+		return nil
+	}
+	wd := ""
+	if c.cfg != nil {
+		wd = c.cfg.WorkingDir()
+	}
+	files := make([]string, 0, len(readPaths))
+	for _, p := range readPaths {
+		rel := p
+		if wd != "" {
+			if pathRel, relErr := filepath.Rel(wd, p); relErr == nil {
+				rel = pathRel
+			}
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." || strings.HasPrefix(rel, "../") {
+			continue
+		}
+		files = append(files, rel)
+	}
+	sort.Strings(files)
+	uniq := files[:0]
+	for _, p := range files {
+		if len(uniq) == 0 || uniq[len(uniq)-1] != p {
+			uniq = append(uniq, p)
+		}
+	}
+	return uniq
+}
+
+func unionRepoPaths(a, b []string) []string {
+	combined := make([]string, 0, len(a)+len(b))
+	combined = append(combined, a...)
+	combined = append(combined, b...)
+	sort.Strings(combined)
+	uniq := combined[:0]
+	for _, p := range combined {
+		if p == "" {
+			continue
+		}
+		if len(uniq) == 0 || uniq[len(uniq)-1] != p {
+			uniq = append(uniq, p)
+		}
+	}
+	return uniq
+}
+
+func subtractRepoPaths(all, excluded []string) []string {
+	if len(all) == 0 {
+		return nil
+	}
+	excludeSet := make(map[string]struct{}, len(excluded))
+	for _, p := range excluded {
+		excludeSet[p] = struct{}{}
+	}
+	out := make([]string, 0, len(all))
+	for _, p := range all {
+		if _, skip := excludeSet[p]; skip {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func (c *coordinator) repoMapProfile() repoMapProfileOptions {
+	profile := repoMapProfileOptions{}
+	if c == nil || c.cfg == nil {
+		return profile
+	}
+	if model := c.cfg.GetModelByType(config.SelectedModelTypeLarge); model != nil {
+		ctxWindow := int(model.ContextWindow)
+		profile.MaxContextWindow = ctxWindow
+		profile.TokenBudget = config.DefaultRepoMapMaxTokens(ctxWindow)
+		profile.Model = model.ID
+		if c.cfg.Options != nil && c.cfg.Options.RepoMap != nil && c.cfg.Options.RepoMap.MaxTokens > 0 {
+			profile.TokenBudget = c.cfg.Options.RepoMap.MaxTokens
+		}
+	}
+	if c.cfg.Options != nil && c.cfg.Options.LCM != nil {
+		profile.ParityMode = strings.EqualFold(strings.TrimSpace(c.cfg.Options.LCM.ExplorerOutputProfile), "parity")
+	}
+	if profile.ParityMode {
+		profile.PromptCachingEnabled = true
+		profile.EnhancementTiers = "none"
+		profile.DeterministicMode = true
+		profile.TokenCounterMode = "tokenizer_backed"
+	}
+	return profile
 }

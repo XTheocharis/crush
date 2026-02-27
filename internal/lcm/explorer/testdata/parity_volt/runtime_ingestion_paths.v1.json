@@ -1,311 +1,56 @@
 {
   "version": "1",
-  "generated_at": "2026-02-25T20:00:00Z",
-  "discovery_method": "static_code_analysis",
-  "profile": "enhancement",
+  "generated_at": "2026-02-26T00:00:00Z",
+  "discovery_method": "deterministic_static_plus_runtime",
+  "profile": "parity",
   "deterministic_mode": true,
-  "enhancement_tiers_enabled": "all",
+  "enhancement_tiers_enabled": "none",
   "token_counter_mode": "tokenizer_backed",
   "fixed_seed": 1337,
   "paths": [
     {
-      "id": "path_binary_direct",
-      "path_kind": "native_binary",
-      "description": "Direct binary file detection via BinaryExplorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "BinaryExplorer",
-      "preconditions": {
-        "has_magic_bytes": true,
-        "binary_signature_matches": true
-      },
-      "fallback_chain_position": 1,
-      "llm_enhancement": false
+      "id": "lcm.tool_output.create",
+      "path_kind": "ingestion",
+      "entrypoint": "messageDecorator.Create",
+      "trigger": "tool_output_over_threshold",
+      "in_scope": true,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "DisableLargeToolOutput",
+        "LargeToolOutputTokenThreshold"
+      ],
+      "description": "Large tool output interception and storage path",
+      "explorer": "TextExplorer"
     },
     {
-      "id": "path_json_native",
-      "path_kind": "data_format_native",
-      "description": "Native JSON data format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "JSONExplorer",
-      "preconditions": {
-        "extension_matches": ["json", "jsonc", "json5"],
-        "content_parsable": true
-      },
-      "fallback_chain_position": 2,
-      "llm_enhancement": true
+      "id": "lcm.describe.readback",
+      "path_kind": "retrieval",
+      "entrypoint": "lcm_describe",
+      "trigger": "describe_by_file_id",
+      "in_scope": true,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope"
+      ],
+      "description": "Readback path for large file summaries",
+      "explorer": "FallbackExplorer"
     },
     {
-      "id": "path_csv_native",
-      "path_kind": "data_format_native",
-      "description": "Native CSV data format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "CSVExplorer",
-      "preconditions": {
-        "extension_matches": ["csv", "tsv"],
-        "has_delimited_structure": true
-      },
-      "fallback_chain_position": 3,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_yaml_native",
-      "path_kind": "data_format_native",
-      "description": "Native YAML data format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "YAMLExplorer",
-      "preconditions": {
-        "extension_matches": ["yaml", "yml"],
-        "content_parsable": true
-      },
-      "fallback_chain_position": 4,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_toml_native",
-      "path_kind": "data_format_native",
-      "description": "Native TOML data format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "TOMLExplorer",
-      "preconditions": {
-        "extension_matches": ["toml"],
-        "content_parsable": true
-      },
-      "fallback_chain_position": 5,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_ini_native",
-      "path_kind": "data_format_native",
-      "description": "Native INI configuration format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "INIExplorer",
-      "preconditions": {
-        "extension_matches": ["ini", "cfg", "conf", "config", "properties"],
-        "has_key_value_structure": true
-      },
-      "fallback_chain_position": 6,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_xml_native",
-      "path_kind": "data_format_native",
-      "description": "Native XML data format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "XMLExplorer",
-      "preconditions": {
-        "extension_matches": ["xml", "xsd", "xsl", "xslt"],
-        "content_parsable": true
-      },
-      "fallback_chain_position": 7,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_html_native",
-      "path_kind": "data_format_native",
-      "description": "Native HTML markup format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "HTMLExplorer",
-      "preconditions": {
-        "extension_matches": ["html", "htm", "xhtml"],
-        "has_html_structure": true
-      },
-      "fallback_chain_position": 8,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_go_native",
-      "path_kind": "code_format_native",
-      "description": "Native Go code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "GoExplorer",
-      "preconditions": {
-        "extension_matches": ["go"]
-      },
-      "fallback_chain_position": 9,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_python_native",
-      "path_kind": "code_format_native",
-      "description": "Native Python code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "PythonExplorer",
-      "preconditions": {
-        "extension_matches": ["py", "pyw", "pyx", "pxd"],
-        "shebang_matches": ["python", "python2", "python3"]
-      },
-      "fallback_chain_position": 10,
-      "llm_enhancement": true,
-      "agent_eligible": true
-    },
-    {
-      "id": "path_javascript_native",
-      "path_kind": "code_format_native",
-      "description": "Native JavaScript code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "JavaScriptExplorer",
-      "preconditions": {
-        "extension_matches": ["js", "mjs", "cjs", "jsx"],
-        "shebang_matches": ["node", "nodejs"]
-      },
-      "fallback_chain_position": 11,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_typescript_native",
-      "path_kind": "code_format_native",
-      "description": "Native TypeScript code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "TypeScriptExplorer",
-      "preconditions": {
-        "extension_matches": ["ts", "tsx", "mts", "cts"],
-        "shebang_matches": ["deno", "ts-node"]
-      },
-      "fallback_chain_position": 12,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_rust_native",
-      "path_kind": "code_format_native",
-      "description": "Native Rust code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "RustExplorer",
-      "preconditions": {
-        "extension_matches": ["rs"]
-      },
-      "fallback_chain_position": 13,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_java_native",
-      "path_kind": "code_format_native",
-      "description": "Native Java code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "JavaExplorer",
-      "preconditions": {
-        "extension_matches": ["java"]
-      },
-      "fallback_chain_position": 14,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_cpp_native",
-      "path_kind": "code_format_native",
-      "description": "Native C++ code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "CppExplorer",
-      "preconditions": {
-        "extension_matches": ["cpp", "cxx", "cc", "hpp", "hxx", "hh"]
-      },
-      "fallback_chain_position": 15,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_c_native",
-      "path_kind": "code_format_native",
-      "description": "Native C code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "CExplorer",
-      "preconditions": {
-        "extension_matches": ["c", "h"]
-      },
-      "fallback_chain_position": 16,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_ruby_native",
-      "path_kind": "code_format_native",
-      "description": "Native Ruby code format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "RubyExplorer",
-      "preconditions": {
-        "extension_matches": ["rb", "rake"],
-        "shebang_matches": ["ruby"]
-      },
-      "fallback_chain_position": 17,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_treesitter_enhanced",
-      "path_kind": "code_format_enhanced",
-      "description": "Tree-sitter enhanced code analysis (requires parser)",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "TreeSitterExplorer",
-      "preconditions": {
-        "requires_tree_sitter_parser": true,
-        "position_after_explorer": "HTMLExplorer"
-      },
-      "fallback_chain_position": "inserted_after_html",
-      "llm_enhancement": true,
-      "parser_required": true
-    },
-    {
-      "id": "path_shell_native",
-      "path_kind": "shell_format_native",
-      "description": "Native shell script format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "ShellExplorer",
-      "preconditions": {
-        "extension_matches": ["sh", "bash", "zsh", "fish", "ksh", "csh", "tcsh"],
-        "shebang_matches": ["bash", "sh", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "pwsh", "powershell"]
-      },
-      "fallback_chain_position": 19,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_text_generic",
-      "path_kind": "text_format_generic",
-      "description": "Generic text format explorer",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "TextExplorer",
-      "preconditions": {
-        "content_is_text": true,
-        "no_specific_handler": true
-      },
-      "fallback_chain_position": 20,
-      "llm_enhancement": true
-    },
-    {
-      "id": "path_fallback_final",
-      "path_kind": "fallback_final",
-      "description": "Final fallback handler for all unrecognized files",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "FallbackExplorer",
-      "preconditions": {
-        "always_handles": true
-      },
-      "fallback_chain_position": 21,
-      "llm_enhancement": false
-    },
-    {
-      "id": "path_llm_single_call",
-      "path_kind": "enhancement_tier2",
-      "description": "LLM-enhanced summarization (tier 2 - single-call)",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "LLMClient",
-      "preconditions": {
-        "has_llm_client": true,
-        "session_id_empty": true
-      },
-      "fallback_chain_position": "post_static",
-      "llm_enhancement": true,
-      "tier": 2
-    },
-    {
-      "id": "path_llm_agent_based",
-      "path_kind": "enhancement_tier3",
-      "description": "Agent-based exploration (tier 3 - with session)",
-      "entry_point": "RuntimeAdapter.Explore",
-      "explorer": "AgentFunc",
-      "preconditions": {
-        "has_llm_client": true,
-        "has_agent_func": true,
-        "session_id_non_empty": true
-      },
-      "fallback_chain_position": "post_static",
-      "llm_enhancement": true,
-      "tier": 3,
-      "python_exception": true
+      "id": "lcm.expand.readback",
+      "path_kind": "retrieval",
+      "entrypoint": "lcm_expand",
+      "trigger": "expand_by_file_id",
+      "in_scope": true,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope",
+        "sub_agent_only"
+      ],
+      "description": "Readback path for expanded large file content",
+      "explorer": "FallbackExplorer"
     }
   ]
 }

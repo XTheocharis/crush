@@ -112,8 +112,8 @@ func ValidateFixtureMetadata(meta FixtureMetadata) error {
 			return fmt.Errorf("metadata parity profile requires enhancement_tiers_enabled=none")
 		}
 		counterMode := strings.ToLower(strings.TrimSpace(meta.TokenCounterMode))
-		if counterMode != "tokenizer_backed" && counterMode != "heuristic" {
-			return fmt.Errorf("metadata parity profile requires token_counter_mode tokenizer_backed or heuristic")
+		if counterMode != "tokenizer_backed" {
+			return fmt.Errorf("metadata parity profile requires token_counter_mode tokenizer_backed")
 		}
 		if meta.FixedSeed <= 0 {
 			return fmt.Errorf("metadata parity profile requires positive fixed_seed")

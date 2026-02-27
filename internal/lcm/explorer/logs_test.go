@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/exp/golden"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLogsExplorer_CanHandle(t *testing.T) {
@@ -135,9 +136,7 @@ func TestLogsExplorer_CanHandle(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			exp := &LogsExplorer{}
 			result := exp.CanHandle(tt.path, tt.content)
-			if result != tt.expected {
-				t.Errorf("CanHandle() = %v, expected %v", result, tt.expected)
-			}
+			require.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -276,23 +275,15 @@ func TestLogsExplorer_Explore(t *testing.T) {
 				Path:    tt.path,
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
+			require.NoError(t, err)
 
-			if result.ExplorerUsed != tt.expectedExplorer {
-				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
-			}
+			require.Equal(t, tt.expectedExplorer, result.ExplorerUsed)
 
 			for _, expected := range tt.expectedContains {
-				if !strings.Contains(result.Summary, expected) {
-					t.Errorf("Expected summary to contain %q\nSummary:\n%s", expected, result.Summary)
-				}
+				require.Contains(t, result.Summary, expected)
 			}
 
-			if result.TokenEstimate < tt.expectedTokensGt {
-				t.Errorf("Expected token estimate >= %d, got %d", tt.expectedTokensGt, result.TokenEstimate)
-			}
+			require.GreaterOrEqual(t, result.TokenEstimate, tt.expectedTokensGt, "Expected token estimate >= %d, got %d", tt.expectedTokensGt, result.TokenEstimate)
 		})
 	}
 }
@@ -372,9 +363,7 @@ func TestLogsExplorer_LevelDistribution(t *testing.T) {
 				Path:    "test.log",
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
+			require.NoError(t, err)
 
 			summary := result.Summary
 
@@ -395,14 +384,14 @@ func TestLogsExplorer_LevelDistribution(t *testing.T) {
 				return count
 			}
 
-			if tt.wantError > 0 && countInSummary("ERROR") == 0 {
-				t.Errorf("Expected ERROR count of %d, summary: %s", tt.wantError, summary)
+			if tt.wantError > 0 {
+				require.NotZero(t, countInSummary("ERROR"), "Expected ERROR count of %d, summary: %s", tt.wantError, summary)
 			}
-			if tt.wantWarn > 0 && countInSummary("WARN") == 0 {
-				t.Errorf("Expected WARN count of %d, summary: %s", tt.wantWarn, summary)
+			if tt.wantWarn > 0 {
+				require.NotZero(t, countInSummary("WARN"), "Expected WARN count of %d, summary: %s", tt.wantWarn, summary)
 			}
-			if tt.wantInfo > 0 && countInSummary("INFO") == 0 {
-				t.Errorf("Expected INFO count of %d, summary: %s", tt.wantInfo, summary)
+			if tt.wantInfo > 0 {
+				require.NotZero(t, countInSummary("INFO"), "Expected INFO count of %d, summary: %s", tt.wantInfo, summary)
 			}
 		})
 	}
@@ -477,32 +466,28 @@ func TestLogsExplorer_TimestampPatterns(t *testing.T) {
 				Path:    "test.log",
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
+			require.NoError(t, err)
 
 			summary := result.Summary
-			if tt.wantISO8601 && !strings.Contains(summary, "ISO8601") {
-				t.Errorf("Expected ISO8601 in summary, got: %s", summary)
+			if tt.wantISO8601 {
+				require.Contains(t, summary, "ISO8601")
 			}
-			if tt.wantRFC3339 && !strings.Contains(summary, "RFC3339") {
-				t.Errorf("Expected RFC3339 in summary, got: %s", summary)
+			if tt.wantRFC3339 {
+				require.Contains(t, summary, "RFC3339")
 			}
-			if tt.wantCommonLog && !strings.Contains(summary, "CommonLog") {
-				t.Errorf("Expected CommonLog in summary, got: %s", summary)
+			if tt.wantCommonLog {
+				require.Contains(t, summary, "CommonLog")
 			}
-			if tt.wantSyslog && !strings.Contains(summary, "Syslog") {
-				t.Errorf("Expected Syslog in summary, got: %s", summary)
+			if tt.wantSyslog {
+				require.Contains(t, summary, "Syslog")
 			}
-			if tt.wantUnixTime && !strings.Contains(summary, "UnixTime") {
-				t.Errorf("Expected UnixTime in summary, got: %s", summary)
+			if tt.wantUnixTime {
+				require.Contains(t, summary, "UnixTime")
 			}
-			if tt.wantCompactDt && !strings.Contains(summary, "CompactDateTime") {
+			if tt.wantCompactDt {
 				// May also match as CompactDate, so be lenient.
 				hasCompact := strings.Contains(summary, "CompactDateTime") || strings.Contains(summary, "CompactDate")
-				if !hasCompact {
-					t.Errorf("Expected CompactDateTime in summary, got: %s", summary)
-				}
+				require.True(t, hasCompact, "Expected CompactDateTime in summary, got: %s", summary)
 			}
 		})
 	}
@@ -550,9 +535,7 @@ func TestLogsExplorer_SampleErrorsWarnings(t *testing.T) {
 				Path:    "test.log",
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
+			require.NoError(t, err)
 
 			// Count samples by looking for numbered entries.
 			summary := result.Summary
@@ -563,10 +546,10 @@ func TestLogsExplorer_SampleErrorsWarnings(t *testing.T) {
 				}
 			}
 
-			if sampleCount < tt.wantSampleCountMin || sampleCount > tt.wantSampleCountMax {
-				t.Errorf("Expected sample count between %d and %d, got %d. Summary:\n%s",
-					tt.wantSampleCountMin, tt.wantSampleCountMax, sampleCount, summary)
-			}
+			require.GreaterOrEqual(t, sampleCount, tt.wantSampleCountMin, "Expected sample count between %d and %d, got %d. Summary:\n%s",
+				tt.wantSampleCountMin, tt.wantSampleCountMax, sampleCount, summary)
+			require.LessOrEqual(t, sampleCount, tt.wantSampleCountMax, "Expected sample count between %d and %d, got %d. Summary:\n%s",
+				tt.wantSampleCountMin, tt.wantSampleCountMax, sampleCount, summary)
 		})
 	}
 }
@@ -582,22 +565,17 @@ func TestLogsExplorer_DeterministicSampling(t *testing.T) {
 			Path:    "test.log",
 			Content: content,
 		})
-		if err != nil {
-			t.Fatalf("Explore failed on iteration %d: %v", i, err)
-		}
+		require.NoError(t, err, "Explore failed on iteration %d", i)
+
 		// Extract the sample section.
 		sampleStart := strings.Index(result.Summary, "Sample errors/warnings:")
-		if sampleStart == -1 {
-			t.Fatalf("No sample section found in iteration %d", i)
-		}
+		require.NotEqual(t, -1, sampleStart, "No sample section found in iteration %d", i)
 		results[i] = result.Summary[sampleStart:]
 	}
 
 	// All runs should produce the same sampling.
 	for i := 1; i < len(results); i++ {
-		if results[i] != results[0] {
-			t.Errorf("Sampling not deterministic. Run 0:\n%s\n\nRun %d:\n%s", results[0], i, results[i])
-		}
+		require.Equal(t, results[0], results[i], "Sampling not deterministic. Run 0:\n%s\n\nRun %d:\n%s", results[0], i, results[i])
 	}
 }
 
@@ -631,12 +609,10 @@ func TestLogsExplorer_TokenEstimate(t *testing.T) {
 				Path:    "test.log",
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
+			require.NoError(t, err)
 
-			if tt.expectedGtZero && result.TokenEstimate <= 0 {
-				t.Errorf("Expected TokenEstimate > 0, got %d", result.TokenEstimate)
+			if tt.expectedGtZero {
+				require.Greater(t, result.TokenEstimate, 0, "Expected TokenEstimate > 0, got %d", result.TokenEstimate)
 			}
 		})
 	}
@@ -647,15 +623,9 @@ func TestLogsExplorer_SmokeTest(t *testing.T) {
 	exp := &LogsExplorer{}
 
 	// Test 1: CanHandle with various file extensions.
-	if !exp.CanHandle("app.log", []byte("[INFO] test")) {
-		t.Error("Expected CanHandle to return true for .log file")
-	}
-	if !exp.CanHandle("error.stderr", []byte("[ERROR] test")) {
-		t.Error("Expected CanHandle to return true for .stderr file")
-	}
-	if !exp.CanHandle("output.stdout", []byte("[INFO] test")) {
-		t.Error("Expected CanHandle to return true for .stdout file")
-	}
+	require.True(t, exp.CanHandle("app.log", []byte("[INFO] test")))
+	require.True(t, exp.CanHandle("error.stderr", []byte("[ERROR] test")))
+	require.True(t, exp.CanHandle("output.stdout", []byte("[INFO] test")))
 
 	// Test 2: Explore produces valid result.
 	content := []byte(strings.Join([]string{
@@ -672,18 +642,11 @@ func TestLogsExplorer_SmokeTest(t *testing.T) {
 		Path:    "app.log",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Verify result structure.
-	if result.ExplorerUsed != "logs" {
-		t.Errorf("Expected ExplorerUsed to be 'logs', got %q", result.ExplorerUsed)
-	}
-
-	if result.TokenEstimate <= 0 {
-		t.Errorf("Expected TokenEstimate > 0, got %d", result.TokenEstimate)
-	}
+	require.Equal(t, "logs", result.ExplorerUsed)
+	require.Greater(t, result.TokenEstimate, 0, "Expected TokenEstimate > 0, got %d", result.TokenEstimate)
 
 	// Verify summary contains expected sections.
 	summary := result.Summary
@@ -702,15 +665,11 @@ func TestLogsExplorer_SmokeTest(t *testing.T) {
 	}
 
 	for _, section := range expectedSections {
-		if !strings.Contains(summary, section) {
-			t.Errorf("Expected summary to contain %q\nSummary:\n%s", section, summary)
-		}
+		require.Contains(t, summary, section)
 	}
 
 	// Test 3: Explorer matches expected values.
-	if result.ExplorerUsed != "logs" {
-		t.Errorf("Expected ExplorerUsed = 'logs', got %q", result.ExplorerUsed)
-	}
+	require.Equal(t, "logs", result.ExplorerUsed)
 }
 
 func TestParseLogLine(t *testing.T) {
@@ -755,15 +714,9 @@ func TestParseLogLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			timestamp, level, message := parseLogLine(tt.line)
-			if timestamp != tt.wantTimestamp {
-				t.Errorf("parseLogLine() timestamp = %q, want %q", timestamp, tt.wantTimestamp)
-			}
-			if level != tt.wantLevel {
-				t.Errorf("parseLogLine() level = %q, want %q", level, tt.wantLevel)
-			}
-			if message != tt.wantMessage {
-				t.Errorf("parseLogLine() message = %q, want %q", message, tt.wantMessage)
-			}
+			require.Equal(t, tt.wantTimestamp, timestamp, "parseLogLine() timestamp")
+			require.Equal(t, tt.wantLevel, level, "parseLogLine() level")
+			require.Equal(t, tt.wantMessage, message, "parseLogLine() message")
 		})
 	}
 }
@@ -778,20 +731,12 @@ func TestParseLogLines(t *testing.T) {
 
 	lines := ParseLogLines(content)
 
-	if len(lines) != 3 {
-		t.Errorf("Expected 3 parsed lines, got %d", len(lines))
-	}
+	require.Equal(t, 3, len(lines))
 
 	// Verify first line.
-	if lines[0].Timestamp != "2024-01-15 10:30:45.123" {
-		t.Errorf("Expected timestamp %q, got %q", "2024-01-15 10:30:45.123", lines[0].Timestamp)
-	}
-	if lines[0].Level != "[ERROR]" {
-		t.Errorf("Expected level [ERROR], got %q", lines[0].Level)
-	}
-	if lines[0].Message != "Error message" {
-		t.Errorf("Expected message %q, got %q", "Error message", lines[0].Message)
-	}
+	require.Equal(t, "2024-01-15 10:30:45.123", lines[0].Timestamp)
+	require.Equal(t, "[ERROR]", lines[0].Level)
+	require.Equal(t, "Error message", lines[0].Message)
 }
 
 func TestFilterByLevel(t *testing.T) {
@@ -807,21 +752,15 @@ func TestFilterByLevel(t *testing.T) {
 
 	// Filter by ERROR.
 	errorLines := FilterByLevel(lines, "ERROR")
-	if len(errorLines) != 2 {
-		t.Errorf("Expected 2 ERROR lines, got %d", len(errorLines))
-	}
+	require.Equal(t, 2, len(errorLines), "Expected 2 ERROR lines")
 
 	// Filter by INFO.
 	infoLines := FilterByLevel(lines, "INFO")
-	if len(infoLines) != 2 {
-		t.Errorf("Expected 2 INFO lines, got %d", len(infoLines))
-	}
+	require.Equal(t, 2, len(infoLines), "Expected 2 INFO lines")
 
 	// Filter by non-existent level.
 	noneLines := FilterByLevel(lines, "TRACE")
-	if len(noneLines) != 0 {
-		t.Errorf("Expected 0 TRACE lines, got %d", len(noneLines))
-	}
+	require.Equal(t, 0, len(noneLines), "Expected 0 TRACE lines")
 }
 
 func TestGetLevelCounts(t *testing.T) {
@@ -838,15 +777,9 @@ func TestGetLevelCounts(t *testing.T) {
 	counts := GetLevelCounts(lines)
 
 	// Should have 3 INFO (uppercase and lowercase normalized).
-	if counts["INFO"] != 3 {
-		t.Errorf("Expected INFO count 3, got %d", counts["INFO"])
-	}
-	if counts["ERROR"] != 2 {
-		t.Errorf("Expected ERROR count 2, got %d", counts["ERROR"])
-	}
-	if counts["WARN"] != 1 {
-		t.Errorf("Expected WARN count 1, got %d", counts["WARN"])
-	}
+	require.Equal(t, 3, counts["INFO"], "Expected INFO count 3")
+	require.Equal(t, 2, counts["ERROR"], "Expected ERROR count 2")
+	require.Equal(t, 1, counts["WARN"], "Expected WARN count 1")
 }
 
 func TestGetTimestampStats(t *testing.T) {
@@ -861,9 +794,7 @@ func TestGetTimestampStats(t *testing.T) {
 	stats := GetTimestampStats(lines)
 
 	// We should detect ISO8601 and RFC3339.
-	if stats["ISO8601"] == 0 && stats["RFC3339"] == 0 {
-		t.Errorf("Expected to detect timestamps, got: %v", stats)
-	}
+	require.False(t, stats["ISO8601"] == 0 && stats["RFC3339"] == 0, "Expected to detect timestamps, got: %v", stats)
 }
 
 func TestExportAsCSV(t *testing.T) {
@@ -874,12 +805,8 @@ func TestExportAsCSV(t *testing.T) {
 
 	csv := ExportAsCSV(lines)
 
-	if !strings.Contains(csv, "timestamp,level,message") {
-		t.Errorf("Expected CSV header, got: %s", csv)
-	}
-	if !strings.Contains(csv, "2024-01-15 10:30:45") {
-		t.Errorf("Expected timestamp in CSV, got: %s", csv)
-	}
+	require.Contains(t, csv, "timestamp,level,message", "Expected CSV header")
+	require.Contains(t, csv, "2024-01-15 10:30:45", "Expected timestamp in CSV")
 }
 
 func TestEscapeCSV(t *testing.T) {
@@ -912,9 +839,7 @@ func TestEscapeCSV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			result := escapeCSV(tt.input)
-			if result != tt.expected {
-				t.Errorf("escapeCSV(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
+			require.Equal(t, tt.expected, result, "escapeCSV(%q)", tt.input)
 		})
 	}
 }
@@ -925,23 +850,17 @@ func TestFNV1AHash(t *testing.T) {
 	hash1 := fnv1aHash(s)
 	hash2 := fnv1aHash(s)
 
-	if hash1 != hash2 {
-		t.Errorf("fnv1aHash not deterministic: %d != %d", hash1, hash2)
-	}
+	require.Equal(t, hash1, hash2, "fnv1aHash not deterministic")
 
 	// Test that different inputs produce different hashes (high probability).
 	s2 := "different string"
 	hash3 := fnv1aHash(s2)
 
-	if hash1 == hash3 {
-		t.Errorf("fnv1aHash collision: same hash for different inputs")
-	}
+	require.NotEqual(t, hash1, hash3, "fnv1aHash collision: same hash for different inputs")
 
 	// Test that empty string produces a specific value (offset32).
 	emptyHash := fnv1aHash("")
-	if emptyHash != 2166136261 {
-		t.Errorf("fnv1aHash(\"\") = %d, want 2166136261", emptyHash)
-	}
+	require.Equal(t, uint32(2166136261), emptyHash, "fnv1aHash(\"\")")
 }
 
 func TestTruncateSample(t *testing.T) {
@@ -974,16 +893,12 @@ func TestTruncateSample(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := truncateSample(tt.input, tt.maxLen)
-			if len(result) > tt.maxLen+3 { // +3 for "..."
-				t.Errorf("truncateSample() result length %d > max %d", len(result), tt.maxLen)
-			}
-			if len(result) > tt.maxLen && !strings.HasSuffix(result, "...") {
-				t.Errorf("truncateSample() long line should end with '...'")
+			require.LessOrEqual(t, len(result), tt.maxLen+3, "truncateSample() result length %d > max %d", len(result), tt.maxLen) // +3 for "..."
+			if len(result) > tt.maxLen {
+				require.True(t, strings.HasSuffix(result, "..."), "truncateSample() long line should end with '...'")
 			}
 			// Verify result matches expected
-			if result != tt.expected {
-				t.Errorf("truncateSample() result = %q, want %q", result, tt.expected)
-			}
+			require.Equal(t, tt.expected, result, "truncateSample() result")
 		})
 	}
 }
@@ -991,16 +906,12 @@ func TestTruncateSample(t *testing.T) {
 func TestDeterministicallySample(t *testing.T) {
 	// Empty input.
 	result := deterministicallySample([]string{}, 5)
-	if len(result) != 0 {
-		t.Errorf("Expected empty result for empty input, got %d items", len(result))
-	}
+	require.Empty(t, result, "Expected empty result for empty input")
 
 	// Fewer items than limit.
 	items := []string{"a", "b", "c"}
 	result = deterministicallySample(items, 10)
-	if len(result) != 3 {
-		t.Errorf("Expected all items when limit > count, got %d", len(result))
-	}
+	require.Equal(t, 3, len(result), "Expected all items when limit > count")
 
 	// More items than limit - should select N items deterministically.
 	items = make([]string, 100)
@@ -1012,20 +923,13 @@ func TestDeterministicallySample(t *testing.T) {
 	result1 := deterministicallySample(items, 10)
 	result2 := deterministicallySample(items, 10)
 
-	if len(result1) != 10 {
-		t.Errorf("Expected 10 sampled items, got %d", len(result1))
-	}
-
-	if len(result2) != 10 {
-		t.Errorf("Expected 10 sampled items, got %d", len(result2))
-	}
+	require.Equal(t, 10, len(result1), "Expected 10 sampled items")
+	require.Equal(t, 10, len(result2), "Expected 10 sampled items")
 
 	// Verify results are identical (deterministic).
 	for i := range 10 {
-		if result1[i] != result2[i] {
-			t.Errorf("Deterministic sampling failed: result1[%d] = %q, result2[%d] = %q",
-				i, result1[i], i, result2[i])
-		}
+		require.Equal(t, result1[i], result2[i], "Deterministic sampling failed: result1[%d] = %q, result2[%d] = %q",
+			i, result1[i], i, result2[i])
 	}
 }
 
@@ -1073,9 +977,7 @@ func TestLogsExplorer_GoldenEnhancement(t *testing.T) {
 		Path:    "app.log",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
 	golden.RequireEqual(t, []byte(result.Summary))
 }
@@ -1091,9 +993,7 @@ func TestLogsExplorer_GoldenParity(t *testing.T) {
 		Path:    "app.log",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
 	golden.RequireEqual(t, []byte(result.Summary))
 }

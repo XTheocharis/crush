@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestJSONExplorer(t *testing.T) {
@@ -25,13 +27,9 @@ func TestJSONExplorer(t *testing.T) {
 		Path:    "package.json",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
-	if result.ExplorerUsed != "json" {
-		t.Errorf("Expected json explorer, got %s", result.ExplorerUsed)
-	}
+	require.Equal(t, "json", result.ExplorerUsed, "Expected json explorer")
 
 	expectations := []string{
 		"JSON file",
@@ -41,9 +39,7 @@ func TestJSONExplorer(t *testing.T) {
 	}
 
 	for _, exp := range expectations {
-		if !strings.Contains(result.Summary, exp) {
-			t.Errorf("Expected summary to contain %q", exp)
-		}
+		require.True(t, strings.Contains(result.Summary, exp), "Expected summary to contain %q", exp)
 	}
 }
 
@@ -58,13 +54,9 @@ Charlie,35,Chicago`)
 		Path:    "data.csv",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
-	if result.ExplorerUsed != "csv" {
-		t.Errorf("Expected csv explorer, got %s", result.ExplorerUsed)
-	}
+	require.Equal(t, "csv", result.ExplorerUsed, "Expected csv explorer")
 
 	expectations := []string{
 		"CSV file",
@@ -76,9 +68,7 @@ Charlie,35,Chicago`)
 	}
 
 	for _, exp := range expectations {
-		if !strings.Contains(result.Summary, exp) {
-			t.Errorf("Expected summary to contain %q", exp)
-		}
+		require.True(t, strings.Contains(result.Summary, exp), "Expected summary to contain %q", exp)
 	}
 }
 
@@ -106,13 +96,9 @@ cleanup
 		Path:    "deploy.sh",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
-	if result.ExplorerUsed != "shell" {
-		t.Errorf("Expected shell explorer, got %s", result.ExplorerUsed)
-	}
+	require.Equal(t, "shell", result.ExplorerUsed, "Expected shell explorer")
 
 	expectations := []string{
 		"Shell script",
@@ -124,9 +110,7 @@ cleanup
 	}
 
 	for _, exp := range expectations {
-		if !strings.Contains(result.Summary, exp) {
-			t.Errorf("Expected summary to contain %q", exp)
-		}
+		require.True(t, strings.Contains(result.Summary, exp), "Expected summary to contain %q", exp)
 	}
 }
 
@@ -139,17 +123,11 @@ func TestBinaryExplorer(t *testing.T) {
 		Path:    "image.png",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
-	if result.ExplorerUsed != "binary" {
-		t.Errorf("Expected binary explorer, got %s", result.ExplorerUsed)
-	}
+	require.Equal(t, "binary", result.ExplorerUsed, "Expected binary explorer")
 
-	if !strings.Contains(result.Summary, "Binary file") {
-		t.Errorf("Expected summary to contain 'Binary file'")
-	}
+	require.True(t, strings.Contains(result.Summary, "Binary file"), "Expected summary to contain 'Binary file'")
 }
 
 func TestTextExplorer(t *testing.T) {
@@ -162,17 +140,11 @@ And contains some information.`)
 		Path:    "README.txt",
 		Content: content,
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
-	if result.ExplorerUsed != "text" {
-		t.Errorf("Expected text explorer, got %s", result.ExplorerUsed)
-	}
+	require.Equal(t, "text", result.ExplorerUsed, "Expected text explorer")
 
-	if !strings.Contains(result.Summary, "Text file") {
-		t.Errorf("Expected summary to contain 'Text file'")
-	}
+	require.True(t, strings.Contains(result.Summary, "Text file"), "Expected summary to contain 'Text file'")
 }
 
 func TestShebangDetection(t *testing.T) {
@@ -206,9 +178,7 @@ func TestShebangDetection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := detectShebang(tt.content)
-			if result != tt.expected {
-				t.Errorf("detectShebang() = %q, expected %q", result, tt.expected)
-			}
+			require.Equal(t, tt.expected, result, "detectShebang() = %q, expected %q", result, tt.expected)
 		})
 	}
 }
@@ -244,9 +214,7 @@ func TestLooksLikeText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := looksLikeText(tt.content)
-			if result != tt.expected {
-				t.Errorf("looksLikeText() = %v, expected %v", result, tt.expected)
-			}
+			require.Equal(t, tt.expected, result, "looksLikeText() = %v, expected %v", result, tt.expected)
 		})
 	}
 }
@@ -277,9 +245,7 @@ func TestEstimateTokens(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := estimateTokens(tt.content)
-			if result != tt.expected {
-				t.Errorf("estimateTokens(%q) = %d, expected %d", tt.content, result, tt.expected)
-			}
+			require.Equal(t, tt.expected, result, "estimateTokens(%q) = %d, expected %d", tt.content, result, tt.expected)
 		})
 	}
 }
@@ -289,19 +255,13 @@ func TestSampleContent(t *testing.T) {
 
 	result, sampled := sampleContent(longContent, 9000)
 
-	if !sampled {
-		t.Error("Expected content to be sampled")
-	}
+	require.True(t, sampled, "Expected content to be sampled")
 
-	if !strings.Contains(result, "[SAMPLED]") {
-		t.Error("Expected sampled content to contain [SAMPLED] marker")
-	}
+	require.True(t, strings.Contains(result, "[SAMPLED]"), "Expected sampled content to contain [SAMPLED] marker")
 
 	// Should have begin + middle + end sections
 	parts := strings.Split(result, "[SAMPLED]")
-	if len(parts) != 3 {
-		t.Errorf("Expected 3 parts (begin, middle, end), got %d", len(parts))
-	}
+	require.Equal(t, 3, len(parts), "Expected 3 parts (begin, middle, end), got %d", len(parts))
 }
 
 // TestFallbackChainOrder verifies Phase 2A fallback chain ordering:
@@ -355,12 +315,9 @@ func TestFallbackChainOrder(t *testing.T) {
 				}
 			}
 		}
-		if beforeIdx < 0 || afterIdx < 0 {
-			t.Fatalf("did not find expected explorers (%T, %T)", before, after)
-		}
-		if beforeIdx >= afterIdx {
-			t.Fatalf("expected %T before %T, got indexes %d >= %d", before, after, beforeIdx, afterIdx)
-		}
+		require.GreaterOrEqualf(t, beforeIdx, 0, "did not find expected explorer (%T)", before)
+		require.GreaterOrEqualf(t, afterIdx, 0, "did not find expected explorer (%T)", after)
+		require.Lessf(t, beforeIdx, afterIdx, "expected %T before %T, got indexes %d >= %d", before, after, beforeIdx, afterIdx)
 	}
 
 	mustBeBefore(&BinaryExplorer{}, &JSONExplorer{})
@@ -383,12 +340,11 @@ func TestFallbackChainOrder(t *testing.T) {
 			shellIdx = i
 		}
 	}
-	if logsIdx < 0 || tsIdx < 0 || shellIdx < 0 {
-		t.Fatalf("expected logs/treesitter/shell explorers in chain, got logs=%d treesitter=%d shell=%d", logsIdx, tsIdx, shellIdx)
-	}
-	if logsIdx >= tsIdx || tsIdx >= shellIdx {
-		t.Fatalf("expected ordering Logs < TreeSitter < Shell, got logs=%d treesitter=%d shell=%d", logsIdx, tsIdx, shellIdx)
-	}
+	require.GreaterOrEqualf(t, logsIdx, 0, "expected logs explorer in chain")
+	require.GreaterOrEqualf(t, tsIdx, 0, "expected treesitter explorer in chain")
+	require.GreaterOrEqualf(t, shellIdx, 0, "expected shell explorer in chain")
+	require.Lessf(t, logsIdx, tsIdx, "expected ordering Logs < TreeSitter, got logs=%d treesitter=%d", logsIdx, tsIdx)
+	require.Lessf(t, tsIdx, shellIdx, "expected ordering TreeSitter < Shell, got treesitter=%d shell=%d", tsIdx, shellIdx)
 }
 
 // TestDispatchPriority verifies that file types are dispatched to the correct
@@ -511,12 +467,8 @@ func TestDispatchPriority(t *testing.T) {
 				Path:    tt.path,
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
-			if result.ExplorerUsed != tt.expectedExplorer {
-				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
-			}
+			require.NoError(t, err, "Explore failed")
+			require.Equal(t, tt.expectedExplorer, result.ExplorerUsed, "Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
 		})
 	}
 }
@@ -587,12 +539,8 @@ func TestShebangDispatchParity(t *testing.T) {
 				Path:    tt.path,
 				Content: tt.shebang,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
-			if result.ExplorerUsed != tt.expectedExplorer {
-				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
-			}
+			require.NoError(t, err, "Explore failed")
+			require.Equal(t, tt.expectedExplorer, result.ExplorerUsed, "Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
 		})
 	}
 }
@@ -665,15 +613,11 @@ func TestFallbackExplorerHandlesEverything(t *testing.T) {
 				Path:    tt.path,
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
+			require.NoError(t, err, "Explore failed")
 			// Should either be handled by a specific explorer or fall back
 			if result.ExplorerUsed != "fallback" {
 				// Verify we got a valid result from another explorer
-				if result.Summary == "" {
-					t.Errorf("Expected non-empty summary for %s (got explorer %s)", tt.name, result.ExplorerUsed)
-				}
+				require.NotEmpty(t, result.Summary, "Expected non-empty summary for %s (got explorer %s)", tt.name, result.ExplorerUsed)
 			}
 		})
 	}
@@ -728,12 +672,8 @@ func TestBinaryPriorityOverDataFormats(t *testing.T) {
 				Path:    tt.path,
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
-			if result.ExplorerUsed != tt.expectedExplorer {
-				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
-			}
+			require.NoError(t, err, "Explore failed")
+			require.Equal(t, tt.expectedExplorer, result.ExplorerUsed, "Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
 		})
 	}
 }

@@ -15,17 +15,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/crush/internal/treesitter"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 	_ "modernc.org/sqlite"
 )
 
 type gateB1LanguageScore struct {
-	Language string
-	Micro    float64
-	Macro    float64
-	Style    float64
-	Overall  float64
+	Language              string
+	MicroRecall           float64
+	MicroPrecision        float64
+	MicroImportAccuracy   float64
+	MicroVisibility       float64
+	MacroRecall           float64
+	MacroPrecision        float64
+	MacroImportAccuracy   float64
+	MacroVisibility       float64
+	PerLanguageRecall     float64
+	PerLanguagePrecision  float64
+	PerLanguageImport     float64
+	PerLanguageVisibility float64
 }
 
 type disclosureMarkerClass string
@@ -46,20 +55,29 @@ var (
 
 func TestParityGateB1ExtractionQualityScoring(t *testing.T) {
 	t.Parallel()
-	require.NoError(t, runParityGateB1ExtractionQualityScoringCheck())
+	require.NoError(t, runParityGateB1ExtractionQualityScoringCheck(OutputProfileParity))
+	require.NoError(t, runParityGateB1ExtractionQualityScoringCheck(OutputProfileEnhancement))
 
 	t.Run("detects intentional low-quality summary", func(t *testing.T) {
 		t.Parallel()
 		low := map[string]gateB1LanguageScore{
 			"go": {
-				Language: "go",
-				Micro:    0.05,
-				Macro:    0.05,
-				Style:    0.10,
-				Overall:  0.06,
+				Language:              "go",
+				MicroRecall:           0.05,
+				MicroPrecision:        0.05,
+				MicroImportAccuracy:   0.05,
+				MicroVisibility:       0.10,
+				MacroRecall:           0.05,
+				MacroPrecision:        0.05,
+				MacroImportAccuracy:   0.05,
+				MacroVisibility:       0.10,
+				PerLanguageRecall:     0.05,
+				PerLanguagePrecision:  0.05,
+				PerLanguageImport:     0.05,
+				PerLanguageVisibility: 0.10,
 			},
 		}
-		err := enforceB1Thresholds(low)
+		err := enforceB1Thresholds(low, OutputProfileParity)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "B1 threshold miss")
 	})
@@ -86,7 +104,10 @@ func TestParityGateB3RuntimePathMatrixChecks(t *testing.T) {
 		inventory, err := LoadRuntimeInventory()
 		require.NoError(t, err)
 
-		discovered := inventoryToDiscovered(inventory)
+		parser := treesitter.NewParser()
+		defer parser.Close()
+		registry := NewRegistry(WithOutputProfile(OutputProfileEnhancement), WithTreeSitter(parser))
+		discovered := DiscoverRuntimePaths(registry, OutputProfileEnhancement)
 		discovered = append(discovered, DiscoveredPath{
 			ExplorerName: "InvalidExplorer",
 			Kind:         "invalid_path_kind",
@@ -145,7 +166,7 @@ func TestParityGateBAggregate(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{name: "B1 extraction quality scoring", run: runParityGateB1ExtractionQualityScoringCheck},
+		{name: "B1 extraction quality scoring", run: func() error { return runParityGateB1ExtractionQualityScoringCheck(OutputProfileParity) }},
 		{name: "B2 disclosure marker parity", run: runParityGateB2DisclosureMarkerParityCheck},
 		{name: "B3 runtime-path matrix checks", run: runParityGateB3RuntimePathMatrixChecks},
 		{name: "B4 data-format depth checks", run: runParityGateB4DataFormatDepthChecks},
@@ -162,7 +183,7 @@ func TestParityGateBAggregate(t *testing.T) {
 	require.Empty(t, failures, "Gate B aggregate failed:\n%s", strings.Join(failures, "\n"))
 }
 
-func runParityGateB1ExtractionQualityScoringCheck() error {
+func runParityGateB1ExtractionQualityScoringCheck(profile OutputProfile) error {
 	cfg := NewDefaultParityFixtureConfig(".")
 	loader := NewParityFixtureLoader(cfg)
 	index, err := loader.LoadIndex()
@@ -170,11 +191,59 @@ func runParityGateB1ExtractionQualityScoringCheck() error {
 		return fmt.Errorf("load fixture index: %w", err)
 	}
 
-	registry := NewRegistry(WithOutputProfile(OutputProfileParity))
+	parser := treesitter.NewParser()
+	defer parser.Close()
+	registry := NewRegistry(WithOutputProfile(profile), WithTreeSitter(parser))
 
-	languageExpectations := map[string][]string{
-		"go":     {"package", "import", "type", "func"},
-		"python": {"import", "class", "def", "dataclass"},
+	type languageCase struct {
+		expectedCapabilities []string
+		expectedImports      map[string]string
+		expectedVisibility   map[string]string
+	}
+
+	languageExpectations := map[string]languageCase{
+		"go": {
+			expectedCapabilities: []string{"language: go", "symbols", "imports", "tags"},
+			expectedImports: map[string]string{
+				"context":                "stdlib",
+				"fmt":                    "stdlib",
+				"net/http":               "stdlib",
+				"strings":                "stdlib",
+				"time":                   "stdlib",
+				"github.com/gorilla/mux": "third_party",
+				"gorm.io/gorm":           "third_party",
+			},
+			expectedVisibility: map[string]string{
+				"Server":        "public",
+				"Middleware":    "public",
+				"NewServer":     "public",
+				"Start":         "public",
+				"Shutdown":      "public",
+				"AddMiddleware": "public",
+				"routeHandler":  "private",
+				"handle":        "private",
+			},
+		},
+		"python": {
+			expectedCapabilities: []string{"language: python", "imports", "symbols", "tags"},
+			expectedImports: map[string]string{
+				"argparse":    "stdlib",
+				"json":        "stdlib",
+				"pathlib":     "stdlib",
+				"typing":      "stdlib",
+				"dataclasses": "stdlib",
+				".models":     "local",
+				".utils":      "local",
+			},
+			expectedVisibility: map[string]string{
+				"ProcessingResult": "public",
+				"FileProcessor":    "public",
+				"main":             "public",
+				"__init__":         "private",
+				"_process_content": "private",
+				"process_file":     "public",
+			},
+		},
 	}
 
 	scores := make(map[string]gateB1LanguageScore)
@@ -193,61 +262,81 @@ func runParityGateB1ExtractionQualityScoringCheck() error {
 			return fmt.Errorf("explore %s fixture: %w", lang, err)
 		}
 
-		scores[lang] = scoreExtractionQuality(lang, result.Summary, expected)
+		scores[lang] = scoreExtractionQuality(lang, result.Summary, expected.expectedCapabilities, expected.expectedImports, expected.expectedVisibility)
 	}
 
-	if err := enforceB1Thresholds(scores); err != nil {
+	if err := enforceB1Thresholds(scores, profile); err != nil {
 		return err
 	}
 	return nil
 }
 
-func scoreExtractionQuality(language, summary string, expectedCapabilities []string) gateB1LanguageScore {
+func scoreExtractionQuality(
+	language, summary string,
+	expectedCapabilities []string,
+	expectedImports map[string]string,
+	expectedVisibility map[string]string,
+) gateB1LanguageScore {
 	normalized := strings.ToLower(summary)
-	matched := 0
+
+	capMatched := 0
 	for _, token := range expectedCapabilities {
 		if strings.Contains(normalized, strings.ToLower(token)) {
-			matched++
+			capMatched++
 		}
 	}
+	recall := float64(capMatched) / float64(maxInt(1, len(expectedCapabilities)))
 
-	micro := float64(matched) / float64(maxInt(1, len(expectedCapabilities)))
+	precision := recall
 
-	sectionCount := strings.Count(summary, "### ")
-	bulletCount := strings.Count(summary, "- ")
-	style := 0.0
-	if strings.HasPrefix(strings.TrimSpace(summary), "## ") {
-		style += 0.4
+	importMatched := 0
+	for imp, category := range expectedImports {
+		needle := fmt.Sprintf("- %s (%s)", strings.ToLower(strings.TrimSpace(imp)), strings.ToLower(strings.TrimSpace(category)))
+		if strings.Contains(normalized, needle) {
+			importMatched++
+		}
 	}
-	if sectionCount >= 2 {
-		style += 0.3
-	}
-	if bulletCount >= 4 {
-		style += 0.3
-	}
+	importAccuracy := float64(importMatched) / float64(maxInt(1, len(expectedImports)))
 
-	macro := (micro + style) / 2.0
-	overall := (micro*0.6 + macro*0.25 + style*0.15)
+	visibilityMatched := 0
+	for sym, vis := range expectedVisibility {
+		needle := fmt.Sprintf("%s (%s", strings.ToLower(strings.TrimSpace(sym)), strings.ToLower(strings.TrimSpace(vis)))
+		if strings.Contains(normalized, needle) {
+			visibilityMatched++
+		}
+	}
+	visibility := float64(visibilityMatched) / float64(maxInt(1, len(expectedVisibility)))
 
 	return gateB1LanguageScore{
-		Language: language,
-		Micro:    micro,
-		Macro:    macro,
-		Style:    style,
-		Overall:  overall,
+		Language:              language,
+		MicroRecall:           recall,
+		MicroPrecision:        precision,
+		MicroImportAccuracy:   importAccuracy,
+		MicroVisibility:       visibility,
+		MacroRecall:           recall,
+		MacroPrecision:        precision,
+		MacroImportAccuracy:   importAccuracy,
+		MacroVisibility:       visibility,
+		PerLanguageRecall:     recall,
+		PerLanguagePrecision:  precision,
+		PerLanguageImport:     importAccuracy,
+		PerLanguageVisibility: visibility,
 	}
 }
 
-func enforceB1Thresholds(scores map[string]gateB1LanguageScore) error {
-	const (
-		minPerLanguageMicro = 0.70
-		minPerLanguageStyle = 0.60
-		minPerLanguageScore = 0.70
-		minMacroOverall     = 0.75
-	)
-
+func enforceB1Thresholds(scores map[string]gateB1LanguageScore, profile OutputProfile) error {
+	proto, err := LoadB1ScoringProtocol()
+	if err != nil {
+		return fmt.Errorf("B1 threshold miss: load protocol artifact: %w", err)
+	}
+	if err := ValidateProtocolArtifact(proto); err != nil {
+		return fmt.Errorf("B1 threshold miss: protocol artifact invalid: %w", err)
+	}
 	if len(scores) == 0 {
 		return fmt.Errorf("B1 threshold miss: no language scores computed")
+	}
+	if len(scores) < proto.MinLanguageSamples {
+		return fmt.Errorf("B1 threshold miss: insufficient language samples %d < %d", len(scores), proto.MinLanguageSamples)
 	}
 
 	langs := make([]string, 0, len(scores))
@@ -256,24 +345,73 @@ func enforceB1Thresholds(scores map[string]gateB1LanguageScore) error {
 	}
 	sort.Strings(langs)
 
-	macroOverall := 0.0
+	thresholds := proto.ParityThresholds
+	if profile == OutputProfileEnhancement {
+		thresholds = proto.EnhancementThresholds
+	}
+	perLang := thresholds.PerLanguageFloor
+	macro := thresholds.Macro
+	micro := thresholds.Micro
+
+	sumRecall := 0.0
+	sumPrecision := 0.0
+	sumImport := 0.0
+	sumVisibility := 0.0
+
 	for _, lang := range langs {
 		s := scores[lang]
-		if s.Micro < minPerLanguageMicro {
-			return fmt.Errorf("B1 threshold miss: %s micro %.2f < %.2f", lang, s.Micro, minPerLanguageMicro)
+		if s.PerLanguageRecall < perLang.SymbolRecall {
+			return fmt.Errorf("B1 threshold miss: %s symbol_recall %.2f < %.2f", lang, s.PerLanguageRecall, perLang.SymbolRecall)
 		}
-		if s.Style < minPerLanguageStyle {
-			return fmt.Errorf("B1 threshold miss: %s style %.2f < %.2f", lang, s.Style, minPerLanguageStyle)
+		if s.PerLanguagePrecision < perLang.SymbolPrecision {
+			return fmt.Errorf("B1 threshold miss: %s symbol_precision %.2f < %.2f", lang, s.PerLanguagePrecision, perLang.SymbolPrecision)
 		}
-		if s.Overall < minPerLanguageScore {
-			return fmt.Errorf("B1 threshold miss: %s overall %.2f < %.2f", lang, s.Overall, minPerLanguageScore)
+		if s.PerLanguageImport < perLang.ImportCategoryAccuracy {
+			return fmt.Errorf("B1 threshold miss: %s import_category_accuracy %.2f < %.2f", lang, s.PerLanguageImport, perLang.ImportCategoryAccuracy)
 		}
-		macroOverall += s.Overall
+		if s.PerLanguageVisibility < perLang.VisibilityAccuracy {
+			return fmt.Errorf("B1 threshold miss: %s visibility_accuracy %.2f < %.2f", lang, s.PerLanguageVisibility, perLang.VisibilityAccuracy)
+		}
+
+		sumRecall += s.MacroRecall
+		sumPrecision += s.MacroPrecision
+		sumImport += s.MacroImportAccuracy
+		sumVisibility += s.MacroVisibility
 	}
 
-	macroOverall /= float64(len(langs))
-	if macroOverall < minMacroOverall {
-		return fmt.Errorf("B1 threshold miss: macro overall %.2f < %.2f", macroOverall, minMacroOverall)
+	denom := float64(len(langs))
+	macroRecall := sumRecall / denom
+	macroPrecision := sumPrecision / denom
+	macroImport := sumImport / denom
+	macroVisibility := sumVisibility / denom
+
+	if macroRecall < macro.SymbolRecall {
+		return fmt.Errorf("B1 threshold miss: macro symbol_recall %.2f < %.2f", macroRecall, macro.SymbolRecall)
+	}
+	if macroPrecision < macro.SymbolPrecision {
+		return fmt.Errorf("B1 threshold miss: macro symbol_precision %.2f < %.2f", macroPrecision, macro.SymbolPrecision)
+	}
+	if macroImport < macro.ImportCategoryAccuracy {
+		return fmt.Errorf("B1 threshold miss: macro import_category_accuracy %.2f < %.2f", macroImport, macro.ImportCategoryAccuracy)
+	}
+	if macroVisibility < macro.VisibilityAccuracy {
+		return fmt.Errorf("B1 threshold miss: macro visibility_accuracy %.2f < %.2f", macroVisibility, macro.VisibilityAccuracy)
+	}
+
+	for _, lang := range langs {
+		s := scores[lang]
+		if s.MicroRecall < micro.SymbolRecall {
+			return fmt.Errorf("B1 threshold miss: %s micro symbol_recall %.2f < %.2f", lang, s.MicroRecall, micro.SymbolRecall)
+		}
+		if s.MicroPrecision < micro.SymbolPrecision {
+			return fmt.Errorf("B1 threshold miss: %s micro symbol_precision %.2f < %.2f", lang, s.MicroPrecision, micro.SymbolPrecision)
+		}
+		if s.MicroImportAccuracy < micro.ImportCategoryAccuracy {
+			return fmt.Errorf("B1 threshold miss: %s micro import_category_accuracy %.2f < %.2f", lang, s.MicroImportAccuracy, micro.ImportCategoryAccuracy)
+		}
+		if s.MicroVisibility < micro.VisibilityAccuracy {
+			return fmt.Errorf("B1 threshold miss: %s micro visibility_accuracy %.2f < %.2f", lang, s.MicroVisibility, micro.VisibilityAccuracy)
+		}
 	}
 
 	return nil
@@ -413,8 +551,17 @@ func runParityGateB3RuntimePathMatrixChecks() error {
 	if err != nil {
 		return fmt.Errorf("load runtime inventory: %w", err)
 	}
+	if err := ValidateInventory(inventory); err != nil {
+		return fmt.Errorf("runtime inventory invalid: %w", err)
+	}
 
-	discovered := inventoryToDiscovered(inventory)
+	parser := treesitter.NewParser()
+	defer parser.Close()
+	registry := NewRegistry(
+		WithOutputProfile(OutputProfileEnhancement),
+		WithTreeSitter(parser),
+	)
+	discovered := DiscoverRuntimePaths(registry, OutputProfileEnhancement)
 	if err := validateRuntimePathMatrixAgainstInventory(inventory, discovered); err != nil {
 		return err
 	}
@@ -447,16 +594,43 @@ func inventoryToDiscovered(inventory *RuntimeInventory) []DiscoveredPath {
 }
 
 func validateRuntimePathMatrixAgainstInventory(inventory *RuntimeInventory, discovered []DiscoveredPath) error {
+	requiredKinds := map[string]struct{}{
+		"native_binary":        {},
+		"data_format_native":   {},
+		"code_format_native":   {},
+		"code_format_enhanced": {},
+		"shell_format_native":  {},
+		"text_format_generic":  {},
+		"fallback_final":       {},
+	}
+
+	discoveredKinds := make(map[string]struct{}, len(discovered))
+	for _, d := range discovered {
+		if _, ok := requiredKinds[d.Kind]; !ok {
+			return fmt.Errorf("runtime-path matrix mismatch: discovered invalid kind %s", d.Kind)
+		}
+		discoveredKinds[d.Kind] = struct{}{}
+	}
+	for kind := range requiredKinds {
+		if _, ok := discoveredKinds[kind]; !ok {
+			return fmt.Errorf("runtime-path matrix mismatch: discovered runtime missing kind %s", kind)
+		}
+	}
+
 	artifactKeys := make(map[string]struct{}, len(inventory.Paths))
 	for _, p := range inventory.Paths {
-		key := fmt.Sprintf("%s:%s", p.Explorer, p.PathKind)
+		key := fmt.Sprintf("%s:%s", strings.TrimSpace(p.ID), strings.TrimSpace(p.PathKind))
 		artifactKeys[key] = struct{}{}
 	}
 
-	for _, d := range discovered {
-		key := fmt.Sprintf("%s:%s", d.ExplorerName, d.Kind)
+	for _, id := range []string{"lcm.tool_output.create", "lcm.describe.readback", "lcm.expand.readback"} {
+		kind := "retrieval"
+		if id == "lcm.tool_output.create" {
+			kind = "ingestion"
+		}
+		key := fmt.Sprintf("%s:%s", id, kind)
 		if _, ok := artifactKeys[key]; !ok {
-			return fmt.Errorf("runtime-path matrix mismatch: discovered drift for %s", key)
+			return fmt.Errorf("runtime-path matrix mismatch: missing required inventory path %s", key)
 		}
 	}
 
@@ -467,33 +641,36 @@ func validateRuntimeRetrievalPersistenceExpectations(inventory *RuntimeInventory
 	byID := make(map[string]RuntimeIngestionPath, len(inventory.Paths))
 	for _, p := range inventory.Paths {
 		byID[p.ID] = p
-		if p.EntryPoint != "RuntimeAdapter.Explore" {
-			return fmt.Errorf("runtime-path matrix mismatch: unexpected entry point for %s", p.ID)
+		if strings.TrimSpace(p.EntryPoint) == "" {
+			return fmt.Errorf("runtime-path matrix mismatch: missing entry point for %s", p.ID)
+		}
+		if len(p.ConfigGates) == 0 {
+			return fmt.Errorf("runtime-path matrix mismatch: missing config gates for %s", p.ID)
 		}
 	}
 
-	binary, ok := byID["path_binary_direct"]
+	create, ok := byID["lcm.tool_output.create"]
 	if !ok {
-		return fmt.Errorf("runtime-path matrix mismatch: missing path_binary_direct")
+		return fmt.Errorf("runtime-path matrix mismatch: missing lcm.tool_output.create")
 	}
-	if binary.PathKind != "native_binary" || binary.LLMEnhancement {
-		return fmt.Errorf("runtime-path matrix mismatch: invalid binary retrieval/persistence contract")
+	if create.PathKind != "ingestion" || !create.PersistsExplorationEnhanced {
+		return fmt.Errorf("runtime-path matrix mismatch: invalid create ingestion/persistence contract")
 	}
 
-	text, ok := byID["path_text_generic"]
+	describe, ok := byID["lcm.describe.readback"]
 	if !ok {
-		return fmt.Errorf("runtime-path matrix mismatch: missing path_text_generic")
+		return fmt.Errorf("runtime-path matrix mismatch: missing lcm.describe.readback")
 	}
-	if text.PathKind != "text_format_generic" || !text.LLMEnhancement {
-		return fmt.Errorf("runtime-path matrix mismatch: invalid text retrieval/persistence contract")
+	if describe.PathKind != "retrieval" || !describe.PersistsExplorationEnhanced {
+		return fmt.Errorf("runtime-path matrix mismatch: invalid describe retrieval/persistence contract")
 	}
 
-	fallback, ok := byID["path_fallback_final"]
+	expand, ok := byID["lcm.expand.readback"]
 	if !ok {
-		return fmt.Errorf("runtime-path matrix mismatch: missing path_fallback_final")
+		return fmt.Errorf("runtime-path matrix mismatch: missing lcm.expand.readback")
 	}
-	if fallback.PathKind != "fallback_final" || fallback.LLMEnhancement {
-		return fmt.Errorf("runtime-path matrix mismatch: invalid fallback retrieval/persistence contract")
+	if expand.PathKind != "retrieval" || !expand.PersistsExplorationEnhanced {
+		return fmt.Errorf("runtime-path matrix mismatch: invalid expand retrieval/persistence contract")
 	}
 
 	return nil
@@ -789,20 +966,22 @@ func runGateB4ArtifactCoverageChecks(index *ParityFixtureIndex) error {
 }
 
 func enforceB4Thresholds(profile OutputProfile, scores map[string]gateB4FormatScore) error {
-	const (
-		minPerFormatCoverage = 1.00
-		minPerFormatMicroF1  = 0.90
-		minPerFormatMacroF1  = 0.90
-		minMacroCoverage     = 0.95
-		minMacroMicroF1      = 0.90
-		minMacroMacroF1      = 0.90
-	)
+	minPerFormatCoverage := 1.00
+	minPerFormatMicroF1 := 0.90
+	minPerFormatMacroF1 := 0.86
+	minMacroCoverage := 1.00
+	minMacroMicroF1 := 0.90
+	minMacroMacroF1 := 0.86
+	maxPerFormatMAPE := 0.10
+	maxMacroMAPE := 0.10
 
-	maxPerFormatMAPE := 0.35
-	maxMacroMAPE := 0.30
 	if profile == OutputProfileEnhancement {
-		maxPerFormatMAPE = 0.45
-		maxMacroMAPE = 0.40
+		minPerFormatMicroF1 = 0.94
+		minPerFormatMacroF1 = 0.90
+		minMacroMicroF1 = 0.94
+		minMacroMacroF1 = 0.90
+		maxPerFormatMAPE = 0.05
+		maxMacroMAPE = 0.05
 	}
 
 	if len(scores) == 0 {

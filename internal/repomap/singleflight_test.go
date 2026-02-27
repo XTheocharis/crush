@@ -34,7 +34,7 @@ func TestRefreshAsyncSingleflightDedup(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for refresh singleflight")
+		require.Fail(t, "timed out waiting for refresh singleflight")
 	}
 
 	require.NoError(t, svc.Close())
@@ -63,7 +63,7 @@ func TestPreIndexSingleflightDedup(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for pre-index singleflight")
+		require.Fail(t, "timed out waiting for pre-index singleflight")
 	}
 
 	close(release)
@@ -71,7 +71,7 @@ func TestPreIndexSingleflightDedup(t *testing.T) {
 	select {
 	case <-svc.preIndexSignal():
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for pre-index completion")
+		require.Fail(t, "timed out waiting for pre-index completion")
 	}
 
 	require.EqualValues(t, 1, runs.Load())

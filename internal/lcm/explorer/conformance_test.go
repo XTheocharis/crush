@@ -34,6 +34,9 @@ func TestBuildConformanceSnapshot(t *testing.T) {
 	require.Equal(t, "tokenizer_backed", snapshot.TokenCounterMode)
 	require.EqualValues(t, 1337, snapshot.FixedSeed)
 	require.True(t, snapshot.GateBPassed)
+	require.NotEmpty(t, snapshot.RunID)
+	require.NotEmpty(t, snapshot.GateBEvidencePath)
+	require.FileExists(t, snapshot.GateBEvidencePath)
 }
 
 func TestBuildConformanceSnapshot_EmptyBasePathDefaultsToDot(t *testing.T) {
@@ -43,4 +46,17 @@ func TestBuildConformanceSnapshot_EmptyBasePathDefaultsToDot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, snapshot)
 	require.True(t, snapshot.GateBPassed)
+}
+
+func TestBuildConformanceSnapshotWithRunID(t *testing.T) {
+	t.Parallel()
+
+	runID := "run-test-explorer"
+	snapshot, err := BuildConformanceSnapshotWithRunID(".", runID)
+	require.NoError(t, err)
+	require.NotNil(t, snapshot)
+	require.Equal(t, runID, snapshot.RunID)
+	require.True(t, snapshot.GateBPassed)
+	require.NotEmpty(t, snapshot.GateBEvidencePath)
+	require.FileExists(t, snapshot.GateBEvidencePath)
 }

@@ -113,8 +113,8 @@ func validateParityPreflightProfile(profile *ParityPreflightProfile) error {
 			return fmt.Errorf("profile validation failed: enhancement_tiers_enabled must be none in parity mode")
 		}
 		counterMode := strings.ToLower(strings.TrimSpace(profile.TokenCounterMode))
-		if counterMode != "tokenizer_backed" && counterMode != "heuristic" {
-			return fmt.Errorf("profile validation failed: token_counter_mode must be tokenizer_backed or heuristic")
+		if counterMode != "tokenizer_backed" {
+			return fmt.Errorf("profile validation failed: token_counter_mode must be tokenizer_backed")
 		}
 		if profile.FixedSeed <= 0 {
 			return fmt.Errorf("profile validation failed: fixed_seed must be positive in parity mode")
@@ -152,6 +152,9 @@ func validateParityCorpus(basePath string) error {
 	}
 	if err := VerifyFixturesIntegrity(index, cfg); err != nil {
 		return fmt.Errorf("corpus readiness failed: fixture integrity check failed: %w", err)
+	}
+	if err := ValidateB1ScoringProtocolArtifact(); err != nil {
+		return fmt.Errorf("corpus readiness failed: b1 scoring protocol artifact invalid: %w", err)
 	}
 	fixtures, err := loader.LoadAllFixtures()
 	if err != nil {

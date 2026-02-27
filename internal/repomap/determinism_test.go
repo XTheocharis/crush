@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestVerticalSliceDeterminism asserts that the vertical slice harness produces
@@ -434,32 +436,20 @@ func loadVerticalSliceFixturesForDeterminism(t *testing.T) []verticalSliceFixtur
 	t.Helper()
 
 	paths, err := filepath.Glob(filepath.Join("testdata", "vertical_slice", "*.json"))
-	if err != nil {
-		t.Fatalf("glob fixtures: %v", err)
-	}
-	if len(paths) == 0 {
-		t.Fatalf("no vertical slice fixtures found")
-	}
+	require.NoError(t, err, "glob fixtures")
+	require.NotEmpty(t, paths, "no vertical slice fixtures found")
 	sort.Strings(paths)
 
 	fixtures := make([]verticalSliceFixture, 0, len(paths))
 	for _, path := range paths {
 		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read fixture %q: %v", path, readErr)
-		}
+		require.NoError(t, readErr, "read fixture %q", path)
 		var fx verticalSliceFixture
-		if unmarshalErr := json.Unmarshal(data, &fx); unmarshalErr != nil {
-			t.Fatalf("unmarshal fixture %q: %v", path, unmarshalErr)
-		}
+		require.NoError(t, json.Unmarshal(data, &fx), "unmarshal fixture %q", path)
 
 		// Validate determinism-specific requirements
-		if strings.TrimSpace(fx.Name) == "" {
-			t.Fatalf("fixture %q missing name", path)
-		}
-		if len(fx.Profiles) == 0 {
-			t.Fatalf("fixture %q missing profiles", path)
-		}
+		require.NotEmpty(t, strings.TrimSpace(fx.Name), "fixture %q missing name", path)
+		require.NotEmpty(t, fx.Profiles, "fixture %q missing profiles", path)
 
 		fixtures = append(fixtures, fx)
 	}

@@ -1,11 +1,16 @@
 package explorer
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ConformanceSnapshot captures Volt-side parity sign-off inputs from one run.
@@ -24,6 +29,8 @@ type ConformanceSnapshot struct {
 	TokenCounterMode            string `json:"token_counter_mode"`
 	FixedSeed                   int64  `json:"fixed_seed"`
 	GateBPassed                 bool   `json:"gate_b_passed"`
+	GateBEvidencePath           string `json:"gate_b_evidence_path"`
+	RunID                       string `json:"run_id"`
 }
 
 // BuildConformanceSnapshot validates Volt parity prerequisites and returns a
@@ -127,10 +134,22 @@ func tokenizerTupleSupported(ts *TokenizerSupport, tokenizerID, tokenizerVersion
 }
 
 func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
+	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
+	return buildConformanceSnapshotWithRunID(basePath, runID)
+}
+
+func BuildConformanceSnapshotWithRunID(basePath, runID string) (*ConformanceSnapshot, error) {
+	return buildConformanceSnapshotWithRunID(basePath, runID)
+}
+
+func buildConformanceSnapshotWithRunID(basePath, runID string) (*ConformanceSnapshot, error) {
 	if strings.TrimSpace(basePath) == "" {
 		basePath = "."
 	}
 	basePath = resolveConformanceBasePath(basePath)
+	if strings.TrimSpace(runID) == "" {
+		return nil, fmt.Errorf("missing run id")
+	}
 
 	cfg := NewDefaultParityFixtureConfig(basePath)
 	loader := NewParityFixtureLoader(cfg)
@@ -221,6 +240,8 @@ func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
 		return nil, fmt.Errorf("volt parity corpus readiness failed: no parity fixtures found")
 	}
 
+	gateBEvidence, gateBErr := executeGateBForConformance(basePath, runID)
+
 	return &ConformanceSnapshot{
 		Version:                     "1",
 		VoltCommitSHA:               index.Metadata.VoltCommitSHA,
@@ -235,6 +256,45 @@ func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
 		EnhancementTiersEnabled:     strings.ToLower(strings.TrimSpace(profile.EnhancementTiersEnabled)),
 		TokenCounterMode:            strings.ToLower(strings.TrimSpace(profile.TokenCounterMode)),
 		FixedSeed:                   profile.FixedSeed,
-		GateBPassed:                 true,
+		GateBPassed:                 gateBErr == nil,
+		GateBEvidencePath:           gateBEvidence,
+		RunID:                       runID,
 	}, nil
+}
+
+func executeGateBForConformance(basePath, runID string) (string, error) {
+	workDir := resolveConformanceBasePath(basePath)
+	evidenceDir := filepath.Join(os.TempDir(), "crush-parity-evidence", "explorer")
+	if err := os.MkdirAll(evidenceDir, 0o755); err != nil {
+		return "", fmt.Errorf("create gate B evidence directory: %w", err)
+	}
+	evidencePath := filepath.Join(evidenceDir, "gate_b_evidence."+runID+".json")
+	if absPath, err := filepath.Abs(evidencePath); err == nil {
+		evidencePath = absPath
+	}
+
+	cmd := exec.CommandContext(context.Background(), "go", "test", "-run", "TestParityGateBAggregate", "-count=1", ".")
+	cmd.Dir = workDir
+	out, err := cmd.CombinedOutput()
+	passed := err == nil
+
+	sum := sha256.Sum256(out)
+	payload := map[string]any{
+		"run_id":         runID,
+		"command":        "go test -run TestParityGateBAggregate -count=1 .",
+		"passed":         passed,
+		"output_sha256":  hex.EncodeToString(sum[:]),
+		"output_excerpt": string(out),
+	}
+	content, mErr := json.MarshalIndent(payload, "", "  ")
+	if mErr != nil {
+		return "", fmt.Errorf("marshal gate B evidence: %w", mErr)
+	}
+	if wErr := os.WriteFile(evidencePath, content, 0o644); wErr != nil {
+		return "", fmt.Errorf("write gate B evidence: %w", wErr)
+	}
+	if err != nil {
+		return evidencePath, fmt.Errorf("gate B aggregate execution failed: %w", err)
+	}
+	return evidencePath, nil
 }

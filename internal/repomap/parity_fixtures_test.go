@@ -237,6 +237,34 @@ func TestParityAiderFixtureValidate(t *testing.T) {
 			errMsg:  "token_counter_mode",
 		},
 		{
+			name: "parity profile rejects heuristic token_counter_mode",
+			fx: ParityAiderFixture{
+				FixtureID: "test_fixture",
+				Provenance: ParityProvenanceBundle{
+					AiderCommitSHA:    strings.Repeat("a", 40),
+					ComparatorPath:    "../aider",
+					FixturesSHA256:    strings.Repeat("b", 64),
+					GrepASTProvenance: "grep-ast@v1.2.3",
+					TokenizerID:       "cl100k_base",
+					TokenizerVersion:  "v0.1.0",
+				},
+				Profiles: []ParityProfile{
+					{
+						ProfileID:               "test_profile",
+						ParityMode:              true,
+						TokenBudget:             1024,
+						RepeatRuns:              10,
+						DeterministicMode:       true,
+						EnhancementTiersEnabled: "none",
+						TokenCounterMode:        "heuristic",
+						FixedSeed:               1337,
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "token_counter_mode",
+		},
+		{
 			name: "parity profile requires fixed_seed",
 			fx: ParityAiderFixture{
 				FixtureID: "test_fixture",
@@ -413,7 +441,7 @@ func TestParityFixtureHarnessIntegration(t *testing.T) {
 					if profile.ParityMode {
 						require.True(t, profile.DeterministicMode, "parity profiles must enforce deterministic_mode")
 						require.Equal(t, "none", strings.ToLower(strings.TrimSpace(profile.EnhancementTiersEnabled)), "parity profiles must disable enhancement tiers")
-						require.Contains(t, []string{"tokenizer_backed", "heuristic"}, strings.ToLower(strings.TrimSpace(profile.TokenCounterMode)), "parity profiles must pin token counter mode")
+						require.Equal(t, "tokenizer_backed", strings.ToLower(strings.TrimSpace(profile.TokenCounterMode)), "parity profiles must pin tokenizer-backed token counter mode")
 						require.Greater(t, profile.FixedSeed, int64(0), "parity profiles must pin fixed seed")
 					}
 				})

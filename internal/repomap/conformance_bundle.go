@@ -29,13 +29,15 @@ func BuildSignOffBundle(basePath string) (*SignOffBundle, error) {
 		basePath = "."
 	}
 
-	repoSnap, err := BuildConformanceSnapshot(basePath)
+	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
+
+	repoSnap, err := BuildConformanceSnapshotWithRunID(basePath, runID)
 	if err != nil {
 		return nil, fmt.Errorf("build repomap conformance snapshot: %w", err)
 	}
 
 	explorerBasePath := resolveExplorerConformanceBasePath(basePath)
-	explorerSnap, err := explorer.BuildConformanceSnapshot(explorerBasePath)
+	explorerSnap, err := explorer.BuildConformanceSnapshotWithRunID(explorerBasePath, runID)
 	if err != nil {
 		return nil, fmt.Errorf("build explorer conformance snapshot: %w", err)
 	}
@@ -77,6 +79,24 @@ func ValidateSignOffBundle(bundle *SignOffBundle) error {
 	if !bundle.Phase5Passed {
 		return fmt.Errorf("sign-off bundle phase5_passed must be true")
 	}
+	if strings.TrimSpace(bundle.RepoMap.RunID) == "" || strings.TrimSpace(bundle.Explorer.RunID) == "" {
+		return fmt.Errorf("sign-off bundle missing run_id evidence")
+	}
+	if strings.TrimSpace(bundle.RepoMap.RunID) != strings.TrimSpace(bundle.Explorer.RunID) {
+		return fmt.Errorf("sign-off bundle run_id mismatch between Gate A and Gate B evidence")
+	}
+	if strings.TrimSpace(bundle.RepoMap.GateAEvidencePath) == "" {
+		return fmt.Errorf("sign-off bundle missing gate_a_evidence_path")
+	}
+	if strings.TrimSpace(bundle.Explorer.GateBEvidencePath) == "" {
+		return fmt.Errorf("sign-off bundle missing gate_b_evidence_path")
+	}
+	if err := validateGateEvidenceFile(bundle.RepoMap.GateAEvidencePath, bundle.RepoMap.RunID, true); err != nil {
+		return fmt.Errorf("sign-off bundle gate A evidence invalid: %w", err)
+	}
+	if err := validateGateEvidenceFile(bundle.Explorer.GateBEvidencePath, bundle.Explorer.RunID, true); err != nil {
+		return fmt.Errorf("sign-off bundle gate B evidence invalid: %w", err)
+	}
 
 	if strings.TrimSpace(bundle.RepoMap.AiderCommitSHA) == "" || strings.TrimSpace(bundle.Explorer.VoltCommitSHA) == "" {
 		return fmt.Errorf("sign-off bundle missing comparator commit shas")
@@ -115,7 +135,7 @@ func ValidateSignOffBundle(bundle *SignOffBundle) error {
 
 func isAllowedCounterMode(mode string) bool {
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	return mode == "tokenizer_backed" || mode == "heuristic"
+	return mode == "tokenizer_backed"
 }
 
 func resolveExplorerConformanceBasePath(basePath string) string {
@@ -131,6 +151,38 @@ func resolveExplorerConformanceBasePath(basePath string) string {
 		}
 	}
 	return basePath
+}
+
+func validateGateEvidenceFile(path, runID string, mustPass bool) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("missing evidence path")
+	}
+	if !filepath.IsAbs(path) {
+		if absPath, err := filepath.Abs(path); err == nil {
+			path = absPath
+		}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read evidence file: %w", err)
+	}
+	var payload struct {
+		RunID  string `json:"run_id"`
+		Passed bool   `json:"passed"`
+	}
+	if err := json.Unmarshal(content, &payload); err != nil {
+		return fmt.Errorf("unmarshal evidence file: %w", err)
+	}
+	if strings.TrimSpace(payload.RunID) == "" {
+		return fmt.Errorf("missing run_id")
+	}
+	if strings.TrimSpace(payload.RunID) != strings.TrimSpace(runID) {
+		return fmt.Errorf("run_id mismatch")
+	}
+	if mustPass && !payload.Passed {
+		return fmt.Errorf("gate evidence reports failed execution")
+	}
+	return nil
 }
 
 // WriteSignOffBundleManifest writes the sign-off bundle to a JSON file.

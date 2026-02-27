@@ -416,12 +416,12 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 	var mapRefreshAsync tools.MapRefreshFn
 	if c.repoMapSvc != nil {
 		mapRefreshSync = func(callCtx context.Context, sessionID string) error {
-			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, 0, 0, true)
+			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, c.repoMapProfile(), true)
 			_, _, err := c.repoMapSvc.Refresh(callCtx, sessionID, opts)
 			return err
 		}
 		mapRefreshAsync = func(callCtx context.Context, sessionID string) error {
-			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, 0, 0, true)
+			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, c.repoMapProfile(), true)
 			c.repoMapSvc.RefreshAsync(sessionID, opts)
 			return nil
 		}

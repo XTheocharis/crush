@@ -315,8 +315,8 @@ func TestMessageDecorator_Create_RuntimePathPersistenceMatrix(t *testing.T) {
 	require.True(t, textFile.ExplorerUsed.Valid)
 	require.NotEmpty(t, strings.TrimSpace(textFile.ExplorerUsed.String))
 
-	// Non-persisted path (binary): runtime matrix declares binary as non-persisted,
-	// so storage+flow still succeed with NULL exploration fields.
+	// Binary-like payload still resolves through ingestion persistence policy in
+	// the B3 matrix, so exploration fields remain populated.
 	binaryLikeOutput := string([]byte{0x7f, 0x45, 0x4c, 0x46}) + strings.Repeat("\x00", 4096)
 	msg, err = svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
@@ -329,8 +329,10 @@ func TestMessageDecorator_Create_RuntimePathPersistenceMatrix(t *testing.T) {
 	require.Len(t, binaryFileIDs, 1)
 	binaryFile, err := queries.GetLcmLargeFile(ctx, binaryFileIDs[0])
 	require.NoError(t, err)
-	require.False(t, binaryFile.ExplorationSummary.Valid)
-	require.False(t, binaryFile.ExplorerUsed.Valid)
+	require.True(t, binaryFile.ExplorationSummary.Valid)
+	require.NotEmpty(t, strings.TrimSpace(binaryFile.ExplorationSummary.String))
+	require.True(t, binaryFile.ExplorerUsed.Valid)
+	require.NotEmpty(t, strings.TrimSpace(binaryFile.ExplorerUsed.String))
 }
 
 // mockTreeSitterParser is a minimal test implementation of treesitter.Parser.
@@ -487,7 +489,7 @@ func TestMessageDecorator_Create_RuntimeMatrix_NonPersistedPaths(t *testing.T) {
 	cfg := MessageDecoratorConfig{LargeToolOutputTokenThreshold: 10}
 	svc := NewMessageDecorator(inner, mgr, queries, sqlDB, cfg)
 
-	// Test 1: Binary paths should be stored but exploration NOT persisted (llm_enhancement=false).
+	// Test 1: Binary paths should be stored and exploration persisted in enhancement profile.
 	binaryOutput := string([]byte{0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00}) + strings.Repeat("\x00", 5000)
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
@@ -500,11 +502,13 @@ func TestMessageDecorator_Create_RuntimeMatrix_NonPersistedPaths(t *testing.T) {
 	require.Len(t, binaryFileIDs, 1)
 	binaryFile, err := queries.GetLcmLargeFile(ctx, binaryFileIDs[0])
 	require.NoError(t, err)
-	// Binary path is non-persisted: exploration fields should be NULL.
-	require.False(t, binaryFile.ExplorationSummary.Valid, "Binary path should not persist exploration_summary")
-	require.False(t, binaryFile.ExplorerUsed.Valid, "Binary path should not persist explorer_used")
+	// Binary path is persisted in enhancement profile.
+	require.True(t, binaryFile.ExplorationSummary.Valid, "Binary path should persist exploration_summary")
+	require.NotEmpty(t, strings.TrimSpace(binaryFile.ExplorationSummary.String))
+	require.True(t, binaryFile.ExplorerUsed.Valid, "Binary path should persist explorer_used")
+	require.NotEmpty(t, strings.TrimSpace(binaryFile.ExplorerUsed.String))
 
-	// Test 2: FallbackExplorer (final handler) should also be non-persisted.
+	// Test 2: FallbackExplorer (retrieval path) should also be persisted in enhancement profile.
 	// Use content that falls through to FallbackExplorer - random bytes that aren't ASCII text.
 	fallbackOutput := strings.Repeat(string([]byte{0x80, 0x81, 0x82, 0x83}), 200)
 	msg, err = svc.Create(ctx, sessionID, message.CreateMessageParams{
@@ -518,9 +522,11 @@ func TestMessageDecorator_Create_RuntimeMatrix_NonPersistedPaths(t *testing.T) {
 	require.Len(t, fallbackFileIDs, 1)
 	fallbackFile, err := queries.GetLcmLargeFile(ctx, fallbackFileIDs[0])
 	require.NoError(t, err)
-	// Fallback path is non-persisted: exploration fields should be NULL.
-	require.False(t, fallbackFile.ExplorationSummary.Valid, "Fallback path should not persist exploration_summary")
-	require.False(t, fallbackFile.ExplorerUsed.Valid, "Fallback path should not persist explorer_used")
+	// Fallback path is persisted in enhancement profile.
+	require.True(t, fallbackFile.ExplorationSummary.Valid, "Fallback path should persist exploration_summary")
+	require.NotEmpty(t, strings.TrimSpace(fallbackFile.ExplorationSummary.String))
+	require.True(t, fallbackFile.ExplorerUsed.Valid, "Fallback path should persist explorer_used")
+	require.NotEmpty(t, strings.TrimSpace(fallbackFile.ExplorerUsed.String))
 
 	// Test 3: Verify persisted paths DO store exploration (e.g., text/code).
 	textOutput := strings.Repeat("This is plain text content.\n", 200)

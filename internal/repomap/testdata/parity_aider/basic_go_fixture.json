@@ -4,7 +4,7 @@
   "provenance": {
     "aider_commit_sha": "7afaa26f8b8b7b56146f0674d2a67e795b616b7c",
     "comparator_path": "https://github.com/Aider-AI/aider/tree/7afaa26f8b8b7b56146f0674d2a67e795b616b7c",
-    "fixtures_sha256": "2c6fc11b2bbb3a4a42d96e86684c9bb7d368866e7147f48d14c0239f6c689c2e",
+    "fixtures_sha256": "80d82bc2dc1252402085d9be784d3078fa03e8cbcb21fd5d6581b5e203599430",
     "grep_ast_provenance": "grep-ast@v0.8.1",
     "tokenizer_id": "cl100k_base",
     "tokenizer_version": "v0.1.0"
@@ -34,6 +34,17 @@
       "token_counter_mode": "tokenizer_backed",
       "fixed_seed": 1337,
       "expected_results": {
+        "top_files": [
+          "README.md",
+          "go.mod",
+          "main.go",
+          "cmd/server/main.go",
+          "internal/core/service.go",
+          "internal/core/model.go",
+          "internal/util/strings.go",
+          "internal/util/time.go",
+          "pkg/http/client.go"
+        ],
         "stage_count": {
           "stage0": 0,
           "stage1": 0,
@@ -52,6 +63,17 @@
       "token_counter_mode": "tokenizer_backed",
       "fixed_seed": 1337,
       "expected_results": {
+        "top_files": [
+          "README.md",
+          "go.mod",
+          "main.go",
+          "cmd/server/main.go",
+          "internal/core/service.go",
+          "internal/core/model.go",
+          "internal/util/strings.go",
+          "internal/util/time.go",
+          "pkg/http/client.go"
+        ],
         "stage_count": {
           "stage0": 0,
           "stage1": 0,
@@ -70,6 +92,17 @@
       "token_counter_mode": "tokenizer_backed",
       "fixed_seed": 1337,
       "expected_results": {
+        "top_files": [
+          "README.md",
+          "go.mod",
+          "main.go",
+          "cmd/server/main.go",
+          "internal/core/service.go",
+          "internal/core/model.go",
+          "internal/util/strings.go",
+          "internal/util/time.go",
+          "pkg/http/client.go"
+        ],
         "stage_count": {
           "stage0": 0,
           "stage1": 0,

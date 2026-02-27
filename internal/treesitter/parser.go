@@ -502,6 +502,12 @@ func loadSupportedLanguagesImpl() ([]string, map[string]struct{}) {
 	return languages, set
 }
 
+// languageForQueryKey registers runtime grammars for canonical query keys.
+//
+// The manifest/query canonical set can be larger than this runtime set;
+// tests enforce that every canonical manifest language is either
+// runtime-activated here or listed in
+// testdata/runtime_language_exceptions.v1.json.
 func languageForQueryKey(queryKey string) *tree_sitter.Language {
 	switch queryKey {
 	case "arduino":

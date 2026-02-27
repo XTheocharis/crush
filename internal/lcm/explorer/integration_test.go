@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestIntegration_MultipleFileTypes tests the registry with various file types.
@@ -211,23 +213,15 @@ deploy
 				Path:    tt.path,
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore failed: %v", err)
-			}
+			require.NoError(t, err, "Explore failed")
 
-			if result.ExplorerUsed != tt.expectedExplorer {
-				t.Errorf("Expected explorer %q, got %q", tt.expectedExplorer, result.ExplorerUsed)
-			}
+			require.Equal(t, tt.expectedExplorer, result.ExplorerUsed)
 
 			for _, mustContain := range tt.mustContain {
-				if !strings.Contains(result.Summary, mustContain) {
-					t.Errorf("Expected summary to contain %q\nGot:\n%s", mustContain, result.Summary)
-				}
+				require.True(t, strings.Contains(result.Summary, mustContain), "Expected summary to contain %q\nGot:\n%s", mustContain, result.Summary)
 			}
 
-			if result.TokenEstimate <= 0 {
-				t.Errorf("Expected positive token estimate, got %d", result.TokenEstimate)
-			}
+			require.Greater(t, result.TokenEstimate, 0, "Expected positive token estimate, got %d", result.TokenEstimate)
 		})
 	}
 }
@@ -250,18 +244,12 @@ func TestIntegration_LargeFile(t *testing.T) {
 		Path:    "large.go",
 		Content: []byte(content.String()),
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed")
 
-	if result.ExplorerUsed != "go" {
-		t.Errorf("Expected go explorer, got %s", result.ExplorerUsed)
-	}
+	require.Equal(t, "go", result.ExplorerUsed)
 
 	// Should still parse successfully
-	if !strings.Contains(result.Summary, "Package: main") {
-		t.Errorf("Expected to extract package name from large file")
-	}
+	require.True(t, strings.Contains(result.Summary, "Package: main"), "Expected to extract package name from large file")
 }
 
 // TestIntegration_InvalidFiles tests handling of invalid/corrupted files.
@@ -300,14 +288,10 @@ func TestIntegration_InvalidFiles(t *testing.T) {
 				Path:    tt.path,
 				Content: tt.content,
 			})
-			if err != nil {
-				t.Fatalf("Explore should not error on invalid files: %v", err)
-			}
+			require.NoError(t, err, "Explore should not error on invalid files")
 
 			// Should get some kind of result
-			if result.Summary == "" {
-				t.Error("Expected non-empty summary even for invalid files")
-			}
+			require.NotEmpty(t, result.Summary, "Expected non-empty summary even for invalid files")
 		})
 	}
 }
@@ -335,13 +319,9 @@ func TestIntegration_EmptyFiles(t *testing.T) {
 				Path:    tt.path,
 				Content: []byte{},
 			})
-			if err != nil {
-				t.Fatalf("Explore failed on empty file: %v", err)
-			}
+			require.NoError(t, err, "Explore failed on empty file")
 
-			if result.Summary == "" {
-				t.Error("Expected non-empty summary for empty file")
-			}
+			require.NotEmpty(t, result.Summary, "Expected non-empty summary for empty file")
 		})
 	}
 }
@@ -363,7 +343,5 @@ func TestIntegration_ContextCancellation(t *testing.T) {
 
 	// Current implementation doesn't check context, so this should succeed
 	// In future versions with LLM calls, this would respect cancellation
-	if err != nil && err != context.Canceled {
-		t.Errorf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err, "Unexpected error: %v")
 }

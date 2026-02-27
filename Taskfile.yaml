@@ -158,7 +158,8 @@ tasks:
       PARITY_MODE: false
     cmds:
       - test "$CGO_ENABLED" = "1" || { echo "test:exceed requires CGO_ENABLED=1"; exit 1; }
-      - go test -race -failfast ./... -run Exceed {{.CLI_ARGS}}
+      - >
+        bash -lc 'set -uo pipefail; out="$(go test -v -count=1 -race -failfast ./... -run Exceed {{.CLI_ARGS}} 2>&1)"; status=$?; printf "%s\n" "$out"; if [ $status -ne 0 ]; then exit $status; fi; if ! printf "%s\n" "$out" | grep -Eq -- "--- (PASS|FAIL): Test.*Exceed"; then echo "test:exceed executed zero Exceed tests; failing closed"; exit 1; fi'
 
   test:record:
     desc: Run tests and record all VCR cassettes again

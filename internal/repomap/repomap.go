@@ -53,13 +53,20 @@ func RunInjectionKeyFromContext(ctx context.Context) (RunInjectionKey, bool) {
 
 // GenerateOpts specifies options for repo-map generation.
 type GenerateOpts struct {
-	SessionID        string
-	ChatFiles        []string
-	MentionedFnames  []string
-	MentionedIdents  []string
-	TokenBudget      int
-	MaxContextWindow int
-	ForceRefresh     bool
+	SessionID            string
+	ChatFiles            []string
+	MentionedFnames      []string
+	MentionedIdents      []string
+	TokenBudget          int
+	MaxContextWindow     int
+	ForceRefresh         bool
+	ParityMode           bool
+	PromptCachingEnabled bool
+	EnhancementTiers     string
+	DeterministicMode    bool
+	TokenCounterMode     string
+	Model                string
+	TokenCounter         TokenCounter
 }
 
 // Service handles repo-map generation and lifecycle.
@@ -136,7 +143,7 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return "", 0, nil
 	}
 
-	mode := s.refreshMode()
+	mode := s.effectiveRefreshMode(opts)
 
 	lastMap, lastTok := s.sessionCaches.Load(sessionID)
 	cacheKey := buildRenderCacheKey(mode, opts)
@@ -221,22 +228,23 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 	rankedDefs := Rank(graph, personalization)
 	rankedFiles := AggregateRankedFiles(rankedDefs, tags)
 
-	specialPrelude := BuildSpecialPrelude(fileUniverse, rankedFilePaths(rankedFiles), false)
+	specialPrelude := BuildSpecialPrelude(fileUniverse, rankedFilePaths(rankedFiles), opts.ParityMode)
 	entries := AssembleStageEntries(
 		specialPrelude,
 		rankedDefs,
 		graph.Nodes,
 		fileUniverse,
 		opts.ChatFiles,
-		false,
+		opts.ParityMode,
 	)
 
 	budgetProfile := BudgetProfile{
-		ParityMode:   false,
+		ParityMode:   opts.ParityMode,
 		TokenBudget:  resolveTokenBudget(s.cfg, opts),
+		Model:        opts.Model,
 		LanguageHint: "default",
 	}
-	fit, err := FitToBudget(ctx, entries, budgetProfile, nil)
+	fit, err := FitToBudget(ctx, entries, budgetProfile, opts.TokenCounter)
 	if err != nil {
 		return fallback(err)
 	}
@@ -301,6 +309,32 @@ func (s *Service) LastGoodMap(sessionID string) string {
 func (s *Service) LastTokenCount(sessionID string) int {
 	_, lastTok := s.sessionCaches.Load(sessionID)
 	return lastTok
+}
+
+// SessionReadOnlyFiles returns persisted repo-map read-only paths for a session.
+func (s *Service) SessionReadOnlyFiles(ctx context.Context, sessionID string) []string {
+	if s == nil || s.isClosed() || s.db == nil {
+		return nil
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil
+	}
+	repoKey := repoKeyForRoot(s.rootDir)
+	if repoKey == "" {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	paths, err := s.db.ListSessionReadOnlyPaths(ctx, db.ListSessionReadOnlyPathsParams{
+		RepoKey:   repoKey,
+		SessionID: sessionID,
+	})
+	if err != nil {
+		return nil
+	}
+	return normalizeUniqueGraphPaths(paths)
 }
 
 // ShouldInject reports whether map should be injected for this run.
@@ -368,7 +402,7 @@ func (s *Service) Refresh(ctx context.Context, sessionID string, opts GenerateOp
 
 	if opts.SessionID != "" {
 		s.sessionCaches.Store(opts.SessionID, m, tok)
-		key := buildRenderCacheKey(s.refreshMode(), opts)
+		key := buildRenderCacheKey(s.effectiveRefreshMode(opts), opts)
 		if key != "" {
 			if m != "" || tok > 0 {
 				s.renderCaches.GetOrCreate(opts.SessionID).Set(key, m, tok)
@@ -614,7 +648,7 @@ func normalizeUniqueStrings(values []string) []string {
 }
 
 func (s *Service) buildRefreshFlightKey(sessionID string, opts GenerateOpts) string {
-	mode := s.refreshMode()
+	mode := s.effectiveRefreshMode(opts)
 	cacheKey := buildRenderCacheKey(mode, opts)
 	if cacheKey == "" {
 		cacheKey = strings.Join([]string{
@@ -641,6 +675,17 @@ func (s *Service) refreshMode() string {
 		}
 	}
 	return "auto"
+}
+
+func (s *Service) effectiveRefreshMode(opts GenerateOpts) string {
+	mode := strings.ToLower(strings.TrimSpace(s.refreshMode()))
+	if mode == "" {
+		mode = "auto"
+	}
+	if opts.ParityMode && opts.PromptCachingEnabled && mode == "auto" {
+		return "files"
+	}
+	return mode
 }
 
 func resolveTokenBudget(cfg *config.RepoMapOptions, opts GenerateOpts) int {

@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "generated_at": "2026-02-26T00:00:00Z",
+  "policy": "manifest_language_must_be_runtime_or_exception",
+  "languages": [
+    "commonlisp",
+    "d",
+    "elisp",
+    "elixir",
+    "elm",
+    "fortran",
+    "gleam",
+    "kotlin",
+    "matlab",
+    "ql",
+    "r",
+    "racket",
+    "solidity",
+    "swift",
+    "udev",
+    "zig"
+  ],
+  "reason": "No runtime grammar registration in languageForQueryKey; allowed only via explicit versioned exception policy.",
+  "review_cycle": "Update when parser runtime registrations change or manifest/query set changes."
+}

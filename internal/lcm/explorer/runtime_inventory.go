@@ -15,19 +15,42 @@ const (
 	RuntimeInventoryPath = "testdata/parity_volt/runtime_ingestion_paths.v1.json"
 )
 
-// RuntimeIngestionPath describes a single runtime ingestion path.
+// RuntimeIngestionPath describes a single runtime ingestion/retrieval path.
 type RuntimeIngestionPath struct {
-	ID                    string         `json:"id"`
-	PathKind              string         `json:"path_kind"`
-	Description           string         `json:"description"`
-	EntryPoint            string         `json:"entry_point"`
-	Explorer              string         `json:"explorer"`
-	Preconditions         map[string]any `json:"preconditions"`
-	FallbackChainPosition any            `json:"fallback_chain_position"`
-	LLMEnhancement        bool           `json:"llm_enhancement"`
-	AgentEligible         bool           `json:"agent_eligible,omitempty"`
-	ParserRequired        bool           `json:"parser_required,omitempty"`
-	Tier                  int            `json:"tier,omitempty"`
+	ID                          string         `json:"id"`
+	PathKind                    string         `json:"path_kind"`
+	EntryPoint                  string         `json:"entrypoint"`
+	Trigger                     string         `json:"trigger"`
+	InScope                     bool           `json:"in_scope"`
+	PersistsExplorationParity   bool           `json:"persists_exploration_parity"`
+	PersistsExplorationEnhanced bool           `json:"persists_exploration_enhanced"`
+	ConfigGates                 []string       `json:"config_gates"`
+	Description                 string         `json:"description,omitempty"`
+	Explorer                    string         `json:"explorer,omitempty"`
+	Preconditions               map[string]any `json:"preconditions,omitempty"`
+	FallbackChainPosition       any            `json:"fallback_chain_position,omitempty"`
+	LLMEnhancement              bool           `json:"llm_enhancement,omitempty"`
+	AgentEligible               bool           `json:"agent_eligible,omitempty"`
+	ParserRequired              bool           `json:"parser_required,omitempty"`
+	Tier                        int            `json:"tier,omitempty"`
+}
+
+// UnmarshalJSON supports both B3 `entrypoint` and legacy `entry_point` naming.
+func (p *RuntimeIngestionPath) UnmarshalJSON(data []byte) error {
+	type runtimeIngestionPathAlias RuntimeIngestionPath
+	type runtimeIngestionPathPayload struct {
+		runtimeIngestionPathAlias
+		EntryPointLegacy string `json:"entry_point"`
+	}
+	var payload runtimeIngestionPathPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	*p = RuntimeIngestionPath(payload.runtimeIngestionPathAlias)
+	if strings.TrimSpace(p.EntryPoint) == "" {
+		p.EntryPoint = strings.TrimSpace(payload.EntryPointLegacy)
+	}
+	return nil
 }
 
 // RuntimeInventory represents the runtime ingestion paths artifact.
@@ -109,13 +132,9 @@ func LoadRuntimePersistenceMatrix(profile OutputProfile) (*RuntimePersistenceMat
 
 	for _, path := range inventory.Paths {
 		explorer := strings.TrimSpace(path.Explorer)
-		if explorer == "" {
-			continue
-		}
-
-		persist := path.LLMEnhancement
+		persist := path.PersistsExplorationEnhanced
 		if matrix.profile == OutputProfileParity {
-			persist = false
+			persist = path.PersistsExplorationParity
 		}
 		policy := RuntimePersistencePolicy{
 			PathID:   strings.TrimSpace(path.ID),
@@ -123,9 +142,21 @@ func LoadRuntimePersistenceMatrix(profile OutputProfile) (*RuntimePersistenceMat
 			Explorer: explorer,
 			Persist:  persist,
 		}
-		matrix.policyByExplorer[explorer] = policy
-		if runtimeKey := runtimeExplorerKeyFromInventoryExplorer(explorer); runtimeKey != "" {
-			matrix.policyByExplorer[runtimeKey] = policy
+		if explorer != "" {
+			matrix.policyByExplorer[explorer] = policy
+			if runtimeKey := runtimeExplorerKeyFromInventoryExplorer(explorer); runtimeKey != "" {
+				matrix.policyByExplorer[runtimeKey] = policy
+			}
+		}
+		if path.ID == "lcm.tool_output.create" {
+			for _, runtimeKey := range []string{
+				"binary", "json", "csv", "yaml", "toml", "ini", "xml", "html",
+				"markdown", "latex", "sqlite", "logs", "go", "python", "javascript",
+				"typescript", "rust", "java", "cpp", "c", "ruby", "treesitter",
+				"shell", "text", "fallback",
+			} {
+				matrix.policyByExplorer[runtimeKey] = policy
+			}
 		}
 	}
 
@@ -467,30 +498,55 @@ func CheckDrift(registry *Registry, profile OutputProfile) (*DriftReport, error)
 }
 
 // GenerateRuntimeInventory creates a new runtime inventory artifact.
-func GenerateRuntimeInventory(registry *Registry, profile OutputProfile) (*RuntimeInventory, error) {
-	discovered := DiscoverRuntimePaths(registry, profile)
+func GenerateRuntimeInventory(_ *Registry, profile OutputProfile) (*RuntimeInventory, error) {
+	resolvedProfile := strings.ToLower(strings.TrimSpace(string(profile)))
+	if resolvedProfile == "" {
+		resolvedProfile = string(OutputProfileEnhancement)
+	}
 
-	paths := make([]RuntimeIngestionPath, 0, len(discovered))
-	for _, discPath := range discovered {
-		path := RuntimeIngestionPath{
-			ID:                    fmt.Sprintf("path_%s", discPath.ExplorerName),
-			PathKind:              discPath.Kind,
-			Description:           fmt.Sprintf("Discovered runtime path for %s", discPath.ExplorerName),
-			EntryPoint:            "RuntimeAdapter.Explore",
-			Explorer:              discPath.ExplorerName,
-			Preconditions:         map[string]any{},
-			FallbackChainPosition: discPath.Position,
-			LLMEnhancement:        true,
-		}
-		paths = append(paths, path)
+	paths := []RuntimeIngestionPath{
+		{
+			ID:                          "lcm.tool_output.create",
+			PathKind:                    "ingestion",
+			EntryPoint:                  "messageDecorator.Create",
+			Trigger:                     "tool_output_over_threshold",
+			InScope:                     true,
+			PersistsExplorationParity:   false,
+			PersistsExplorationEnhanced: true,
+			ConfigGates:                 []string{"DisableLargeToolOutput", "LargeToolOutputTokenThreshold"},
+		},
+		{
+			ID:                          "lcm.describe.readback",
+			PathKind:                    "retrieval",
+			EntryPoint:                  "lcm_describe",
+			Trigger:                     "describe_by_file_id",
+			InScope:                     true,
+			PersistsExplorationParity:   false,
+			PersistsExplorationEnhanced: true,
+			ConfigGates:                 []string{"session_lineage_scope"},
+		},
+		{
+			ID:                          "lcm.expand.readback",
+			PathKind:                    "retrieval",
+			EntryPoint:                  "lcm_expand",
+			Trigger:                     "expand_by_file_id",
+			InScope:                     true,
+			PersistsExplorationParity:   false,
+			PersistsExplorationEnhanced: true,
+			ConfigGates:                 []string{"session_lineage_scope", "sub_agent_only"},
+		},
 	}
 
 	return &RuntimeInventory{
-		Version:         "1",
-		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
-		DiscoveryMethod: "runtime_discovery",
-		Profile:         string(profile),
-		Paths:           paths,
+		Version:                 "1",
+		GeneratedAt:             time.Now().UTC().Format(time.RFC3339),
+		DiscoveryMethod:         "deterministic_static_plus_runtime",
+		Profile:                 resolvedProfile,
+		DeterministicMode:       true,
+		EnhancementTiersEnabled: "none",
+		TokenCounterMode:        "tokenizer_backed",
+		FixedSeed:               1337,
+		Paths:                   paths,
 	}, nil
 }
 
@@ -499,7 +555,7 @@ func KindValue(explorer Explorer) string {
 	switch e := explorer.(type) {
 	case *BinaryExplorer:
 		return "native_binary"
-	case *JSONExplorer, *CSVExplorer, *YAMLExplorer, *TOMLExplorer, *INIExplorer, *XMLExplorer, *HTMLExplorer:
+	case *JSONExplorer, *CSVExplorer, *YAMLExplorer, *TOMLExplorer, *INIExplorer, *XMLExplorer, *HTMLExplorer, *MarkdownExplorer, *LatexExplorer, *SQLiteExplorer, *LogsExplorer:
 		return "data_format_native"
 	case *GoExplorer, *PythonExplorer, *JavaScriptExplorer, *TypeScriptExplorer, *RustExplorer, *JavaExplorer, *CppExplorer, *CExplorer, *RubyExplorer:
 		return "code_format_native"
@@ -518,6 +574,9 @@ func KindValue(explorer Explorer) string {
 
 // ValidateInventory ensures the inventory artifact is well-formed and complete.
 func ValidateInventory(inventory *RuntimeInventory) error {
+	if inventory == nil {
+		return fmt.Errorf("runtime inventory is nil")
+	}
 	if inventory.Version == "" {
 		return fmt.Errorf("missing required field: version")
 	}
@@ -530,47 +589,72 @@ func ValidateInventory(inventory *RuntimeInventory) error {
 	if inventory.Profile == "" {
 		return fmt.Errorf("missing required field: profile")
 	}
-	if strings.EqualFold(strings.TrimSpace(inventory.Profile), string(OutputProfileParity)) {
+
+	profile := strings.ToLower(strings.TrimSpace(inventory.Profile))
+	if profile == string(OutputProfileParity) {
 		if !inventory.DeterministicMode {
 			return fmt.Errorf("parity profile requires deterministic_mode=true")
 		}
 		if strings.ToLower(strings.TrimSpace(inventory.EnhancementTiersEnabled)) != "none" {
 			return fmt.Errorf("parity profile requires enhancement_tiers_enabled=none")
 		}
-		counterMode := strings.ToLower(strings.TrimSpace(inventory.TokenCounterMode))
-		if counterMode != "tokenizer_backed" && counterMode != "heuristic" {
-			return fmt.Errorf("parity profile requires token_counter_mode tokenizer_backed or heuristic")
+		if strings.ToLower(strings.TrimSpace(inventory.TokenCounterMode)) != "tokenizer_backed" {
+			return fmt.Errorf("parity profile requires token_counter_mode tokenizer_backed")
 		}
 		if inventory.FixedSeed <= 0 {
 			return fmt.Errorf("parity profile requires positive fixed_seed")
 		}
 	}
+
 	if len(inventory.Paths) == 0 {
 		return fmt.Errorf("paths array must not be empty")
 	}
 
-	for i, path := range inventory.Paths {
-		if path.ID == "" {
+	if err := validateB3RuntimeInventoryPaths(inventory.Paths, profile); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateB3RuntimeInventoryPaths(paths []RuntimeIngestionPath, profile string) error {
+	requiredIDs := map[string]bool{
+		"lcm.tool_output.create": false,
+		"lcm.describe.readback":  false,
+		"lcm.expand.readback":    false,
+	}
+	allowedKinds := map[string]struct{}{
+		"ingestion": {},
+		"retrieval": {},
+	}
+
+	for i, path := range paths {
+		if strings.TrimSpace(path.ID) == "" {
 			return fmt.Errorf("path[%d]: missing required field: id", i)
 		}
-		if path.PathKind == "" {
-			return fmt.Errorf("path[%d]: missing required field: path_kind", i)
+		if _, ok := requiredIDs[path.ID]; ok {
+			requiredIDs[path.ID] = true
 		}
-		if path.Description == "" {
-			return fmt.Errorf("path[%d]: missing required field: description", i)
+
+		kind := strings.ToLower(strings.TrimSpace(path.PathKind))
+		if _, ok := allowedKinds[kind]; !ok {
+			return fmt.Errorf("path[%d]: invalid path_kind %q (expected ingestion or retrieval)", i, path.PathKind)
 		}
-		if path.EntryPoint == "" {
-			return fmt.Errorf("path[%d]: missing required field: entry_point", i)
+		if strings.TrimSpace(path.EntryPoint) == "" {
+			return fmt.Errorf("path[%d]: missing required field: entrypoint", i)
 		}
-		if path.Explorer == "" {
-			return fmt.Errorf("path[%d]: missing required field: explorer", i)
+		if strings.TrimSpace(path.Trigger) == "" {
+			return fmt.Errorf("path[%d]: missing required field: trigger", i)
 		}
-		if strings.EqualFold(strings.TrimSpace(inventory.Profile), string(OutputProfileParity)) {
-			if path.PathKind == "enhancement_tier2" || path.PathKind == "enhancement_tier3" || path.LLMEnhancement {
-				return fmt.Errorf("parity profile must not include enhancement paths: %s (%s)", path.ID, path.PathKind)
-			}
+		if len(path.ConfigGates) == 0 {
+			return fmt.Errorf("path[%d]: config_gates must not be empty", i)
 		}
 	}
 
+	for id, present := range requiredIDs {
+		if !present {
+			return fmt.Errorf("runtime inventory missing required path id: %s", id)
+		}
+	}
 	return nil
 }

@@ -113,8 +113,8 @@ func validateParityPreflightProfile(profile *ParityPreflightProfile) error {
 			return fmt.Errorf("profile validation failed: enhancement_tiers_enabled must be none in parity mode")
 		}
 		counterMode := strings.ToLower(strings.TrimSpace(profile.TokenCounterMode))
-		if counterMode != "tokenizer_backed" && counterMode != "heuristic" {
-			return fmt.Errorf("profile validation failed: token_counter_mode must be tokenizer_backed or heuristic")
+		if counterMode != "tokenizer_backed" {
+			return fmt.Errorf("profile validation failed: token_counter_mode must be tokenizer_backed")
 		}
 		if profile.FixedSeed <= 0 {
 			return fmt.Errorf("profile validation failed: fixed_seed must be positive in parity mode")

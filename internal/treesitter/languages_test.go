@@ -658,3 +658,17 @@ func TestManifestLanguageCoverage(t *testing.T) {
 		})
 	}
 }
+
+func TestManifestRuntimeExceptionsArtifactConsistency(t *testing.T) {
+	t.Parallel()
+
+	manifestSet := canonicalManifestLanguageSet(t)
+	exceptionSet := loadRuntimeLanguageExceptions(t)
+
+	for lang := range exceptionSet {
+		_, ok := manifestSet[lang]
+		require.True(t, ok, "exception language %q must exist in canonical manifest set", lang)
+		require.True(t, HasTagsQuery(lang), "exception language %q must keep vendored tags query", lang)
+	}
+}
+

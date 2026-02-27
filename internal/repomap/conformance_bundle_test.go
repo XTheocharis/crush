@@ -27,6 +27,10 @@ func TestBuildSignOffBundle(t *testing.T) {
 	require.NotEmpty(t, bundle.Explorer.VoltCommitSHA)
 	require.NotEmpty(t, bundle.Explorer.ComparatorPath)
 	require.NotEmpty(t, bundle.Explorer.FixturesSHA256)
+	require.NotEmpty(t, bundle.RepoMap.RunID)
+	require.Equal(t, bundle.RepoMap.RunID, bundle.Explorer.RunID)
+	require.FileExists(t, bundle.RepoMap.GateAEvidencePath)
+	require.FileExists(t, bundle.Explorer.GateBEvidencePath)
 }
 
 func TestValidateSignOffBundle(t *testing.T) {
@@ -41,6 +45,18 @@ func TestValidateSignOffBundle(t *testing.T) {
 	err = ValidateSignOffBundle(&bad)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "phase5_passed")
+
+	badRunID := *bundle
+	badRunID.Explorer.RunID = "mismatch-run-id"
+	err = ValidateSignOffBundle(&badRunID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "run_id mismatch")
+
+	badEvidence := *bundle
+	badEvidence.RepoMap.GateAEvidencePath = filepath.Join(t.TempDir(), "missing-gate-a-evidence.json")
+	err = ValidateSignOffBundle(&badEvidence)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gate A evidence")
 }
 
 func TestWriteAndLoadSignOffBundleManifest(t *testing.T) {
@@ -61,6 +77,8 @@ func TestWriteAndLoadSignOffBundleManifest(t *testing.T) {
 	require.Equal(t, bundle.Phase5Passed, loaded.Phase5Passed)
 	require.Equal(t, bundle.RepoMap.AiderCommitSHA, loaded.RepoMap.AiderCommitSHA)
 	require.Equal(t, bundle.Explorer.VoltCommitSHA, loaded.Explorer.VoltCommitSHA)
+	require.Equal(t, bundle.RepoMap.RunID, loaded.RepoMap.RunID)
+	require.Equal(t, bundle.Explorer.RunID, loaded.Explorer.RunID)
 }
 
 func TestValidateSignOffBundleRejectsPlaceholderProvenance(t *testing.T) {

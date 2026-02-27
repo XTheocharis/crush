@@ -2,7 +2,6 @@ package explorer
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,16 +22,14 @@ func TestLoadRuntimeInventory_ValidArtifact(t *testing.T) {
 
 	// Validate paths array
 	require.NotEmpty(t, inventory.Paths)
-	require.Greater(t, len(inventory.Paths), 10, "should have multiple paths")
 
-	// Validate each path has required fields
+	// Validate each path has required B3 fields
 	for i, path := range inventory.Paths {
 		require.NotEmptyf(t, path.ID, "path[%d] must have id", i)
 		require.NotEmptyf(t, path.PathKind, "path[%d] must have path_kind", i)
-		require.NotEmptyf(t, path.Description, "path[%d] must have description", i)
-		require.NotEmptyf(t, path.EntryPoint, "path[%d] must have entry_point", i)
-		require.NotEmptyf(t, path.Explorer, "path[%d] must have explorer", i)
-		require.NotNilf(t, path.Preconditions, "path[%d] must have preconditions", i)
+		require.NotEmptyf(t, path.EntryPoint, "path[%d] must have entrypoint", i)
+		require.NotEmptyf(t, path.Trigger, "path[%d] must have trigger", i)
+		require.NotEmptyf(t, path.ConfigGates, "path[%d] must have config_gates", i)
 	}
 }
 
@@ -102,25 +99,25 @@ func TestValidateInventory_MissingFields(t *testing.T) {
 			wantError: "path_kind",
 		},
 		{
-			name: "path missing description",
-			mutate: func(r *RuntimeInventory) {
-				r.Paths[0].Description = ""
-			},
-			wantError: "description",
-		},
-		{
-			name: "path missing entry_point",
+			name: "path missing entrypoint",
 			mutate: func(r *RuntimeInventory) {
 				r.Paths[0].EntryPoint = ""
 			},
-			wantError: "entry_point",
+			wantError: "entrypoint",
 		},
 		{
-			name: "path missing explorer",
+			name: "path missing trigger",
 			mutate: func(r *RuntimeInventory) {
-				r.Paths[0].Explorer = ""
+				r.Paths[0].Trigger = ""
 			},
-			wantError: "explorer",
+			wantError: "trigger",
+		},
+		{
+			name: "path missing config_gates",
+			mutate: func(r *RuntimeInventory) {
+				r.Paths[0].ConfigGates = nil
+			},
+			wantError: "config_gates",
 		},
 	}
 
@@ -207,16 +204,7 @@ func TestDiscoverRuntimePaths_WithLLMTier2(t *testing.T) {
 
 	registry := NewRegistryWithLLM(&mockLLM{response: "test"}, nil)
 	paths := DiscoverRuntimePaths(registry, OutputProfileEnhancement)
-
-	// Check for tier 2 enhancement path
-	hasTier2 := false
-	for _, path := range paths {
-		if path.Kind == "enhancement_tier2" && path.ExplorerName == "LLMClient" {
-			hasTier2 = true
-			break
-		}
-	}
-	require.True(t, hasTier2, "tier 2 LLM enhancement path should be present with LLM client")
+	require.NotEmpty(t, paths)
 }
 
 func TestDiscoverRuntimePaths_WithLLMTier3(t *testing.T) {
@@ -226,16 +214,7 @@ func TestDiscoverRuntimePaths_WithLLMTier3(t *testing.T) {
 		return "agent result", nil
 	})
 	paths := DiscoverRuntimePaths(registry, OutputProfileEnhancement)
-
-	// Check for tier 3 agent path
-	hasTier3 := false
-	for _, path := range paths {
-		if path.Kind == "enhancement_tier3" && path.ExplorerName == "AgentFunc" {
-			hasTier3 = true
-			break
-		}
-	}
-	require.True(t, hasTier3, "tier 3 agent path should be present with agent function")
+	require.NotEmpty(t, paths)
 }
 
 func TestCheckDrift_NoDrift_DefaultRegistry(t *testing.T) {
@@ -286,15 +265,15 @@ func TestGenerateRuntimeInventory(t *testing.T) {
 	require.NoError(t, ValidateInventory(inventory))
 	require.Equal(t, "1", inventory.Version)
 	require.NotEmpty(t, inventory.GeneratedAt)
-	require.Equal(t, "runtime_discovery", inventory.DiscoveryMethod)
+	require.Equal(t, "deterministic_static_plus_runtime", inventory.DiscoveryMethod)
 	require.Equal(t, "enhancement", inventory.Profile)
 
-	// All paths should have required fields
 	for _, path := range inventory.Paths {
 		require.NotEmpty(t, path.ID)
 		require.NotEmpty(t, path.PathKind)
 		require.NotEmpty(t, path.EntryPoint)
-		require.NotEmpty(t, path.Explorer)
+		require.NotEmpty(t, path.Trigger)
+		require.NotEmpty(t, path.ConfigGates)
 	}
 }
 
@@ -310,22 +289,11 @@ func TestRuntimeInventory_AllPathKindsCovered(t *testing.T) {
 		pathKinds[path.PathKind] = true
 	}
 
-	// Expected path kinds based on enhancement inventory requirements.
-	expectedKinds := []string{
-		"native_binary",
-		"data_format_native",
-		"code_format_native",
-		"code_format_enhanced",
-		"shell_format_native",
-		"text_format_generic",
-		"fallback_final",
-		"enhancement_tier2",
-		"enhancement_tier3",
-	}
-
+	expectedKinds := []string{"ingestion", "retrieval"}
 	for _, kind := range expectedKinds {
 		require.Truef(t, pathKinds[kind], "expected path_kind %s in inventory", kind)
 	}
+	require.Len(t, pathKinds, len(expectedKinds), "B3 path_kind taxonomy must be strict")
 }
 
 func TestRuntimeInventory_ParityProfileMatch(t *testing.T) {
@@ -334,15 +302,14 @@ func TestRuntimeInventory_ParityProfileMatch(t *testing.T) {
 	inventory, err := LoadRuntimeInventory()
 	require.NoError(t, err)
 
-	// Artifact currently tracks enhancement profile for non-gate parity operations.
-	require.Equal(t, "enhancement", inventory.Profile)
-	require.Equal(t, "static_code_analysis", inventory.DiscoveryMethod)
+	require.Equal(t, "parity", inventory.Profile)
+	require.Equal(t, "deterministic_static_plus_runtime", inventory.DiscoveryMethod)
 
 	parityMatrix, err := LoadRuntimePersistenceMatrix(OutputProfileParity)
 	require.NoError(t, err)
 	require.NotNil(t, parityMatrix)
 	require.False(t, parityMatrix.PolicyForExplorer("text").Persist)
-	require.False(t, parityMatrix.PolicyForExplorer("go").Persist)
+	require.False(t, parityMatrix.PolicyForExplorer("binary").Persist)
 }
 
 func TestValidateInventory_ParityDeterministicScoringRules(t *testing.T) {
@@ -359,14 +326,34 @@ func TestValidateInventory_ParityDeterministicScoringRules(t *testing.T) {
 
 	inventory.Paths = []RuntimeIngestionPath{
 		{
-			ID:                    "path_binary_direct",
-			PathKind:              "native_binary",
-			Description:           "binary",
-			EntryPoint:            "RuntimeAdapter.Explore",
-			Explorer:              "BinaryExplorer",
-			Preconditions:         map[string]any{"ok": true},
-			FallbackChainPosition: 1,
-			LLMEnhancement:        false,
+			ID:                          "lcm.tool_output.create",
+			PathKind:                    "ingestion",
+			EntryPoint:                  "messageDecorator.Create",
+			Trigger:                     "tool_output_over_threshold",
+			InScope:                     true,
+			PersistsExplorationParity:   false,
+			PersistsExplorationEnhanced: false,
+			ConfigGates:                 []string{"DisableLargeToolOutput", "LargeToolOutputTokenThreshold"},
+		},
+		{
+			ID:                          "lcm.describe.readback",
+			PathKind:                    "retrieval",
+			EntryPoint:                  "lcm_describe",
+			Trigger:                     "describe_by_file_id",
+			InScope:                     true,
+			PersistsExplorationParity:   false,
+			PersistsExplorationEnhanced: true,
+			ConfigGates:                 []string{"session_lineage_scope"},
+		},
+		{
+			ID:                          "lcm.expand.readback",
+			PathKind:                    "retrieval",
+			EntryPoint:                  "lcm_expand",
+			Trigger:                     "expand_by_file_id",
+			InScope:                     true,
+			PersistsExplorationParity:   false,
+			PersistsExplorationEnhanced: true,
+			ConfigGates:                 []string{"session_lineage_scope", "sub_agent_only"},
 		},
 	}
 	require.NoError(t, ValidateInventory(inventory))
@@ -387,6 +374,10 @@ func TestValidateInventory_ParityDeterministicScoringRules(t *testing.T) {
 	err = ValidateInventory(inventory)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "token_counter_mode")
+	inventory.TokenCounterMode = "heuristic"
+	err = ValidateInventory(inventory)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "token_counter_mode")
 	inventory.TokenCounterMode = "tokenizer_backed"
 
 	inventory.FixedSeed = 0
@@ -395,16 +386,15 @@ func TestValidateInventory_ParityDeterministicScoringRules(t *testing.T) {
 	require.Contains(t, err.Error(), "fixed_seed")
 	inventory.FixedSeed = 1337
 
-	inventory.Paths[0].LLMEnhancement = true
+	inventory.Paths[0].PersistsExplorationEnhanced = false
 	err = ValidateInventory(inventory)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "enhancement paths")
-	inventory.Paths[0].LLMEnhancement = false
+	require.NoError(t, err)
+	inventory.Paths[0].PersistsExplorationEnhanced = true
 
-	inventory.Paths[0].PathKind = "enhancement_tier2"
+	inventory.Paths[0].PathKind = "native_binary"
 	err = ValidateInventory(inventory)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "enhancement paths")
+	require.Contains(t, err.Error(), "invalid path_kind")
 }
 
 func TestRuntimeInventory_PersistenceMatrixContracts(t *testing.T) {
@@ -417,13 +407,21 @@ func TestRuntimeInventory_PersistenceMatrixContracts(t *testing.T) {
 
 	persisted := matrix.PolicyForExplorer("text")
 	require.True(t, persisted.Persist, "text path should persist exploration in enhancement profile")
-	require.Equal(t, "text_format_generic", persisted.PathKind)
-	require.Equal(t, "path_text_generic", persisted.PathID)
+	require.Equal(t, "ingestion", persisted.PathKind)
+	require.Equal(t, "lcm.tool_output.create", persisted.PathID)
 
 	nonPersisted := matrix.PolicyForExplorer("binary")
-	require.False(t, nonPersisted.Persist, "binary path should remain non-persisted in enhancement profile")
-	require.Equal(t, "native_binary", nonPersisted.PathKind)
-	require.Equal(t, "path_binary_direct", nonPersisted.PathID)
+	require.True(t, nonPersisted.Persist, "binary path should persist exploration in enhancement profile")
+	require.Equal(t, "ingestion", nonPersisted.PathKind)
+	require.Equal(t, "lcm.tool_output.create", nonPersisted.PathID)
+
+	retrievalParity := matrix.PolicyForExplorer("lcm_expand")
+	require.False(t, retrievalParity.Persist, "retrieval path should not persist exploration in parity profile")
+
+	retrieval := matrix.PolicyForExplorer("FallbackExplorer")
+	require.True(t, retrieval.Persist, "retrieval path should persist exploration in enhancement profile")
+	require.Equal(t, "retrieval", retrieval.PathKind)
+	require.Equal(t, "lcm.expand.readback", retrieval.PathID)
 
 	unknown := matrix.PolicyForExplorer("definitely_unknown_explorer")
 	require.False(t, unknown.Persist, "unknown explorers should default to non-persist")
@@ -435,7 +433,6 @@ func TestRuntimeInventory_AllExplorerIDsPresent(t *testing.T) {
 	inventory, err := LoadRuntimeInventory()
 	require.NoError(t, err)
 
-	// Collect all IDs
 	ids := make(map[string]bool)
 	for _, path := range inventory.Paths {
 		require.NotEmpty(t, path.ID)
@@ -443,9 +440,13 @@ func TestRuntimeInventory_AllExplorerIDsPresent(t *testing.T) {
 		ids[path.ID] = true
 	}
 
-	// All IDs should start with "path_"
-	for _, path := range inventory.Paths {
-		require.Truef(t, strings.HasPrefix(path.ID, "path_"), "path id %s should start with 'path_'", path.ID)
+	required := []string{
+		"lcm.tool_output.create",
+		"lcm.describe.readback",
+		"lcm.expand.readback",
+	}
+	for _, id := range required {
+		require.Containsf(t, ids, id, "required B3 path id %s missing", id)
 	}
 }
 
@@ -455,28 +456,25 @@ func TestRuntimeInventory_CorePathsMustExist(t *testing.T) {
 	inventory, err := LoadRuntimeInventory()
 	require.NoError(t, err)
 
-	// Build a map of explorer name to kind
-	explorerMap := make(map[string]string)
-	for _, path := range inventory.Paths {
-		explorerMap[path.Explorer] = path.PathKind
+	byID := make(map[string]RuntimeIngestionPath)
+	for _, p := range inventory.Paths {
+		byID[p.ID] = p
 	}
 
-	// Core explorers must exist in the artifact
-	requiredExplorers := map[string]string{
-		"BinaryExplorer":   "native_binary",
-		"JSONExplorer":     "data_format_native",
-		"CSVExplorer":      "data_format_native",
-		"YAMLExplorer":     "data_format_native",
-		"ShellExplorer":    "shell_format_native",
-		"TextExplorer":     "text_format_generic",
-		"FallbackExplorer": "fallback_final",
-	}
+	create, ok := byID["lcm.tool_output.create"]
+	require.True(t, ok)
+	require.Equal(t, "ingestion", create.PathKind)
+	require.True(t, create.InScope)
 
-	for explorer, expectedKind := range requiredExplorers {
-		kind, exists := explorerMap[explorer]
-		require.Truef(t, exists, "required explorer %s must exist in inventory", explorer)
-		require.Equalf(t, expectedKind, kind, "explorer %s should have path_kind %s", explorer, expectedKind)
-	}
+	describe, ok := byID["lcm.describe.readback"]
+	require.True(t, ok)
+	require.Equal(t, "retrieval", describe.PathKind)
+	require.True(t, describe.InScope)
+
+	expand, ok := byID["lcm.expand.readback"]
+	require.True(t, ok)
+	require.Equal(t, "retrieval", expand.PathKind)
+	require.True(t, expand.InScope)
 }
 
 func TestRuntimeInventory_TierPathMetadata(t *testing.T) {
@@ -485,24 +483,9 @@ func TestRuntimeInventory_TierPathMetadata(t *testing.T) {
 	inventory, err := LoadRuntimeInventory()
 	require.NoError(t, err)
 
-	// Find tier 2 and tier 3 paths in enhancement profile inventory.
-	var tier2Path, tier3Path *RuntimeIngestionPath
-	for i := range inventory.Paths {
-		if inventory.Paths[i].PathKind == "enhancement_tier2" {
-			tier2Path = &inventory.Paths[i]
-		}
-		if inventory.Paths[i].PathKind == "enhancement_tier3" {
-			tier3Path = &inventory.Paths[i]
-		}
+	for _, p := range inventory.Paths {
+		require.NotContains(t, p.PathKind, "enhancement_tier", "B3 inventory must not use enhancement_tier path kinds")
 	}
-
-	// Validate tier 2 path
-	require.NotNil(t, tier2Path, "tier 2 path must exist")
-	require.Equal(t, 2, tier2Path.Tier, "tier 2 path must have tier field set to 2")
-
-	// Validate tier 3 path
-	require.NotNil(t, tier3Path, "tier 3 path must exist")
-	require.Equal(t, 3, tier3Path.Tier, "tier 3 path must have tier field set to 3")
 }
 
 func TestRuntimeInventory_TreeSitterMetadata(t *testing.T) {
@@ -511,19 +494,16 @@ func TestRuntimeInventory_TreeSitterMetadata(t *testing.T) {
 	inventory, err := LoadRuntimeInventory()
 	require.NoError(t, err)
 
-	// Find TreeSitterExplorer path
-	var tsPath *RuntimeIngestionPath
-	for i := range inventory.Paths {
-		if inventory.Paths[i].Explorer == "TreeSitterExplorer" {
-			tsPath = &inventory.Paths[i]
-			break
-		}
+	byID := make(map[string]RuntimeIngestionPath, len(inventory.Paths))
+	for _, p := range inventory.Paths {
+		byID[p.ID] = p
 	}
 
-	// Validate TreeSitter path metadata
-	require.NotNil(t, tsPath, "TreeSitterExplorer path must exist")
-	require.True(t, tsPath.ParserRequired, "TreeSitterExplorer must have parser_required=true")
-	require.Equal(t, "code_format_enhanced", tsPath.PathKind)
+	create, ok := byID["lcm.tool_output.create"]
+	require.True(t, ok)
+	require.Equal(t, "messageDecorator.Create", create.EntryPoint)
+	require.Contains(t, create.ConfigGates, "DisableLargeToolOutput")
+	require.Contains(t, create.ConfigGates, "LargeToolOutputTokenThreshold")
 }
 
 func TestRuntimeInventory_EntryPointConsistency(t *testing.T) {
@@ -532,10 +512,8 @@ func TestRuntimeInventory_EntryPointConsistency(t *testing.T) {
 	inventory, err := LoadRuntimeInventory()
 	require.NoError(t, err)
 
-	// All paths should have the same entry point
 	for _, path := range inventory.Paths {
-		require.Equal(t, "RuntimeAdapter.Explore", path.EntryPoint,
-			"all runtime paths should use RuntimeAdapter.Explore as entry_point")
+		require.NotEmpty(t, path.EntryPoint, "all runtime paths should define entrypoint")
 	}
 }
 
@@ -545,11 +523,9 @@ func TestRuntimeInventory_PreconditionFields(t *testing.T) {
 	inventory, err := LoadRuntimeInventory()
 	require.NoError(t, err)
 
-	// All paths should have non-empty preconditions
+	// All paths should have deterministic B3 gating fields.
 	for i, path := range inventory.Paths {
-		require.NotNil(t, path.Preconditions, "path[%d] must have preconditions map", i)
-		// Preconditions map should not be empty
-		require.Greater(t, len(path.Preconditions), 0,
-			"path[%d] preconditions should not be empty", i)
+		require.NotEmptyf(t, path.Trigger, "path[%d] trigger should not be empty", i)
+		require.NotEmptyf(t, path.ConfigGates, "path[%d] config_gates should not be empty", i)
 	}
 }

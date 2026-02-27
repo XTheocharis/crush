@@ -18,19 +18,19 @@ func writeParserAndGoModFixture(t *testing.T, repoRoot string, runtimes map[stri
 	require.NoError(t, os.MkdirAll(filepath.Dir(parserPath), 0o755))
 
 	var imports strings.Builder
-	cases := ""
+	var cases strings.Builder
 	for lang, mod := range runtimes {
 		alias := "tree_sitter_" + strings.ReplaceAll(lang, "-", "_")
-		imports.WriteString(fmt.Sprintf("\t%s \"%s/bindings/go\"\n", alias, mod))
-		cases += fmt.Sprintf("\tcase \"%s\":\n\t\treturn %s.Language()\n", lang, alias)
+		fmt.Fprintf(&imports, "\t%s \"%s/bindings/go\"\n", alias, mod)
+		fmt.Fprintf(&cases, "\tcase \"%s\":\n\t\treturn %s.Language()\n", lang, alias)
 	}
 
-	parserSource := "package treesitter\n\nimport (\n" + imports.String() + ")\n\nfunc languageForQueryKey(queryKey string) any {\n\tswitch queryKey {\n" + cases + "\tdefault:\n\t\treturn nil\n\t}\n}\n"
+	parserSource := "package treesitter\n\nimport (\n" + imports.String() + ")\n\nfunc languageForQueryKey(queryKey string) any {\n\tswitch queryKey {\n" + cases.String() + "\tdefault:\n\t\treturn nil\n\t}\n}\n"
 	require.NoError(t, os.WriteFile(parserPath, []byte(parserSource), 0o644))
 
 	var reqBlock strings.Builder
 	for _, dep := range deps {
-		reqBlock.WriteString(fmt.Sprintf("\t%s v0.1.0\n", dep))
+		fmt.Fprintf(&reqBlock, "\t%s v0.1.0\n", dep)
 	}
 	goMod := "module example.com/test\n\ngo 1.26.0\n\nrequire (\n" + reqBlock.String() + ")\n"
 	require.NoError(t, os.WriteFile(goModPath, []byte(goMod), 0o644))

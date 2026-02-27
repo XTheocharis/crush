@@ -2,10 +2,102 @@ package treesitter
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+
+type runtimeLanguageExceptionsArtifact struct {
+	Version   string   `json:"version"`
+	Languages []string `json:"languages"`
+}
+
+func loadRuntimeLanguageExceptions(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	path := filepath.Join("testdata", "runtime_language_exceptions.v1.json")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err, "read runtime language exceptions artifact")
+
+	var artifact runtimeLanguageExceptionsArtifact
+	require.NoError(t, json.Unmarshal(data, &artifact), "parse runtime language exceptions artifact")
+	require.Equal(t, "1", artifact.Version, "runtime language exceptions artifact version")
+	require.NotEmpty(t, artifact.Languages, "runtime language exceptions artifact must list at least one language")
+
+	set := make(map[string]struct{}, len(artifact.Languages))
+	for _, lang := range artifact.Languages {
+		key := GetQueryKey(lang)
+		require.NotEmpty(t, key, "exception language must resolve to canonical query key: %q", lang)
+		set[key] = struct{}{}
+	}
+
+	return set
+}
+
+func canonicalManifestLanguageSet(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	manifest, err := LoadLanguagesManifest()
+	require.NoError(t, err)
+
+	set := make(map[string]struct{}, len(manifest.Languages))
+	for _, lang := range manifest.Languages {
+		key := GetQueryKey(lang.Name)
+		require.NotEmpty(t, key, "manifest language %q must resolve to canonical query key", lang.Name)
+		set[key] = struct{}{}
+	}
+
+	return set
+}
+
+func runtimeActivatedLanguageSet(manifestSet map[string]struct{}) map[string]struct{} {
+	runtimeSet := make(map[string]struct{}, len(manifestSet))
+	for key := range manifestSet {
+		if languageForQueryKey(key) != nil {
+			runtimeSet[key] = struct{}{}
+		}
+	}
+	return runtimeSet
+}
+
+// TestManifestRuntimeClosurePolicy enforces canonical runtime closure policy:
+// every manifest language must be runtime-activated or explicitly versioned
+// as parity-nonruntime in runtime_language_exceptions.v1.json.
+func TestManifestRuntimeClosurePolicy(t *testing.T) {
+	t.Parallel()
+
+	manifestSet := canonicalManifestLanguageSet(t)
+	runtimeSet := runtimeActivatedLanguageSet(manifestSet)
+	exceptionSet := loadRuntimeLanguageExceptions(t)
+
+	missing := make([]string, 0)
+	for lang := range manifestSet {
+		if _, ok := runtimeSet[lang]; ok {
+			continue
+		}
+		if _, ok := exceptionSet[lang]; ok {
+			continue
+		}
+		missing = append(missing, lang)
+	}
+	sort.Strings(missing)
+	require.Empty(t, missing, "manifest languages must be runtime-activated or explicitly exceptioned")
+
+	for lang := range exceptionSet {
+		_, inManifest := manifestSet[lang]
+		require.True(t, inManifest, "exception language %q is not present in canonical manifest set", lang)
+
+		_, inRuntime := runtimeSet[lang]
+		require.False(t, inRuntime, "exception language %q is runtime-activated; remove from exceptions artifact", lang)
+
+		require.True(t, HasTagsQuery(lang), "exception language %q must still have a vendored tags query", lang)
+	}
+}
 
 // TestParserRuntimeActivation_Gate defines hard gate tests for runtime activation behavior.
 // This test ensures that:

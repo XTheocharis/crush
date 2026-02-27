@@ -1,11 +1,16 @@
 package repomap
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ConformanceSnapshot captures Aider-side parity sign-off inputs from one run.
@@ -23,13 +28,28 @@ type ConformanceSnapshot struct {
 	TokenCounterMode            string `json:"token_counter_mode"`
 	FixedSeed                   int64  `json:"fixed_seed"`
 	GateAPassed                 bool   `json:"gate_a_passed"`
+	GateAEvidencePath           string `json:"gate_a_evidence_path"`
+	RunID                       string `json:"run_id"`
 }
 
 // BuildConformanceSnapshot validates Aider parity prerequisites and returns a
 // single-run snapshot that can be embedded into the sign-off bundle.
 func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
+	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
+	return buildConformanceSnapshotWithRunID(basePath, runID)
+}
+
+func BuildConformanceSnapshotWithRunID(basePath, runID string) (*ConformanceSnapshot, error) {
+	return buildConformanceSnapshotWithRunID(basePath, runID)
+}
+
+func buildConformanceSnapshotWithRunID(basePath, runID string) (*ConformanceSnapshot, error) {
 	if strings.TrimSpace(basePath) == "" {
 		basePath = "."
+	}
+	basePath = resolveRepomapConformanceBasePath(basePath)
+	if strings.TrimSpace(runID) == "" {
+		return nil, fmt.Errorf("missing run id")
 	}
 
 	fixtures, err := LoadParityAiderFixtures(basePath)
@@ -127,6 +147,8 @@ func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
 		return nil, fmt.Errorf("missing comparator protocol version")
 	}
 
+	gateAEvidence, gateAErr := executeGateAForConformance(basePath, runID)
+
 	return &ConformanceSnapshot{
 		Version:                     "1",
 		AiderCommitSHA:              fixture.Provenance.AiderCommitSHA,
@@ -140,8 +162,62 @@ func BuildConformanceSnapshot(basePath string) (*ConformanceSnapshot, error) {
 		EnhancementTiersEnabled:     strings.ToLower(strings.TrimSpace(profile.EnhancementTiersEnabled)),
 		TokenCounterMode:            strings.ToLower(strings.TrimSpace(profile.TokenCounterMode)),
 		FixedSeed:                   profile.FixedSeed,
-		GateAPassed:                 true,
+		GateAPassed:                 gateAErr == nil,
+		GateAEvidencePath:           gateAEvidence,
+		RunID:                       runID,
 	}, nil
+}
+
+func executeGateAForConformance(basePath, runID string) (string, error) {
+	workDir := resolveRepomapConformanceBasePath(basePath)
+	evidenceDir := filepath.Join(os.TempDir(), "crush-parity-evidence", "repomap")
+	if err := os.MkdirAll(evidenceDir, 0o755); err != nil {
+		return "", fmt.Errorf("create gate A evidence directory: %w", err)
+	}
+	evidencePath := filepath.Join(evidenceDir, "gate_a_evidence."+runID+".json")
+	if absPath, err := filepath.Abs(evidencePath); err == nil {
+		evidencePath = absPath
+	}
+
+	cmd := exec.CommandContext(context.Background(), "go", "test", "-run", "TestParityGateAAggregate", "-count=1", ".")
+	cmd.Dir = workDir
+	out, err := cmd.CombinedOutput()
+	passed := err == nil
+
+	sum := sha256.Sum256(out)
+	payload := map[string]any{
+		"run_id":         runID,
+		"command":        "go test -run TestParityGateAAggregate -count=1 .",
+		"passed":         passed,
+		"output_sha256":  hex.EncodeToString(sum[:]),
+		"output_excerpt": string(out),
+	}
+	content, mErr := json.MarshalIndent(payload, "", "  ")
+	if mErr != nil {
+		return "", fmt.Errorf("marshal gate A evidence: %w", mErr)
+	}
+	if wErr := os.WriteFile(evidencePath, content, 0o644); wErr != nil {
+		return "", fmt.Errorf("write gate A evidence: %w", wErr)
+	}
+	if err != nil {
+		return evidencePath, fmt.Errorf("gate A aggregate execution failed: %w", err)
+	}
+	return evidencePath, nil
+}
+
+func resolveRepomapConformanceBasePath(basePath string) string {
+	candidates := []string{
+		basePath,
+		filepath.Join(basePath, "internal", "repomap"),
+		filepath.Join(basePath, "..", "repomap"),
+		filepath.Join(basePath, "..", "..", "internal", "repomap"),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(filepath.Join(candidate, "testdata", "parity_aider", "comparator_config.v1.json")); err == nil {
+			return candidate
+		}
+	}
+	return basePath
 }
 
 func parityProfileFromFixture(fx ParityAiderFixture) *ParityProfile {

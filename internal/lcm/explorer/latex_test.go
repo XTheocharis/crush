@@ -58,9 +58,7 @@ func TestLatexCanHandle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := exp.CanHandle(tt.path, tt.content)
-			if result != tt.expected {
-				t.Errorf("CanHandle() = %v, expected %v", result, tt.expected)
-			}
+			require.Equal(t, tt.expected, result, "CanHandle()")
 		})
 	}
 }
@@ -120,21 +118,17 @@ func TestLatexExtractSections(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sections := extractLatexSections(tt.content)
 
-			if len(sections) != tt.expectCount {
-				t.Errorf("Expected %d sections, got %d", tt.expectCount, len(sections))
-			}
+			require.Equal(t, tt.expectCount, len(sections), "Expected %d sections, got %d", tt.expectCount, len(sections))
 
 			levels := countSectionsByLevel(sections)
 			for level, count := range tt.expectLevels {
-				if levels[level] != count {
-					t.Errorf("Level %d: expected %d sections, got %d", level, count, levels[level])
-				}
+				require.Equal(t, count, levels[level], "Level %d: expected %d sections, got %d", level, count, levels[level])
 			}
 
 			if len(tt.expectTitles) > 0 {
 				for i, expectedTitle := range tt.expectTitles {
-					if i < len(sections) && sections[i].Title != expectedTitle {
-						t.Errorf("Section %d: expected title %q, got %q", i, expectedTitle, sections[i].Title)
+					if i < len(sections) {
+						require.Equal(t, expectedTitle, sections[i].Title, "Section %d: expected title %q, got %q", i, expectedTitle, sections[i].Title)
 					}
 				}
 			}
@@ -219,15 +213,11 @@ E=mc^2
 				for _, env := range envs {
 					if env.Name == name {
 						found = true
-						if env.Count != expectCount {
-							t.Errorf("Environment %s: expected count %d, got %d", name, expectCount, env.Count)
-						}
+						require.Equal(t, expectCount, env.Count, "Environment %s: expected count %d, got %d", name, expectCount, env.Count)
 						break
 					}
 				}
-				if !found {
-					t.Errorf("Expected environment %s not found", name)
-				}
+				require.True(t, found, "Expected environment %s not found", name)
 			}
 		})
 	}
@@ -288,31 +278,23 @@ And \cite{key1} and \citep{key2}.`,
 		t.Run(tt.name, func(t *testing.T) {
 			biblio := extractLatexBibliography(tt.content)
 
-			if len(biblio.Bibliography) != len(tt.expectBibliography) {
-				t.Errorf("Expected %d bibliography entries, got %d", len(tt.expectBibliography), len(biblio.Bibliography))
-			}
+			require.Equal(t, len(tt.expectBibliography), len(biblio.Bibliography), "Expected %d bibliography entries, got %d", len(tt.expectBibliography), len(biblio.Bibliography))
 			for i, expected := range tt.expectBibliography {
-				if i < len(biblio.Bibliography) && biblio.Bibliography[i] != expected {
-					t.Errorf("Bibliography[%d]: expected %q, got %q", i, expected, biblio.Bibliography[i])
+				if i < len(biblio.Bibliography) {
+					require.Equal(t, expected, biblio.Bibliography[i], "Bibliography[%d]: expected %q, got %q", i, expected, biblio.Bibliography[i])
 				}
 			}
 
-			if len(biblio.Addbibresource) != len(tt.expectAddbib) {
-				t.Errorf("Expected %d addbibresource entries, got %d", len(tt.expectAddbib), len(biblio.Addbibresource))
-			}
+			require.Equal(t, len(tt.expectAddbib), len(biblio.Addbibresource), "Expected %d addbibresource entries, got %d", len(tt.expectAddbib), len(biblio.Addbibresource))
 			for i, expected := range tt.expectAddbib {
-				if i >= len(biblio.Addbibresource) || biblio.Addbibresource[i] != expected {
-					t.Errorf("Addbibresource[%d]: expected %q, got %q", i, expected, get_string(biblio.Addbibresource, i))
+				if i < len(biblio.Addbibresource) {
+					require.Equal(t, expected, biblio.Addbibresource[i], "Addbibresource[%d]: expected %q, got %q", i, expected, biblio.Addbibresource[i])
 				}
 			}
 
-			if biblio.CiteCount != tt.expectCiteCount {
-				t.Errorf("Expected %d citations, got %d", tt.expectCiteCount, biblio.CiteCount)
-			}
+			require.Equal(t, tt.expectCiteCount, biblio.CiteCount, "Expected %d citations, got %d", tt.expectCiteCount, biblio.CiteCount)
 
-			if biblio.BibliographySty != tt.expectStyle {
-				t.Errorf("Expected bibliography style %q, got %q", tt.expectStyle, biblio.BibliographySty)
-			}
+			require.Equal(t, tt.expectStyle, biblio.BibliographySty, "Expected bibliography style %q, got %q", tt.expectStyle, biblio.BibliographySty)
 		})
 	}
 }
@@ -358,13 +340,11 @@ func TestLatexExtractPackages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pkgs := extractLatexPackages(tt.content)
 
-			if len(pkgs) != len(tt.expectPkgs) {
-				t.Errorf("Expected %d packages, got %d: %v", len(tt.expectPkgs), len(pkgs), pkgs)
-			}
+			require.Equal(t, len(tt.expectPkgs), len(pkgs), "Expected %d packages, got %d: %v", len(tt.expectPkgs), len(pkgs), pkgs)
 
 			for i, expected := range tt.expectPkgs {
-				if i >= len(pkgs) || pkgs[i] != expected {
-					t.Errorf("Package[%d]: expected %q, got %q", i, expected, get_string(pkgs, i))
+				if i < len(pkgs) {
+					require.Equal(t, expected, pkgs[i], "Package[%d]: expected %q, got %q", i, expected, pkgs[i])
 				}
 			}
 		})
@@ -419,17 +399,11 @@ Some text with \cite{key1} and \citep{key2}.
 			Path:    "paper.tex",
 			Content: []byte(content),
 		})
-		if err != nil {
-			t.Fatalf("Explore failed: %v", err)
-		}
+		require.NoError(t, err, "Explore failed: %v", err)
 
-		if result.ExplorerUsed != "latex" {
-			t.Errorf("Expected explorer 'latex', got %q", result.ExplorerUsed)
-		}
+		require.Equal(t, "latex", result.ExplorerUsed, "Expected explorer 'latex', got %q", result.ExplorerUsed)
 
-		if result.TokenEstimate <= 0 {
-			t.Errorf("Expected positive token estimate, got %d", result.TokenEstimate)
-		}
+		require.True(t, result.TokenEstimate > 0, "Expected positive token estimate, got %d", result.TokenEstimate)
 
 		// Check for section counts
 		expectations := []string{
@@ -449,9 +423,7 @@ Some text with \cite{key1} and \citep{key2}.
 		}
 
 		for _, exp := range expectations {
-			if !strings.Contains(result.Summary, exp) {
-				t.Errorf("Expected summary to contain %q", exp)
-			}
+			require.True(t, strings.Contains(result.Summary, exp), "Expected summary to contain %q", exp)
 		}
 	})
 
@@ -462,17 +434,11 @@ Some text with \cite{key1} and \citep{key2}.
 			Path:    "large.tex",
 			Content: largeContent,
 		})
-		if err != nil {
-			t.Fatalf("Explore failed: %v", err)
-		}
+		require.NoError(t, err, "Explore failed: %v", err)
 
-		if !strings.Contains(result.Summary, "too large") {
-			t.Errorf("Expected 'too large' in summary for large file")
-		}
+		require.True(t, strings.Contains(result.Summary, "too large"), "Expected 'too large' in summary for large file")
 
-		if result.ExplorerUsed != "latex" {
-			t.Errorf("Expected explorer 'latex', got %q", result.ExplorerUsed)
-		}
+		require.Equal(t, "latex", result.ExplorerUsed, "Expected explorer 'latex', got %q", result.ExplorerUsed)
 	})
 
 	t.Run("BST file handling", func(t *testing.T) {
@@ -485,13 +451,9 @@ Some text with \cite{key1} and \citep{key2}.
 			Path:    "style.bst",
 			Content: []byte(content),
 		})
-		if err != nil {
-			t.Fatalf("Explore failed: %v", err)
-		}
+		require.NoError(t, err, "Explore failed: %v", err)
 
-		if result.ExplorerUsed != "latex" {
-			t.Errorf("Expected explorer 'latex', got %q", result.ExplorerUsed)
-		}
+		require.Equal(t, "latex", result.ExplorerUsed, "Expected explorer 'latex', got %q", result.ExplorerUsed)
 	})
 
 	t.Run("comprehensive bibliography extraction", func(t *testing.T) {
@@ -508,37 +470,23 @@ Also \citeauthor{doe2023} and \citeyear{doe2023}.
 			Path:    "with-bib.tex",
 			Content: []byte(content),
 		})
-		if err != nil {
-			t.Fatalf("Explore failed: %v", err)
-		}
+		require.NoError(t, err, "Explore failed: %v", err)
 
 		// Check bibliography entries
-		if !strings.Contains(result.Summary, "\\bibliography:") {
-			t.Errorf("Expected to find \\bibliography section")
-		}
+		require.True(t, strings.Contains(result.Summary, "\\bibliography:"), "Expected to find \\bibliography section")
 		for _, ref := range []string{"ref1", "ref2", "ref3"} {
-			if !strings.Contains(result.Summary, ref) {
-				t.Errorf("Expected to find bibliography entry %q", ref)
-			}
+			require.True(t, strings.Contains(result.Summary, ref), "Expected to find bibliography entry %q", ref)
 		}
 
 		// Check addbibresource
-		if !strings.Contains(result.Summary, "\\addbibresource:") {
-			t.Errorf("Expected to find \\addbibresource section")
-		}
-		if !strings.Contains(result.Summary, "modern.bib") {
-			t.Errorf("Expected to find addbibresource entry 'modern.bib'")
-		}
+		require.True(t, strings.Contains(result.Summary, "\\addbibresource:"), "Expected to find \\addbibresource section")
+		require.True(t, strings.Contains(result.Summary, "modern.bib"), "Expected to find addbibresource entry 'modern.bib'")
 
 		// Check citation count
-		if !strings.Contains(result.Summary, "Citations: 5") {
-			t.Errorf("Expected 'Citations: 5' in summary")
-		}
+		require.True(t, strings.Contains(result.Summary, "Citations: 5"), "Expected 'Citations: 5' in summary")
 
 		// Check style
-		if !strings.Contains(result.Summary, "abbrv") {
-			t.Errorf("Expected to find bibliography style 'abbrv'")
-		}
+		require.True(t, strings.Contains(result.Summary, "abbrv"), "Expected to find bibliography style 'abbrv'")
 	})
 }
 
@@ -557,13 +505,10 @@ func TestLatexEnvironmentsSorting(t *testing.T) {
 	envs := extractLatexEnvironments(content)
 
 	// Table should come first (count=2), then enumerate, then itemize (alphabetically for equal counts)
-	if len(envs) < 2 {
-		t.Fatalf("Expected at least 2 environments, got %d", len(envs))
-	}
+	require.LessOrEqual(t, 2, len(envs), "Expected at least 2 environments, got %d", len(envs))
 
-	if envs[0].Name != "table" || envs[0].Count != 2 {
-		t.Errorf("Expected first env to be table with count 2, got %s with count %d", envs[0].Name, envs[0].Count)
-	}
+	require.Equal(t, "table", envs[0].Name, "Expected first env to be table with count 2, got %s with count %d", envs[0].Name, envs[0].Count)
+	require.Equal(t, 2, envs[0].Count, "Expected first env to be table with count 2, got %s with count %d", envs[0].Name, envs[0].Count)
 }
 
 func TestLatexEmptyContent(t *testing.T) {
@@ -573,17 +518,11 @@ func TestLatexEmptyContent(t *testing.T) {
 		Path:    "empty.tex",
 		Content: []byte(""),
 	})
-	if err != nil {
-		t.Fatalf("Explore failed: %v", err)
-	}
+	require.NoError(t, err, "Explore failed: %v", err)
 
-	if !strings.Contains(result.Summary, "LaTeX file: empty.tex") {
-		t.Errorf("Expected summary to contain 'LaTeX file: empty.tex'")
-	}
+	require.True(t, strings.Contains(result.Summary, "LaTeX file: empty.tex"), "Expected summary to contain 'LaTeX file: empty.tex'")
 
-	if result.TokenEstimate <= 0 {
-		t.Errorf("Expected positive token estimate for empty file, got %d", result.TokenEstimate)
-	}
+	require.True(t, result.TokenEstimate > 0, "Expected positive token estimate for empty file, got %d", result.TokenEstimate)
 }
 
 const latexGoldenContent = `\documentclass{article}

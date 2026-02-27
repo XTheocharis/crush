@@ -35,10 +35,7 @@ func (o RepoMapOptions) merge(t RepoMapOptions) RepoMapOptions {
 // DefaultRepoMapMaxTokens computes the dynamic token budget based on model context
 // window size: min(max(contextWindow/8, 1024), 4096).
 func DefaultRepoMapMaxTokens(modelContextWindow int) int {
-	budget := max(modelContextWindow/8, 1024)
-	if budget > 4096 {
-		budget = 4096
-	}
+	budget := min(max(modelContextWindow/8, 1024), 4096)
 	return budget
 }
 

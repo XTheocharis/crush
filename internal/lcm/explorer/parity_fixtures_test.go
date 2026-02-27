@@ -124,6 +124,13 @@ func TestValidateFixtureMetadata_MissingFields(t *testing.T) {
 			want: "token_counter_mode",
 		},
 		{
+			name: "parity metadata rejects heuristic token_counter_mode",
+			mutate: func(m *FixtureMetadata) {
+				m.TokenCounterMode = "heuristic"
+			},
+			want: "token_counter_mode",
+		},
+		{
 			name: "parity metadata requires fixed_seed",
 			mutate: func(m *FixtureMetadata) {
 				m.FixedSeed = 0

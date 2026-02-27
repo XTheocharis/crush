@@ -39,6 +39,10 @@ func (f *fakeRepoMapService) LastGoodMap(_ string) string { return f.lastMap }
 
 func (f *fakeRepoMapService) LastTokenCount(_ string) int { return 0 }
 
+func (f *fakeRepoMapService) SessionReadOnlyFiles(_ context.Context, _ string) []string {
+	return nil
+}
+
 func (f *fakeRepoMapService) ShouldInject(_ string, _ repomap.RunInjectionKey) bool {
 	return f.shouldInject
 }
@@ -157,9 +161,9 @@ func TestBuildRepoMapGenerateOptsIncludesMentions(t *testing.T) {
 		[]string{"chat/a.go"},
 		"Please inspect internal/repomap/mentions.go and MentionHelper",
 		[]string{"internal/repomap/mentions.go", "internal/repomap/other.go", "mentionhelper.go"},
+		[]string{"internal/repomap/mentions.go", "mentionhelper.go"},
 		[]string{"internal/repomap/other.go"},
-		256,
-		8192,
+		repoMapProfileOptions{TokenBudget: 256, MaxContextWindow: 8192},
 		true,
 	)
 
@@ -175,7 +179,7 @@ func TestBuildRepoMapGenerateOptsIncludesMentions(t *testing.T) {
 func TestBuildRepoMapGenerateOptsWithoutMentionText(t *testing.T) {
 	t.Parallel()
 
-	opts := buildRepoMapGenerateOpts("sess-1", nil, "", []string{"a.go"}, nil, 0, 0, false)
+	opts := buildRepoMapGenerateOpts("sess-1", nil, "", []string{"a.go"}, []string{"a.go"}, nil, repoMapProfileOptions{}, false)
 	require.Nil(t, opts.MentionedFnames)
 	require.Nil(t, opts.MentionedIdents)
 }

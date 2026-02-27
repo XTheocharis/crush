@@ -195,7 +195,7 @@ func findEdge(t *testing.T, g *FileGraph, from, to, ident string) GraphEdge {
 			return e
 		}
 	}
-	t.Fatalf("edge not found: %s -> %s (%s)", from, to, ident)
+	require.Failf(t, "edge not found: %s -> %s (%s)", from, to, ident)
 	return GraphEdge{}
 }
 

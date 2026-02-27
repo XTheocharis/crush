@@ -79,6 +79,16 @@ func (c *RepoMapController) buildGenerateOpts(ctx context.Context, sessionID str
 		}
 		opts.TokenBudget = tok
 		opts.MaxContextWindow = ctxWindow
+		opts.Model = model.ID
+	}
+	if c.cfg.Options != nil && c.cfg.Options.LCM != nil {
+		opts.ParityMode = strings.EqualFold(strings.TrimSpace(c.cfg.Options.LCM.ExplorerOutputProfile), "parity")
+	}
+	if opts.ParityMode {
+		opts.PromptCachingEnabled = true
+		opts.EnhancementTiers = "none"
+		opts.DeterministicMode = true
+		opts.TokenCounterMode = "tokenizer_backed"
 	}
 	if c.filetracker != nil {
 		readPaths, err := c.filetracker.ListReadFiles(ctx, sessionID)

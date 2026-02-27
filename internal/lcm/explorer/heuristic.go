@@ -93,9 +93,21 @@ func parseImportsFromContent(lang, content string) []string {
 
 	switch lang {
 	case "go":
-		re := regexp.MustCompile(`(?m)^\s*import\s+(?:[\w.]+\s+)?"([^"]+)"`)
-		for _, m := range re.FindAllStringSubmatch(content, -1) {
+		lineRe := regexp.MustCompile(`(?m)^\s*import\s+(?:[\w.]+\s+)?"([^"]+)"`)
+		for _, m := range lineRe.FindAllStringSubmatch(content, -1) {
 			add(m[1])
+		}
+		blockRe := regexp.MustCompile(`(?ms)^\s*import\s*\((.*?)\)`)
+		pathRe := regexp.MustCompile(`"([^"]+)"`)
+		for _, block := range blockRe.FindAllStringSubmatch(content, -1) {
+			if len(block) != 2 {
+				continue
+			}
+			for _, path := range pathRe.FindAllStringSubmatch(block[1], -1) {
+				if len(path) == 2 {
+					add(path[1])
+				}
+			}
 		}
 	case "python":
 		importRe := regexp.MustCompile(`(?m)^\s*import\s+([^\n#]+)`)

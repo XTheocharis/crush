@@ -56,12 +56,8 @@ func TestParityProvenanceBundleValidateRequiredFields(t *testing.T) {
 			tt.mutate(&bundle)
 
 			err := bundle.Validate(false)
-			if err == nil {
-				t.Fatalf("expected error")
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("expected error to contain %q, got %q", tt.want, err.Error())
-			}
+			require.Error(t, err, "expected error")
+			require.Contains(t, err.Error(), tt.want, "expected error to contain %q", tt.want)
 		})
 	}
 }
@@ -104,12 +100,8 @@ func TestParityProvenanceBundleValidateComparatorTupleRequired(t *testing.T) {
 			tt.mutate(&bundle)
 
 			err := bundle.Validate(true)
-			if err == nil {
-				t.Fatalf("expected error")
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("expected error to contain %q, got %q", tt.want, err.Error())
-			}
+			require.Error(t, err, "expected error")
+			require.Contains(t, err.Error(), tt.want, "expected error to contain %q", tt.want)
 		})
 	}
 }
@@ -122,9 +114,7 @@ func TestParityProvenanceBundleValidateComparatorTupleOptional(t *testing.T) {
 	bundle.TokenizerID = ""
 	bundle.TokenizerVersion = ""
 
-	if err := bundle.Validate(false); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	require.NoError(t, bundle.Validate(false), "expected no error")
 }
 
 func TestParityProvenanceBundleValidateInvalidDigests(t *testing.T) {
@@ -132,22 +122,18 @@ func TestParityProvenanceBundleValidateInvalidDigests(t *testing.T) {
 
 	bundle := validRepomapBundle()
 	bundle.AiderCommitSHA = "short"
-	if err := bundle.Validate(false); err == nil {
-		t.Fatalf("expected invalid aider_commit_sha error")
-	}
+	require.Error(t, bundle.Validate(false), "expected invalid aider_commit_sha error")
 
 	bundle = validRepomapBundle()
 	bundle.FixturesSHA256 = "notsha"
-	if err := bundle.Validate(false); err == nil {
-		t.Fatalf("expected invalid fixtures_sha256 error")
-	}
+	require.Error(t, bundle.Validate(false), "expected invalid fixtures_sha256 error")
 }
 
 func TestRunParityHarnessPreflight(t *testing.T) {
 	t.Parallel()
 
 	bundle := validRepomapBundle()
-	if err := RunParityHarnessPreflight(bundle, ParityPreflightOptions{
+	require.NoError(t, RunParityHarnessPreflight(bundle, ParityPreflightOptions{
 		RequireComparatorTuple: true,
 		Profile: &ParityPreflightProfile{
 			ID:                      "parity-preflight",
@@ -159,9 +145,7 @@ func TestRunParityHarnessPreflight(t *testing.T) {
 			TokenCounterMode:        "tokenizer_backed",
 			FixedSeed:               1337,
 		},
-	}); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	}), "expected no error")
 
 	bundle.TokenizerID = ""
 	err := RunParityHarnessPreflight(bundle, ParityPreflightOptions{
@@ -177,12 +161,8 @@ func TestRunParityHarnessPreflight(t *testing.T) {
 			FixedSeed:               1337,
 		},
 	})
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if !strings.Contains(err.Error(), "tokenizer_id") {
-		t.Fatalf("expected tokenizer_id error, got %q", err.Error())
-	}
+	require.Error(t, err, "expected error")
+	require.Contains(t, err.Error(), "tokenizer_id", "expected tokenizer_id error")
 }
 
 func TestRunParityHarnessPreflightProfileValidation(t *testing.T) {
@@ -348,6 +328,22 @@ func TestRunParityHarnessPreflightDeterministicScoringEnforcement(t *testing.T) 
 			ParityMode:              true,
 			DeterministicMode:       true,
 			EnhancementTiersEnabled: "none",
+			TokenCounterMode:        "heuristic",
+			FixedSeed:               1337,
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "token_counter_mode")
+
+	err = RunParityHarnessPreflight(bundle, ParityPreflightOptions{
+		RequireComparatorTuple: true,
+		Profile: &ParityPreflightProfile{
+			ID:                      "parity-preflight",
+			TokenBudget:             1024,
+			RepeatRuns:              2,
+			ParityMode:              true,
+			DeterministicMode:       true,
+			EnhancementTiersEnabled: "none",
 			TokenCounterMode:        "tokenizer_backed",
 			FixedSeed:               0,
 		},
@@ -365,17 +361,13 @@ func TestProtocolArtifact_LoadTokenizerSupport(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ts)
 
-	if err := ValidateProtocolArtifact(ts); err != nil {
-		t.Fatalf("expected artifact to be valid, got: %v", err)
-	}
+	require.NoError(t, ValidateProtocolArtifact(ts), "expected artifact to be valid")
 }
 
 func TestProtocolArtifact_ValidateTokenizerSupport(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateTokenizerSupportArtifact(); err != nil {
-		t.Fatalf("expected valid tokenizer support artifact: %v", err)
-	}
+	require.NoError(t, ValidateTokenizerSupportArtifact(), "expected valid tokenizer support artifact")
 }
 
 func TestProtocolArtifact_TokenizerSupportVersion(t *testing.T) {
@@ -385,9 +377,7 @@ func TestProtocolArtifact_TokenizerSupportVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1", ts.Version, "version must be 1")
 
-	if err := ts.ValidateVersion(); err != nil {
-		t.Fatalf("expected valid version: %v", err)
-	}
+	require.NoError(t, ts.ValidateVersion(), "expected valid version")
 }
 
 func TestProtocolArtifact_TokenizerSupportRequiredFields(t *testing.T) {
@@ -400,9 +390,7 @@ func TestProtocolArtifact_TokenizerSupportRequiredFields(t *testing.T) {
 	require.NotEmpty(t, ts.GeneratedAt, "generated_at is required")
 	require.Greater(t, len(ts.SupportedFamilies), 0, "supported_families must not be empty")
 
-	if err := ts.ValidateRequiredFields(); err != nil {
-		t.Fatalf("expected all required fields present: %v", err)
-	}
+	require.NoError(t, ts.ValidateRequiredFields(), "expected all required fields present")
 }
 
 func TestProtocolArtifact_TokenizerSupportInvalidVersion(t *testing.T) {
@@ -410,12 +398,8 @@ func TestProtocolArtifact_TokenizerSupportInvalidVersion(t *testing.T) {
 
 	ts := &TokenizerSupport{Version: "2"}
 	err := ts.ValidateVersion()
-	if err == nil {
-		t.Fatal("expected error for unsupported version")
-	}
-	if !strings.Contains(err.Error(), "unsupported version") {
-		t.Fatalf("expected version error, got: %v", err)
-	}
+	require.Error(t, err, "expected error for unsupported version")
+	require.Contains(t, err.Error(), "unsupported version", "expected version error")
 }
 
 func TestProtocolArtifact_TokenizerSupportMissingFields(t *testing.T) {
@@ -498,12 +482,8 @@ func TestProtocolArtifact_TokenizerSupportMissingFields(t *testing.T) {
 			tt.mutate(ts)
 
 			err := ts.ValidateRequiredFields()
-			if err == nil {
-				t.Fatal("expected error")
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("expected error to contain %q, got: %v", tt.want, err)
-			}
+			require.Error(t, err, "expected error")
+			require.Contains(t, err.Error(), tt.want, "expected error to contain %q", tt.want)
 		})
 	}
 }
@@ -515,17 +495,13 @@ func TestProtocolArtifact_LoadExplorerFamilyMatrix(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, efm)
 
-	if err := ValidateProtocolArtifact(efm); err != nil {
-		t.Fatalf("expected artifact to be valid, got: %v", err)
-	}
+	require.NoError(t, ValidateProtocolArtifact(efm), "expected artifact to be valid")
 }
 
 func TestProtocolArtifact_ValidateExplorerFamilyMatrix(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateExplorerFamilyMatrixArtifact(); err != nil {
-		t.Fatalf("expected valid explorer family matrix artifact: %v", err)
-	}
+	require.NoError(t, ValidateExplorerFamilyMatrixArtifact(), "expected valid explorer family matrix artifact")
 }
 
 func TestProtocolArtifact_ExplorerFamilyMatrixVersion(t *testing.T) {
@@ -535,9 +511,7 @@ func TestProtocolArtifact_ExplorerFamilyMatrixVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1", efm.Version, "version must be 1")
 
-	if err := efm.ValidateVersion(); err != nil {
-		t.Fatalf("expected valid version: %v", err)
-	}
+	require.NoError(t, efm.ValidateVersion(), "expected valid version")
 }
 
 func TestProtocolArtifact_ExplorerFamilyMatrixRequiredFields(t *testing.T) {
@@ -550,9 +524,7 @@ func TestProtocolArtifact_ExplorerFamilyMatrixRequiredFields(t *testing.T) {
 	require.NotEmpty(t, efm.GeneratedAt, "generated_at is required")
 	require.Greater(t, len(efm.Explorers), 0, "explorers must not be empty")
 
-	if err := efm.ValidateRequiredFields(); err != nil {
-		t.Fatalf("expected all required fields present: %v", err)
-	}
+	require.NoError(t, efm.ValidateRequiredFields(), "expected all required fields present")
 }
 
 func TestProtocolArtifact_ExplorerFamilyMatrixInvalidVersion(t *testing.T) {
@@ -560,12 +532,8 @@ func TestProtocolArtifact_ExplorerFamilyMatrixInvalidVersion(t *testing.T) {
 
 	efm := &ExplorerFamilyMatrix{Version: "2"}
 	err := efm.ValidateVersion()
-	if err == nil {
-		t.Fatal("expected error for unsupported version")
-	}
-	if !strings.Contains(err.Error(), "unsupported version") {
-		t.Fatalf("expected version error, got: %v", err)
-	}
+	require.Error(t, err, "expected error for unsupported version")
+	require.Contains(t, err.Error(), "unsupported version", "expected version error")
 }
 
 func TestProtocolArtifact_ExplorerFamilyMatrixMissingFields(t *testing.T) {
@@ -648,12 +616,8 @@ func TestProtocolArtifact_ExplorerFamilyMatrixMissingFields(t *testing.T) {
 			tt.mutate(efm)
 
 			err := efm.ValidateRequiredFields()
-			if err == nil {
-				t.Fatal("expected error")
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("expected error to contain %q, got: %v", tt.want, err)
-			}
+			require.Error(t, err, "expected error")
+			require.Contains(t, err.Error(), tt.want, "expected error to contain %q", tt.want)
 		})
 	}
 }
@@ -661,9 +625,7 @@ func TestProtocolArtifact_ExplorerFamilyMatrixMissingFields(t *testing.T) {
 func TestProtocolArtifact_ValidateAllProtocolArtifacts(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateAllProtocolArtifacts(); err != nil {
-		t.Fatalf("expected all protocol artifacts to be valid: %v", err)
-	}
+	require.NoError(t, ValidateAllProtocolArtifacts(), "expected all protocol artifacts to be valid")
 }
 
 func TestProtocolArtifact_TokenizerSupportMethods(t *testing.T) {

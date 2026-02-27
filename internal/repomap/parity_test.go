@@ -8,14 +8,13 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParityGateA1RankingConcordance(t *testing.T) {
 	t.Parallel()
 
-	if err := runGateA1RankingConcordance(t); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, runGateA1RankingConcordance(t))
 }
 
 func TestParityGateA1RankingConcordanceThresholdEnforcement(t *testing.T) {
@@ -26,92 +25,80 @@ func TestParityGateA1RankingConcordanceThresholdEnforcement(t *testing.T) {
 	crush := []string{"z.go", "y.go", "x.go", "w.go", "v.go"}
 
 	metrics, err := computeRankingConcordance(aider, crush, 30)
-	if err != nil {
-		t.Fatalf("compute ranking concordance: %v", err)
-	}
-	if err := enforceRankingThresholds(metrics); err == nil {
-		t.Fatalf("expected threshold enforcement error, got nil")
-	}
+	require.NoError(t, err, "compute ranking concordance")
+	require.Error(t, enforceRankingThresholds(metrics), "expected threshold enforcement error")
 }
 
 func TestParityGateA2StageRenderFidelity(t *testing.T) {
 	t.Parallel()
 
-	if err := runGateA2StageRenderFidelity(t); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, runGateA2StageRenderFidelity(t))
 }
 
 func TestParityGateA3TokenSafetyAccounting(t *testing.T) {
 	t.Parallel()
 
-	if err := runGateA3TokenSafetyAccounting(t); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, runGateA3TokenSafetyAccounting(t))
 }
 
 func TestParityGateA4RefreshSemantics(t *testing.T) {
 	t.Parallel()
 
-	if err := runGateA4RefreshSemantics(t); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, runGateA4RefreshSemantics(t))
 }
 
 func TestParityGateA5Determinism(t *testing.T) {
 	t.Parallel()
 
-	if err := runGateA5Determinism(t); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, runGateA5Determinism(t))
 }
 
 func TestParityGateA6ParityLeakageGuard(t *testing.T) {
 	t.Parallel()
 
-	if err := runGateA6ParityLeakageGuard(); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, runGateA6ParityLeakageGuard())
 }
 
 func TestParityGateAAggregate(t *testing.T) {
-	if err := runGateA1RankingConcordance(t); err != nil {
-		t.Fatalf("A1 ranking concordance failed: %v", err)
-	}
-	if err := runGateA2StageRenderFidelity(t); err != nil {
-		t.Fatalf("A2 stage/render fidelity failed: %v", err)
-	}
-	if err := runGateA3TokenSafetyAccounting(t); err != nil {
-		t.Fatalf("A3 token safety/accounting failed: %v", err)
-	}
-	if err := runGateA4RefreshSemantics(t); err != nil {
-		t.Fatalf("A4 refresh semantics failed: %v", err)
-	}
-	if err := runGateA5Determinism(t); err != nil {
-		t.Fatalf("A5 determinism failed: %v", err)
-	}
-	if err := runGateA6ParityLeakageGuard(); err != nil {
-		t.Fatalf("A6 parity leakage guard failed: %v", err)
-	}
+	require.NoError(t, runGateA1RankingConcordance(t), "A1 ranking concordance failed")
+	require.NoError(t, runGateA2StageRenderFidelity(t), "A2 stage/render fidelity failed")
+	require.NoError(t, runGateA3TokenSafetyAccounting(t), "A3 token safety/accounting failed")
+	require.NoError(t, runGateA4RefreshSemantics(t), "A4 refresh semantics failed")
+	require.NoError(t, runGateA5Determinism(t), "A5 determinism failed")
+	require.NoError(t, runGateA6ParityLeakageGuard(), "A6 parity leakage guard failed")
 }
 
 func runGateA1RankingConcordance(t *testing.T) error {
 	t.Helper()
 
-	fx, err := fixtureByName(t, "basic_go")
+	fixtures, err := LoadParityAiderFixtures(".")
 	if err != nil {
 		return err
 	}
-
-	aiderRanking := uniqueOrdered(fx.Repository.Files)
-	crushRanking := fixturePipelineRanking(fx)
-
-	metrics, err := computeRankingConcordance(aiderRanking, crushRanking, 30)
-	if err != nil {
-		return err
+	if len(fixtures) == 0 {
+		return fmt.Errorf("no parity fixtures found")
 	}
-	if err := enforceRankingThresholds(metrics); err != nil {
-		return fmt.Errorf("ranking concordance thresholds failed: %w", err)
+
+	for _, fx := range fixtures {
+		aiderRanking := uniqueOrdered(fx.Repository.Files)
+		if len(aiderRanking) == 0 {
+			return fmt.Errorf("fixture %q missing repository files ranking", fx.FixtureID)
+		}
+
+		for _, budget := range []int{1024, 2048, 4096} {
+			crushRanking, ok := parityRankingForBudget(fx, budget)
+			if !ok {
+				return fmt.Errorf("fixture %q missing parity profile for token budget %d", fx.FixtureID, budget)
+			}
+
+			metrics, err := computeRankingConcordance(aiderRanking, crushRanking, 30)
+			if err != nil {
+				return fmt.Errorf("fixture %q budget %d ranking concordance: %w", fx.FixtureID, budget, err)
+			}
+			if err := enforceRankingThresholds(metrics); err != nil {
+				return fmt.Errorf("fixture %q budget %d ranking concordance thresholds failed: %w", fx.FixtureID, budget, err)
+			}
+		}
 	}
 	return nil
 }
@@ -119,26 +106,24 @@ func runGateA1RankingConcordance(t *testing.T) error {
 func runGateA2StageRenderFidelity(t *testing.T) error {
 	t.Helper()
 
-	fx, err := fixtureByName(t, "basic_go")
-	if err != nil {
-		return err
-	}
+	fixtures := loadVerticalSliceFixtures(t)
+	for _, fx := range fixtures {
+		for _, profile := range fx.Profiles {
+			result := runVerticalSliceHarness(fx, profile)
+			assertStageAssemblyInvariants(t, fx, result)
 
-	for _, profile := range fx.Profiles {
-		result := runVerticalSliceHarness(fx, profile)
-		assertStageAssemblyInvariants(t, fx, result)
+			if fx.Assertions.RequireRenderedEntries && result.RenderedFileEntryCount <= 0 {
+				return fmt.Errorf("fixture %q profile %q: expected rendered entries > 0", fx.Name, profile.Name)
+			}
 
-		if fx.Assertions.RequireRenderedEntries && result.RenderedFileEntryCount <= 0 {
-			return fmt.Errorf("profile %q: expected rendered entries > 0", profile.Name)
-		}
+			lines := strings.Split(strings.TrimSpace(result.MapText), "\n")
+			if strings.TrimSpace(result.MapText) != "" && len(lines) != len(result.Entries) {
+				return fmt.Errorf("fixture %q profile %q: render fidelity mismatch lines=%d entries=%d", fx.Name, profile.Name, len(lines), len(result.Entries))
+			}
 
-		lines := strings.Split(strings.TrimSpace(result.MapText), "\n")
-		if strings.TrimSpace(result.MapText) != "" && len(lines) != len(result.Entries) {
-			return fmt.Errorf("profile %q: render fidelity mismatch lines=%d entries=%d", profile.Name, len(lines), len(result.Entries))
-		}
-
-		if len(fx.Assertions.RequireTrimOrder) > 0 {
-			assertTrimOrderInvariant(t, fx.Assertions.RequireTrimOrder, result.TrimmedStages)
+			if len(fx.Assertions.RequireTrimOrder) > 0 {
+				assertTrimOrderInvariant(t, fx.Assertions.RequireTrimOrder, result.TrimmedStages)
+			}
 		}
 	}
 
@@ -148,37 +133,23 @@ func runGateA2StageRenderFidelity(t *testing.T) error {
 func runGateA3TokenSafetyAccounting(t *testing.T) error {
 	t.Helper()
 
-	fx, err := fixtureByName(t, "basic_go")
-	if err != nil {
-		return err
-	}
-
-	var parityProfile *fixtureProfile
-	var enhancementProfile *fixtureProfile
-	for i := range fx.Profiles {
-		p := fx.Profiles[i]
-		if p.ParityMode && parityProfile == nil {
-			parityProfile = &p
+	fixtures := loadVerticalSliceFixtures(t)
+	for _, fx := range fixtures {
+		for _, profile := range fx.Profiles {
+			result := runVerticalSliceHarness(fx, profile)
+			if profile.ParityMode {
+				if !result.ComparatorAccepted || result.ComparatorDelta > 0.15 {
+					return fmt.Errorf("fixture %q profile %q parity comparator acceptance failed: accepted=%v delta=%.4f", fx.Name, profile.Name, result.ComparatorAccepted, result.ComparatorDelta)
+				}
+				if result.ParityTokens <= 0 {
+					return fmt.Errorf("fixture %q profile %q parity token accounting failed: parity_tokens=%.2f", fx.Name, profile.Name, result.ParityTokens)
+				}
+			} else {
+				if result.SafetyTokens > profile.TokenBudget {
+					return fmt.Errorf("fixture %q profile %q enhancement safety budget violation: safety=%d budget=%d", fx.Name, profile.Name, result.SafetyTokens, profile.TokenBudget)
+				}
+			}
 		}
-		if !p.ParityMode && enhancementProfile == nil {
-			enhancementProfile = &p
-		}
-	}
-	if parityProfile == nil || enhancementProfile == nil {
-		return fmt.Errorf("fixture %q must include both parity and enhancement profiles", fx.Name)
-	}
-
-	parityResult := runVerticalSliceHarness(fx, *parityProfile)
-	if !parityResult.ComparatorAccepted || parityResult.ComparatorDelta > 0.15 {
-		return fmt.Errorf("parity comparator acceptance failed: accepted=%v delta=%.4f", parityResult.ComparatorAccepted, parityResult.ComparatorDelta)
-	}
-	if parityResult.ParityTokens <= 0 {
-		return fmt.Errorf("parity token accounting failed: parity_tokens=%.2f", parityResult.ParityTokens)
-	}
-
-	enhancementResult := runVerticalSliceHarness(fx, *enhancementProfile)
-	if enhancementResult.SafetyTokens > enhancementProfile.TokenBudget {
-		return fmt.Errorf("enhancement safety budget violation: safety=%d budget=%d", enhancementResult.SafetyTokens, enhancementProfile.TokenBudget)
 	}
 
 	bundle := validParityGateBundle()
@@ -209,11 +180,13 @@ func runGateA4RefreshSemantics(t *testing.T) error {
 	t.Helper()
 
 	opts := GenerateOpts{
-		SessionID:       "gate-a4",
-		ChatFiles:       []string{"a.go"},
-		MentionedFnames: []string{"b.go"},
-		MentionedIdents: []string{"Foo"},
-		TokenBudget:     100,
+		SessionID:            "gate-a4",
+		ChatFiles:            []string{"a.go"},
+		MentionedFnames:      []string{"b.go"},
+		MentionedIdents:      []string{"Foo"},
+		TokenBudget:          100,
+		ParityMode:           true,
+		PromptCachingEnabled: true,
 	}
 
 	modes := []string{"auto", "files", "manual", "always"}
@@ -221,7 +194,12 @@ func runGateA4RefreshSemantics(t *testing.T) error {
 		svc := NewService(&config.Config{Options: &config.Options{RepoMap: &config.RepoMapOptions{RefreshMode: mode}}}, nil, nil, ".", context.Background())
 		defer svc.Close()
 
-		cacheKey := buildRenderCacheKey(mode, opts)
+		effective := svc.effectiveRefreshMode(opts)
+		if mode == "auto" && effective != "files" {
+			return fmt.Errorf("mode %q parity prompt-caching coercion failed: expected files, got %q", mode, effective)
+		}
+
+		cacheKey := buildRenderCacheKey(effective, opts)
 		if cacheKey != "" {
 			svc.renderCaches.GetOrCreate(opts.SessionID).Set(cacheKey, "cached-map", 11)
 		}
@@ -231,14 +209,14 @@ func runGateA4RefreshSemantics(t *testing.T) error {
 			return fmt.Errorf("mode %q cold generate: %w", mode, err)
 		}
 
-		switch mode {
-		case "auto", "files":
+		switch effective {
+		case "files":
 			if coldMap != "cached-map" || coldTok != 11 {
-				return fmt.Errorf("mode %q: expected render-cache fallback on cold start", mode)
+				return fmt.Errorf("mode %q (effective %q): expected render-cache fallback on cold start", mode, effective)
 			}
 		case "manual", "always":
 			if coldMap != "" || coldTok != 0 {
-				return fmt.Errorf("mode %q: expected cold start empty map/tokens", mode)
+				return fmt.Errorf("mode %q (effective %q): expected cold start empty map/tokens", mode, effective)
 			}
 		}
 
@@ -290,7 +268,7 @@ func runGateA5Determinism(t *testing.T) error {
 	for _, profile := range fx.Profiles {
 		runs := max(profile.RepeatRuns, 10)
 		seen := make(map[string]struct{}, runs)
-		for i := 0; i < runs; i++ {
+		for range runs {
 			result := runVerticalSliceHarness(fx, profile)
 			h := determinismHashForProfile(profile, result)
 			seen[h] = struct{}{}
@@ -338,6 +316,13 @@ func runGateA6ParityLeakageGuard() error {
 			name: "reject invalid token counter mode",
 			mutate: func(p *ParityPreflightProfile) {
 				p.TokenCounterMode = "experimental"
+			},
+			expects: "token_counter_mode",
+		},
+		{
+			name: "reject heuristic token counter mode in parity",
+			mutate: func(p *ParityPreflightProfile) {
+				p.TokenCounterMode = "heuristic"
 			},
 			expects: "token_counter_mode",
 		},
@@ -502,6 +487,23 @@ func fixturePipelineRanking(fx verticalSliceFixture) []string {
 	ordered = append(ordered, fx.Pipeline.Stage2...)
 	ordered = append(ordered, fx.Pipeline.Stage3...)
 	return uniqueOrdered(ordered)
+}
+
+func parityRankingForBudget(fx ParityAiderFixture, tokenBudget int) ([]string, bool) {
+	for _, profile := range fx.Profiles {
+		if !profile.ParityMode {
+			continue
+		}
+		if profile.TokenBudget != tokenBudget {
+			continue
+		}
+		ranking := uniqueOrdered(profile.ExpectedResults.TopFiles)
+		if len(ranking) == 0 {
+			return nil, false
+		}
+		return ranking, true
+	}
+	return nil, false
 }
 
 func uniqueOrdered(values []string) []string {

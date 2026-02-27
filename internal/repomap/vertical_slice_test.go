@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type verticalSliceFixture struct {
@@ -154,16 +156,14 @@ func TestVerticalSliceHarnessProfiles(t *testing.T) {
 					}
 
 					for i := 1; i < len(hashes); i++ {
-						if hashes[i] != hashes[0] {
-							t.Fatalf("determinism failure for profile=%q fixture=%q: run0=%s run%d=%s", profile.Name, fx.Name, hashes[0], i, hashes[i])
-						}
+						require.Equal(t, hashes[0], hashes[i], "determinism failure for profile=%q fixture=%q: run0=%s run%d=%s", profile.Name, fx.Name, hashes[0], i, hashes[i])
 					}
 
 					if profile.ExpectedRawHash != "" && results[0].RawHash != profile.ExpectedRawHash {
-						t.Fatalf("raw hash mismatch for profile=%q fixture=%q: want=%s got=%s", profile.Name, fx.Name, profile.ExpectedRawHash, results[0].RawHash)
+						require.Equal(t, profile.ExpectedRawHash, results[0].RawHash, "raw hash mismatch for profile=%q fixture=%q: want=%s got=%s", profile.Name, fx.Name, profile.ExpectedRawHash, results[0].RawHash)
 					}
 					if profile.ExpectedNormalizedHash != "" && results[0].NormalizedHash != profile.ExpectedNormalizedHash {
-						t.Fatalf("normalized hash mismatch for profile=%q fixture=%q: want=%s got=%s", profile.Name, fx.Name, profile.ExpectedNormalizedHash, results[0].NormalizedHash)
+						require.Equal(t, profile.ExpectedNormalizedHash, results[0].NormalizedHash, "normalized hash mismatch for profile=%q fixture=%q: want=%s got=%s", profile.Name, fx.Name, profile.ExpectedNormalizedHash, results[0].NormalizedHash)
 					}
 				})
 			}
@@ -174,11 +174,11 @@ func TestVerticalSliceHarnessProfiles(t *testing.T) {
 func assertVerticalSliceResult(t *testing.T, fx verticalSliceFixture, profile fixtureProfile, result verticalSliceResult, run int) {
 	t.Helper()
 
-	if fx.Assertions.RequireNonEmptyMap && strings.TrimSpace(result.MapText) == "" {
-		t.Fatalf("run=%d profile=%q fixture=%q: expected non-empty map", run, profile.Name, fx.Name)
+	if fx.Assertions.RequireNonEmptyMap {
+		require.NotEmpty(t, strings.TrimSpace(result.MapText), "run=%d profile=%q fixture=%q: expected non-empty map", run, profile.Name, fx.Name)
 	}
-	if fx.Assertions.RequireRenderedEntries && result.RenderedFileEntryCount == 0 {
-		t.Fatalf("run=%d profile=%q fixture=%q: expected at least one rendered file entry", run, profile.Name, fx.Name)
+	if fx.Assertions.RequireRenderedEntries {
+		require.Greater(t, result.RenderedFileEntryCount, 0, "run=%d profile=%q fixture=%q: expected at least one rendered file entry", run, profile.Name, fx.Name)
 	}
 	if fx.Assertions.RequireStageInvariants {
 		assertStageAssemblyInvariants(t, fx, result)
@@ -188,29 +188,15 @@ func assertVerticalSliceResult(t *testing.T, fx verticalSliceFixture, profile fi
 	}
 
 	if profile.ParityMode {
-		if !profile.DeterministicMode {
-			t.Fatalf("run=%d profile=%q fixture=%q: parity mode requires deterministic_mode=true", run, profile.Name, fx.Name)
-		}
-		if strings.ToLower(strings.TrimSpace(profile.EnhancementTiersEnabled)) != "none" {
-			t.Fatalf("run=%d profile=%q fixture=%q: parity mode requires enhancement_tiers_enabled=none", run, profile.Name, fx.Name)
-		}
+		require.True(t, profile.DeterministicMode, "run=%d profile=%q fixture=%q: parity mode requires deterministic_mode=true", run, profile.Name, fx.Name)
+		require.Equal(t, "none", strings.ToLower(strings.TrimSpace(profile.EnhancementTiersEnabled)), "run=%d profile=%q fixture=%q: parity mode requires enhancement_tiers_enabled=none", run, profile.Name, fx.Name)
 		counterMode := strings.ToLower(strings.TrimSpace(profile.TokenCounterMode))
-		if counterMode != "tokenizer_backed" && counterMode != "heuristic" {
-			t.Fatalf("run=%d profile=%q fixture=%q: parity mode requires token_counter_mode tokenizer_backed or heuristic", run, profile.Name, fx.Name)
-		}
-		if profile.FixedSeed <= 0 {
-			t.Fatalf("run=%d profile=%q fixture=%q: parity mode requires fixed_seed > 0", run, profile.Name, fx.Name)
-		}
-		if result.ParityTokens <= 0 {
-			t.Fatalf("run=%d profile=%q fixture=%q: expected parity tokens > 0", run, profile.Name, fx.Name)
-		}
-		if !result.ComparatorAccepted {
-			t.Fatalf("run=%d profile=%q fixture=%q: expected comparator acceptance in parity mode", run, profile.Name, fx.Name)
-		}
+		require.Equal(t, "tokenizer_backed", counterMode, "run=%d profile=%q fixture=%q: parity mode requires token_counter_mode tokenizer_backed", run, profile.Name, fx.Name)
+		require.Greater(t, profile.FixedSeed, int64(0), "run=%d profile=%q fixture=%q: parity mode requires fixed_seed > 0", run, profile.Name, fx.Name)
+		require.Greater(t, result.ParityTokens, float64(0), "run=%d profile=%q fixture=%q: expected parity tokens > 0", run, profile.Name, fx.Name)
+		require.True(t, result.ComparatorAccepted, "run=%d profile=%q fixture=%q: expected comparator acceptance in parity mode", run, profile.Name, fx.Name)
 	} else {
-		if result.SafetyTokens > profile.TokenBudget {
-			t.Fatalf("run=%d profile=%q fixture=%q: safety token violation: safety=%d budget=%d", run, profile.Name, fx.Name, result.SafetyTokens, profile.TokenBudget)
-		}
+		require.LessOrEqual(t, result.SafetyTokens, profile.TokenBudget, "run=%d profile=%q fixture=%q: safety token violation: safety=%d budget=%d", run, profile.Name, fx.Name, result.SafetyTokens, profile.TokenBudget)
 	}
 }
 
@@ -233,23 +219,16 @@ func assertStageAssemblyInvariants(t *testing.T, fx verticalSliceFixture, result
 		}
 
 		// Verify stage0 files come first (non-decreasing order)
-		if !isNonDecreasing(stageOrder) {
-			t.Fatalf("fixture=%q: rendered stage order must remain 0->1->2->3, got=%v", fx.Name, stageOrder)
-		}
+		require.True(t, isNonDecreasing(stageOrder), "fixture=%q: rendered stage order must remain 0->1->2->3, got=%v", fx.Name, stageOrder)
 
 		// Verify all fixture stage0 files are in result
 		for _, s0File := range stage0Files {
-			found := slices.Contains(resultStage0Files, s0File)
-			if !found {
-				t.Fatalf("fixture=%q: stage0 file %q from fixture not found in rendered result", fx.Name, s0File)
-			}
+			require.True(t, slices.Contains(resultStage0Files, s0File), "fixture=%q: stage0 file %q from fixture not found in rendered result", fx.Name, s0File)
 		}
 	} else if len(stage0Files) == 0 {
 		// When fixture has no stage0, verify result has none
 		for _, e := range result.Entries {
-			if e.Stage == 0 {
-				t.Fatalf("fixture=%q: result contains stage0 entries but fixture has none (entry: %q)", fx.Name, e.File)
-			}
+			require.False(t, e.Stage == 0, "fixture=%q: result contains stage0 entries but fixture has none (entry: %q)", fx.Name, e.File)
 		}
 
 		// Still verify non-decreasing stage order (1->2->3)
@@ -257,29 +236,27 @@ func assertStageAssemblyInvariants(t *testing.T, fx verticalSliceFixture, result
 		for _, e := range result.Entries {
 			stageOrder = append(stageOrder, e.Stage)
 		}
-		if !isNonDecreasing(stageOrder) {
-			t.Fatalf("fixture=%q: rendered stage order must remain 1->2->3 (no stage0), got=%v", fx.Name, stageOrder)
-		}
+		require.True(t, isNonDecreasing(stageOrder), "fixture=%q: rendered stage order must remain 1->2->3 (no stage0), got=%v", fx.Name, stageOrder)
 	}
 
 	// Stage1 ranked defs invariant: Verify stage1 entries (if any) have identifiers
 	for i, e := range result.Entries {
-		if e.Stage == 1 && e.Ident == "" {
-			t.Fatalf("fixture=%q: stage1 entry at position %d with file %q must have identifier (ident)", fx.Name, i, e.File)
+		if e.Stage == 1 {
+			require.NotEmpty(t, e.Ident, "fixture=%q: stage1 entry at position %d with file %q must have identifier (ident)", fx.Name, i, e.File)
 		}
 	}
 
 	// Stage2 graph nodes invariant: Stage2 entries should be file references only
 	for i, e := range result.Entries {
-		if e.Stage == 2 && e.Ident != "" {
-			t.Fatalf("fixture=%q: stage2 entry at position %d should not have identifier (got: %q)", fx.Name, i, e.Ident)
+		if e.Stage == 2 {
+			require.Empty(t, e.Ident, "fixture=%q: stage2 entry at position %d should not have identifier (got: %q)", fx.Name, i, e.Ident)
 		}
 	}
 
 	// Stage3 remaining files invariant: Stage3 entries should be file references only
 	for i, e := range result.Entries {
-		if e.Stage == 3 && e.Ident != "" {
-			t.Fatalf("fixture=%q: stage3 entry at position %d should not have identifier (got: %q)", fx.Name, i, e.Ident)
+		if e.Stage == 3 {
+			require.Empty(t, e.Ident, "fixture=%q: stage3 entry at position %d should not have identifier (got: %q)", fx.Name, i, e.Ident)
 		}
 	}
 
@@ -288,9 +265,7 @@ func assertStageAssemblyInvariants(t *testing.T, fx verticalSliceFixture, result
 	// This is already covered by non-decreasing check, but we can be more explicit
 	for i := 1; i < len(result.Entries); i++ {
 		prev, curr := result.Entries[i-1].Stage, result.Entries[i].Stage
-		if curr < prev {
-			t.Fatalf("fixture=%q: stage assembly violation at position %d: previous=%d current=%d", fx.Name, i, prev, curr)
-		}
+		require.GreaterOrEqual(t, curr, prev, "fixture=%q: stage assembly violation at position %d: previous=%d current=%d", fx.Name, i, prev, curr)
 	}
 }
 
@@ -307,9 +282,7 @@ func assertTrimOrderInvariant(t *testing.T, requiredOrder []int, observed []int)
 	for i := 1; i < len(observed); i++ {
 		prev := observed[i-1]
 		curr := observed[i]
-		if pos[curr] < pos[prev] {
-			t.Fatalf("trim order violation: required=%v observed=%v", requiredOrder, observed)
-		}
+		require.GreaterOrEqual(t, pos[curr], pos[prev], "trim order violation: required=%v observed=%v", requiredOrder, observed)
 	}
 }
 
@@ -430,30 +403,19 @@ func loadVerticalSliceFixtures(t *testing.T) []verticalSliceFixture {
 	t.Helper()
 
 	paths, err := filepath.Glob(filepath.Join("testdata", "vertical_slice", "*.json"))
-	if err != nil {
-		t.Fatalf("glob fixtures: %v", err)
-	}
-	if len(paths) == 0 {
-		t.Fatalf("no vertical slice fixtures found")
-	}
+	require.NoError(t, err, "glob fixtures: %v", err)
+	require.NotEmpty(t, paths, "no vertical slice fixtures found")
 	sort.Strings(paths)
 
 	fixtures := make([]verticalSliceFixture, 0, len(paths))
 	for _, path := range paths {
 		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read fixture %q: %v", path, readErr)
-		}
+		require.NoError(t, readErr, "read fixture %q: %v", path, readErr)
+
 		var fx verticalSliceFixture
-		if unmarshalErr := json.Unmarshal(data, &fx); unmarshalErr != nil {
-			t.Fatalf("unmarshal fixture %q: %v", path, unmarshalErr)
-		}
-		if strings.TrimSpace(fx.Name) == "" {
-			t.Fatalf("fixture %q missing name", path)
-		}
-		if len(fx.Profiles) == 0 {
-			t.Fatalf("fixture %q missing profiles", path)
-		}
+		require.NoError(t, json.Unmarshal(data, &fx), "unmarshal fixture %q: %v", path)
+		require.NotEmpty(t, strings.TrimSpace(fx.Name), "fixture %q missing name", path)
+		require.NotEmpty(t, fx.Profiles, "fixture %q missing profiles", path)
 		fixtures = append(fixtures, fx)
 	}
 	return fixtures

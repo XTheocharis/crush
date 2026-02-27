@@ -14,6 +14,9 @@ const (
 
 	// ExplorerFamilyMatrixPath is the path to the explorer family matrix artifact.
 	ExplorerFamilyMatrixPath = "testdata/parity_volt/explorer_family_matrix.v1.json"
+
+	// B1ScoringProtocolPath is the path to the B1 scoring protocol artifact.
+	B1ScoringProtocolPath = "testdata/parity_volt/b1_scoring_protocol.v1.json"
 )
 
 // TokenizerFamily defines a model family and its tokenizer configuration.
@@ -55,6 +58,32 @@ type ExplorerFamilyMatrix struct {
 type ProtocolArtifact interface {
 	ValidateVersion() error
 	ValidateRequiredFields() error
+}
+
+// B1ThresholdSet defines threshold buckets for B1 scoring.
+type B1ThresholdSet struct {
+	SymbolRecall           float64 `json:"symbol_recall"`
+	SymbolPrecision        float64 `json:"symbol_precision"`
+	ImportCategoryAccuracy float64 `json:"import_category_accuracy"`
+	VisibilityAccuracy     float64 `json:"visibility_accuracy"`
+}
+
+// B1ProtocolThresholds defines micro/macro/per-language threshold groups.
+type B1ProtocolThresholds struct {
+	Micro            B1ThresholdSet `json:"micro"`
+	Macro            B1ThresholdSet `json:"macro"`
+	PerLanguageFloor B1ThresholdSet `json:"per_language_floor"`
+}
+
+// B1ScoringProtocol is the versioned Gate-B1 scoring protocol artifact.
+type B1ScoringProtocol struct {
+	Version                string               `json:"version"`
+	Description            string               `json:"description"`
+	GeneratedAt            string               `json:"generated_at"`
+	MinLanguageSamples     int                  `json:"min_language_samples"`
+	VisibilityCapabilities map[string]string    `json:"visibility_capabilities"`
+	ParityThresholds       B1ProtocolThresholds `json:"parity_thresholds"`
+	EnhancementThresholds  B1ProtocolThresholds `json:"enhancement_thresholds"`
 }
 
 // ValidateVersion ensures the artifact has a valid version field.
@@ -135,6 +164,76 @@ func (efm *ExplorerFamilyMatrix) ValidateRequiredFields() error {
 	return nil
 }
 
+// ValidateVersion ensures the B1 scoring protocol has a valid version field.
+func (b1 *B1ScoringProtocol) ValidateVersion() error {
+	if b1.Version == "" {
+		return fmt.Errorf("b1 scoring protocol: missing version field")
+	}
+	if !strings.HasPrefix(b1.Version, "1") {
+		return fmt.Errorf("b1 scoring protocol: unsupported version %s, expected version 1", b1.Version)
+	}
+	return nil
+}
+
+func validateB1ThresholdSet(scope string, set B1ThresholdSet) error {
+	fields := map[string]float64{
+		"symbol_recall":            set.SymbolRecall,
+		"symbol_precision":         set.SymbolPrecision,
+		"import_category_accuracy": set.ImportCategoryAccuracy,
+		"visibility_accuracy":      set.VisibilityAccuracy,
+	}
+	for name, val := range fields {
+		if val <= 0 || val > 1 {
+			return fmt.Errorf("b1 scoring protocol: %s.%s must be in (0,1], got %v", scope, name, val)
+		}
+	}
+	return nil
+}
+
+// ValidateRequiredFields ensures the B1 scoring protocol has all required fields.
+func (b1 *B1ScoringProtocol) ValidateRequiredFields() error {
+	if err := b1.ValidateVersion(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(b1.Description) == "" {
+		return fmt.Errorf("b1 scoring protocol: missing description field")
+	}
+	if strings.TrimSpace(b1.GeneratedAt) == "" {
+		return fmt.Errorf("b1 scoring protocol: missing generated_at field")
+	}
+	if b1.MinLanguageSamples <= 0 {
+		return fmt.Errorf("b1 scoring protocol: min_language_samples must be positive")
+	}
+	if len(b1.VisibilityCapabilities) == 0 {
+		return fmt.Errorf("b1 scoring protocol: visibility_capabilities must not be empty")
+	}
+	for lang, cap := range b1.VisibilityCapabilities {
+		norm := strings.ToLower(strings.TrimSpace(cap))
+		if norm != "full" && norm != "export-only" && norm != "none" {
+			return fmt.Errorf("b1 scoring protocol: visibility_capabilities[%s] invalid capability %q", lang, cap)
+		}
+	}
+	if err := validateB1ThresholdSet("parity_thresholds.micro", b1.ParityThresholds.Micro); err != nil {
+		return err
+	}
+	if err := validateB1ThresholdSet("parity_thresholds.macro", b1.ParityThresholds.Macro); err != nil {
+		return err
+	}
+	if err := validateB1ThresholdSet("parity_thresholds.per_language_floor", b1.ParityThresholds.PerLanguageFloor); err != nil {
+		return err
+	}
+	if err := validateB1ThresholdSet("enhancement_thresholds.micro", b1.EnhancementThresholds.Micro); err != nil {
+		return err
+	}
+	if err := validateB1ThresholdSet("enhancement_thresholds.macro", b1.EnhancementThresholds.Macro); err != nil {
+		return err
+	}
+	if err := validateB1ThresholdSet("enhancement_thresholds.per_language_floor", b1.EnhancementThresholds.PerLanguageFloor); err != nil {
+		return err
+	}
+	return nil
+}
+
 // LoadTokenizerSupport loads the tokenizer support artifact from disk.
 func LoadTokenizerSupport() (*TokenizerSupport, error) {
 	content, err := os.ReadFile(TokenizerSupportPath)
@@ -163,6 +262,21 @@ func LoadExplorerFamilyMatrix() (*ExplorerFamilyMatrix, error) {
 	}
 
 	return &efm, nil
+}
+
+// LoadB1ScoringProtocol loads the B1 scoring protocol artifact from disk.
+func LoadB1ScoringProtocol() (*B1ScoringProtocol, error) {
+	content, err := os.ReadFile(B1ScoringProtocolPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read b1 scoring protocol artifact: %w", err)
+	}
+
+	var proto B1ScoringProtocol
+	if err := json.Unmarshal(content, &proto); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal b1 scoring protocol artifact: %w", err)
+	}
+
+	return &proto, nil
 }
 
 // ValidateProtocolArtifact validates any protocol artifact.
@@ -194,6 +308,15 @@ func ValidateExplorerFamilyMatrixArtifact() error {
 	return efm.ValidateRequiredFields()
 }
 
+// ValidateB1ScoringProtocolArtifact validates the B1 scoring protocol artifact.
+func ValidateB1ScoringProtocolArtifact() error {
+	proto, err := LoadB1ScoringProtocol()
+	if err != nil {
+		return fmt.Errorf("failed to load b1 scoring protocol: %w", err)
+	}
+	return proto.ValidateRequiredFields()
+}
+
 // ValidateAllProtocolArtifacts validates all protocol artifacts in the parity testdata.
 func ValidateAllProtocolArtifacts() error {
 	if err := ValidateTokenizerSupportArtifact(); err != nil {
@@ -201,6 +324,9 @@ func ValidateAllProtocolArtifacts() error {
 	}
 	if err := ValidateExplorerFamilyMatrixArtifact(); err != nil {
 		return fmt.Errorf("explorer family matrix validation failed: %w", err)
+	}
+	if err := ValidateB1ScoringProtocolArtifact(); err != nil {
+		return fmt.Errorf("b1 scoring protocol validation failed: %w", err)
 	}
 	return nil
 }

@@ -72,6 +72,7 @@ type ParityProfile struct {
 type Expectations struct {
 	RawHash        string     `json:"raw_hash,omitempty"`
 	NormalizedHash string     `json:"normalized_hash,omitempty"`
+	TopFiles       []string   `json:"top_files,omitempty"`
 	StageCount     StageCount `json:"stage_count"`
 }
 
@@ -105,9 +106,9 @@ func LoadParityAiderFixtures(basePath string) ([]ParityAiderFixture, error) {
 	fixtures := make([]ParityAiderFixture, 0, len(paths))
 
 	for _, path := range paths {
-		// Skip metadata files that are not fixtures (e.g., comparator_config.v1.json, tokenizer_support.v1.json)
+		// Only fixture payloads participate in parity fixture loading.
 		basename := filepath.Base(path)
-		if strings.HasSuffix(basename, ".v1.json") || strings.HasSuffix(basename, ".v2.json") {
+		if !strings.HasSuffix(basename, "_fixture.json") {
 			continue
 		}
 
@@ -163,8 +164,8 @@ func (fx ParityAiderFixture) Validate(requireComparatorTuple bool) error {
 				return fmt.Errorf("profile %q enhancement_tiers_enabled must be none in parity mode", profile.ProfileID)
 			}
 			counterMode := strings.ToLower(strings.TrimSpace(profile.TokenCounterMode))
-			if counterMode != "tokenizer_backed" && counterMode != "heuristic" {
-				return fmt.Errorf("profile %q token_counter_mode must be tokenizer_backed or heuristic", profile.ProfileID)
+			if counterMode != "tokenizer_backed" {
+				return fmt.Errorf("profile %q token_counter_mode must be tokenizer_backed", profile.ProfileID)
 			}
 			if profile.FixedSeed <= 0 {
 				return fmt.Errorf("profile %q fixed_seed must be positive in parity mode", profile.ProfileID)
@@ -186,6 +187,11 @@ func ComputeFixturesSHA256(dirPath string) (string, error) {
 
 	combined := strings.Builder{}
 	for _, path := range paths {
+		basename := filepath.Base(path)
+		if strings.HasPrefix(basename, "gate_a_evidence.") {
+			continue
+		}
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return "", fmt.Errorf("read fixture %q: %w", path, err)
