@@ -498,10 +498,50 @@ func CheckDrift(registry *Registry, profile OutputProfile) (*DriftReport, error)
 }
 
 // GenerateRuntimeInventory creates a new runtime inventory artifact.
-func GenerateRuntimeInventory(_ *Registry, profile OutputProfile) (*RuntimeInventory, error) {
+func GenerateRuntimeInventory(registry *Registry, profile OutputProfile) (*RuntimeInventory, error) {
+	if registry == nil {
+		return nil, fmt.Errorf("registry is nil")
+	}
+
 	resolvedProfile := strings.ToLower(strings.TrimSpace(string(profile)))
 	if resolvedProfile == "" {
 		resolvedProfile = string(OutputProfileEnhancement)
+	}
+
+	discovered := DiscoverRuntimePaths(registry, OutputProfile(resolvedProfile))
+	requiredKinds := []string{
+		"native_binary",
+		"data_format_native",
+		"code_format_native",
+		"shell_format_native",
+		"text_format_generic",
+		"fallback_final",
+	}
+	if registry.tsParser != nil {
+		requiredKinds = append(requiredKinds, "code_format_enhanced")
+	}
+	kindSeen := make(map[string]struct{}, len(discovered))
+	textExplorer := ""
+	fallbackExplorer := ""
+	for _, d := range discovered {
+		kindSeen[d.Kind] = struct{}{}
+		if d.Kind == "text_format_generic" && textExplorer == "" {
+			textExplorer = strings.TrimSpace(d.ExplorerName)
+		}
+		if d.Kind == "fallback_final" && fallbackExplorer == "" {
+			fallbackExplorer = strings.TrimSpace(d.ExplorerName)
+		}
+	}
+	for _, kind := range requiredKinds {
+		if _, ok := kindSeen[kind]; !ok {
+			return nil, fmt.Errorf("runtime discovery missing required kind %s", kind)
+		}
+	}
+	if textExplorer == "" {
+		return nil, fmt.Errorf("runtime discovery missing text_format_generic explorer")
+	}
+	if fallbackExplorer == "" {
+		return nil, fmt.Errorf("runtime discovery missing fallback_final explorer")
 	}
 
 	paths := []RuntimeIngestionPath{
@@ -514,6 +554,8 @@ func GenerateRuntimeInventory(_ *Registry, profile OutputProfile) (*RuntimeInven
 			PersistsExplorationParity:   false,
 			PersistsExplorationEnhanced: true,
 			ConfigGates:                 []string{"DisableLargeToolOutput", "LargeToolOutputTokenThreshold"},
+			Explorer:                    textExplorer,
+			Description:                 "Large tool output interception and storage path",
 		},
 		{
 			ID:                          "lcm.describe.readback",
@@ -524,6 +566,8 @@ func GenerateRuntimeInventory(_ *Registry, profile OutputProfile) (*RuntimeInven
 			PersistsExplorationParity:   false,
 			PersistsExplorationEnhanced: true,
 			ConfigGates:                 []string{"session_lineage_scope"},
+			Explorer:                    fallbackExplorer,
+			Description:                 "Readback path for large file summaries",
 		},
 		{
 			ID:                          "lcm.expand.readback",
@@ -534,6 +578,8 @@ func GenerateRuntimeInventory(_ *Registry, profile OutputProfile) (*RuntimeInven
 			PersistsExplorationParity:   false,
 			PersistsExplorationEnhanced: true,
 			ConfigGates:                 []string{"session_lineage_scope", "sub_agent_only"},
+			Explorer:                    fallbackExplorer,
+			Description:                 "Readback path for expanded large file content",
 		},
 	}
 

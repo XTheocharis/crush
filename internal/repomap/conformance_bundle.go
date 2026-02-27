@@ -167,8 +167,10 @@ func validateGateEvidenceFile(path, runID string, mustPass bool) error {
 		return fmt.Errorf("read evidence file: %w", err)
 	}
 	var payload struct {
-		RunID  string `json:"run_id"`
-		Passed bool   `json:"passed"`
+		RunID        string `json:"run_id"`
+		Command      string `json:"command"`
+		Passed       bool   `json:"passed"`
+		OutputSHA256 string `json:"output_sha256"`
 	}
 	if err := json.Unmarshal(content, &payload); err != nil {
 		return fmt.Errorf("unmarshal evidence file: %w", err)
@@ -178,6 +180,21 @@ func validateGateEvidenceFile(path, runID string, mustPass bool) error {
 	}
 	if strings.TrimSpace(payload.RunID) != strings.TrimSpace(runID) {
 		return fmt.Errorf("run_id mismatch")
+	}
+	expectedCommand := ""
+	if strings.Contains(strings.ToLower(filepath.Base(path)), "gate_a_evidence") {
+		expectedCommand = "go test -run TestParityGateAAggregate -count=1 ."
+	} else if strings.Contains(strings.ToLower(filepath.Base(path)), "gate_b_evidence") {
+		expectedCommand = "go test -run TestParityGateBAggregate -count=1 ."
+	}
+	if strings.TrimSpace(expectedCommand) != "" && strings.TrimSpace(payload.Command) != expectedCommand {
+		return fmt.Errorf("command mismatch")
+	}
+	if strings.TrimSpace(payload.OutputSHA256) == "" {
+		return fmt.Errorf("missing output_sha256")
+	}
+	if !sha256HexPattern.MatchString(strings.TrimSpace(payload.OutputSHA256)) {
+		return fmt.Errorf("invalid output_sha256")
 	}
 	if mustPass && !payload.Passed {
 		return fmt.Errorf("gate evidence reports failed execution")

@@ -594,44 +594,84 @@ func inventoryToDiscovered(inventory *RuntimeInventory) []DiscoveredPath {
 }
 
 func validateRuntimePathMatrixAgainstInventory(inventory *RuntimeInventory, discovered []DiscoveredPath) error {
-	requiredKinds := map[string]struct{}{
-		"native_binary":        {},
-		"data_format_native":   {},
-		"code_format_native":   {},
-		"code_format_enhanced": {},
-		"shell_format_native":  {},
-		"text_format_generic":  {},
-		"fallback_final":       {},
+	if inventory == nil {
+		return fmt.Errorf("runtime-path matrix mismatch: inventory is nil")
 	}
 
-	discoveredKinds := make(map[string]struct{}, len(discovered))
-	for _, d := range discovered {
-		if _, ok := requiredKinds[d.Kind]; !ok {
-			return fmt.Errorf("runtime-path matrix mismatch: discovered invalid kind %s", d.Kind)
-		}
-		discoveredKinds[d.Kind] = struct{}{}
+	requiredKinds := []string{
+		"native_binary",
+		"data_format_native",
+		"code_format_native",
+		"code_format_enhanced",
+		"shell_format_native",
+		"text_format_generic",
+		"fallback_final",
 	}
-	for kind := range requiredKinds {
-		if _, ok := discoveredKinds[kind]; !ok {
+	discoveredByKind := make(map[string]map[string]struct{}, len(requiredKinds))
+	allowedKinds := make(map[string]struct{}, len(requiredKinds))
+	for _, kind := range requiredKinds {
+		allowedKinds[kind] = struct{}{}
+	}
+	for _, d := range discovered {
+		kind := strings.TrimSpace(d.Kind)
+		explorer := strings.TrimSpace(d.ExplorerName)
+		if kind == "" || explorer == "" {
+			return fmt.Errorf("runtime-path matrix mismatch: discovered path has empty kind or explorer")
+		}
+		if _, ok := allowedKinds[kind]; !ok {
+			return fmt.Errorf("runtime-path matrix mismatch: discovered invalid kind %s", kind)
+		}
+		if _, ok := discoveredByKind[kind]; !ok {
+			discoveredByKind[kind] = make(map[string]struct{})
+		}
+		discoveredByKind[kind][explorer] = struct{}{}
+	}
+	for _, kind := range requiredKinds {
+		if len(discoveredByKind[kind]) == 0 {
 			return fmt.Errorf("runtime-path matrix mismatch: discovered runtime missing kind %s", kind)
 		}
 	}
 
-	artifactKeys := make(map[string]struct{}, len(inventory.Paths))
+	requiredInventory := map[string]string{
+		"lcm.tool_output.create": "ingestion",
+		"lcm.describe.readback":  "retrieval",
+		"lcm.expand.readback":    "retrieval",
+	}
+	inventoryByID := make(map[string]RuntimeIngestionPath, len(inventory.Paths))
 	for _, p := range inventory.Paths {
-		key := fmt.Sprintf("%s:%s", strings.TrimSpace(p.ID), strings.TrimSpace(p.PathKind))
-		artifactKeys[key] = struct{}{}
+		id := strings.TrimSpace(p.ID)
+		if id == "" {
+			return fmt.Errorf("runtime-path matrix mismatch: inventory contains empty id")
+		}
+		if _, exists := inventoryByID[id]; exists {
+			return fmt.Errorf("runtime-path matrix mismatch: duplicate inventory id %s", id)
+		}
+		inventoryByID[id] = p
+	}
+	if len(inventoryByID) != len(requiredInventory) {
+		return fmt.Errorf("runtime-path matrix mismatch: unexpected inventory path count %d (expected %d)", len(inventoryByID), len(requiredInventory))
+	}
+	for id, expectedKind := range requiredInventory {
+		path, ok := inventoryByID[id]
+		if !ok {
+			return fmt.Errorf("runtime-path matrix mismatch: missing required inventory path %s", id)
+		}
+		if strings.TrimSpace(path.PathKind) != expectedKind {
+			return fmt.Errorf("runtime-path matrix mismatch: %s path_kind=%s expected=%s", id, path.PathKind, expectedKind)
+		}
 	}
 
-	for _, id := range []string{"lcm.tool_output.create", "lcm.describe.readback", "lcm.expand.readback"} {
-		kind := "retrieval"
-		if id == "lcm.tool_output.create" {
-			kind = "ingestion"
-		}
-		key := fmt.Sprintf("%s:%s", id, kind)
-		if _, ok := artifactKeys[key]; !ok {
-			return fmt.Errorf("runtime-path matrix mismatch: missing required inventory path %s", key)
-		}
+	createExplorer := strings.TrimSpace(inventoryByID["lcm.tool_output.create"].Explorer)
+	if _, ok := discoveredByKind["text_format_generic"][createExplorer]; !ok {
+		return fmt.Errorf("runtime-path matrix mismatch: lcm.tool_output.create explorer %s not discovered for kind text_format_generic", createExplorer)
+	}
+	describeExplorer := strings.TrimSpace(inventoryByID["lcm.describe.readback"].Explorer)
+	if _, ok := discoveredByKind["fallback_final"][describeExplorer]; !ok {
+		return fmt.Errorf("runtime-path matrix mismatch: lcm.describe.readback explorer %s not discovered for kind fallback_final", describeExplorer)
+	}
+	expandExplorer := strings.TrimSpace(inventoryByID["lcm.expand.readback"].Explorer)
+	if _, ok := discoveredByKind["fallback_final"][expandExplorer]; !ok {
+		return fmt.Errorf("runtime-path matrix mismatch: lcm.expand.readback explorer %s not discovered for kind fallback_final", expandExplorer)
 	}
 
 	return nil

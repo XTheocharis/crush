@@ -1,6 +1,8 @@
 package repomap
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,6 +59,36 @@ func TestValidateSignOffBundle(t *testing.T) {
 	err = ValidateSignOffBundle(&badEvidence)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "gate A evidence")
+
+	badCommand := *bundle
+	gateAContent, readErr := os.ReadFile(badCommand.RepoMap.GateAEvidencePath)
+	require.NoError(t, readErr)
+	var gateA map[string]any
+	require.NoError(t, json.Unmarshal(gateAContent, &gateA))
+	gateA["command"] = "go test -run SomethingElse -count=1 ."
+	mutatedGateA, marshalErr := json.MarshalIndent(gateA, "", "  ")
+	require.NoError(t, marshalErr)
+	badCommandPath := filepath.Join(t.TempDir(), "gate_a_evidence.bad.json")
+	require.NoError(t, os.WriteFile(badCommandPath, mutatedGateA, 0o644))
+	badCommand.RepoMap.GateAEvidencePath = badCommandPath
+	err = ValidateSignOffBundle(&badCommand)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "command mismatch")
+
+	badDigest := *bundle
+	gateBContent, readErr := os.ReadFile(badDigest.Explorer.GateBEvidencePath)
+	require.NoError(t, readErr)
+	var gateB map[string]any
+	require.NoError(t, json.Unmarshal(gateBContent, &gateB))
+	gateB["output_sha256"] = "not-a-sha"
+	mutatedGateB, marshalErr := json.MarshalIndent(gateB, "", "  ")
+	require.NoError(t, marshalErr)
+	badDigestPath := filepath.Join(t.TempDir(), "gate_b_evidence.bad.json")
+	require.NoError(t, os.WriteFile(badDigestPath, mutatedGateB, 0o644))
+	badDigest.Explorer.GateBEvidencePath = badDigestPath
+	err = ValidateSignOffBundle(&badDigest)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "output_sha256")
 }
 
 func TestWriteAndLoadSignOffBundleManifest(t *testing.T) {
