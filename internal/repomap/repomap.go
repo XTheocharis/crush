@@ -300,7 +300,7 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 
 	mapText, renderErr := RenderRepoMap(ctx, fit.Entries, tagsByFile, parser, rootDir)
 	if renderErr != nil {
-		if errors.Is(renderErr, context.DeadlineExceeded) {
+		if errors.Is(renderErr, context.DeadlineExceeded) && opts.ParityMode {
 			slog.Warn("Disabling repo map for session — render timed out",
 				"session", sessionID)
 			s.disableForSession(sessionID)

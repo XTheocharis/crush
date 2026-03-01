@@ -156,7 +156,9 @@ func (app *App) initRepoMap(ctx context.Context, conn *sql.DB) []agent.Coordinat
 
 	opts := []agent.CoordinatorOption{agent.WithRepoMap(svc)}
 
-	provider, err := repomap.NewDefaultTokenCounterProvider()
+	repomap.InitTiktokenLoader(repomap.TiktokenCacheDir())
+
+	provider, err := repomap.NewDefaultTokenCounterProvider(repomap.DefaultSupportJSON())
 	if err == nil && provider != nil {
 		opts = append(opts, agent.WithTokenCounterProvider(provider))
 	}

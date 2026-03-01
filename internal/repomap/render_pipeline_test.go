@@ -90,12 +90,13 @@ func TestRenderRepoMapScopeAwareOutput(t *testing.T) {
 		tagsByFile[tag.RelPath] = append(tagsByFile[tag.RelPath], tag)
 	}
 
-	got, err := RenderRepoMap(context.Background(), entries, tagsByFile, nil, root)
+	got, err := RenderRepoMap(context.Background(), entries, tagsByFile, treesitter.NewParser(), root)
 	require.NoError(t, err)
 	require.NotEmpty(t, got)
 
-	// Verify file headers are present.
-	require.Contains(t, got, "README.md:\n")
+	// Verify file headers are present. Stage-0 files (README.md) have no
+	// colon suffix; stage-1 files (main.go, util.go) have colon + scope lines.
+	require.Contains(t, got, "README.md\n")
 	require.Contains(t, got, "main.go:\n")
 	require.Contains(t, got, "util.go:\n")
 
@@ -171,7 +172,7 @@ func TestRenderRepoMapDeterminism(t *testing.T) {
 
 	results := make([]string, 10)
 	for i := range 10 {
-		got, err := RenderRepoMap(context.Background(), entries, tagsByFile, nil, root)
+		got, err := RenderRepoMap(context.Background(), entries, tagsByFile, treesitter.NewParser(), root)
 		require.NoError(t, err)
 		results[i] = got
 	}
@@ -212,7 +213,7 @@ func TestTrimLoopBudgetComplianceEnhancement(t *testing.T) {
 	originalBudget := 5
 
 	// Render full set first to confirm it exceeds budget.
-	fullText, err := RenderRepoMap(context.Background(), entries, tagsByFile, nil, root)
+	fullText, err := RenderRepoMap(context.Background(), entries, tagsByFile, treesitter.NewParser(), root)
 	require.NoError(t, err)
 	fullMetrics, _ := CountParityAndSafetyTokens(context.Background(), nil, "", fullText, "default")
 	require.Greater(t, fullMetrics.SafetyTokens, originalBudget,
@@ -239,7 +240,7 @@ func TestTrimLoopBudgetComplianceEnhancement(t *testing.T) {
 	for lo < hi {
 		mid := (lo + hi + 1) / 2
 		candidate := entries[:mid]
-		text, renderErr := RenderRepoMap(context.Background(), candidate, tagsByFile, nil, root)
+		text, renderErr := RenderRepoMap(context.Background(), candidate, tagsByFile, treesitter.NewParser(), root)
 		require.NoError(t, renderErr)
 		ok, _ := fitsWithinBudget(text)
 		if ok {
@@ -250,7 +251,7 @@ func TestTrimLoopBudgetComplianceEnhancement(t *testing.T) {
 	}
 
 	trimmedEntries := entries[:lo]
-	trimmedText, err := RenderRepoMap(context.Background(), trimmedEntries, tagsByFile, nil, root)
+	trimmedText, err := RenderRepoMap(context.Background(), trimmedEntries, tagsByFile, treesitter.NewParser(), root)
 	require.NoError(t, err)
 
 	_, tokenCount := fitsWithinBudget(trimmedText)
@@ -289,7 +290,7 @@ func TestTrimLoopBudgetComplianceParity(t *testing.T) {
 	// that a trimmed subset fits.
 	budget := 10
 
-	fullText, err := RenderRepoMap(context.Background(), entries, tagsByFile, nil, root)
+	fullText, err := RenderRepoMap(context.Background(), entries, tagsByFile, treesitter.NewParser(), root)
 	require.NoError(t, err)
 
 	fitsWithinBudget := func(text string) (bool, int) {
@@ -309,7 +310,7 @@ func TestTrimLoopBudgetComplianceParity(t *testing.T) {
 		for lo < hi {
 			mid := (lo + hi + 1) / 2
 			candidate := entries[:mid]
-			text, renderErr := RenderRepoMap(context.Background(), candidate, tagsByFile, nil, root)
+			text, renderErr := RenderRepoMap(context.Background(), candidate, tagsByFile, treesitter.NewParser(), root)
 			require.NoError(t, renderErr)
 			ok, _ := fitsWithinBudget(text)
 			if ok {
@@ -319,7 +320,7 @@ func TestTrimLoopBudgetComplianceParity(t *testing.T) {
 			}
 		}
 
-		trimmedText, renderErr := RenderRepoMap(context.Background(), entries[:lo], tagsByFile, nil, root)
+		trimmedText, renderErr := RenderRepoMap(context.Background(), entries[:lo], tagsByFile, treesitter.NewParser(), root)
 		require.NoError(t, renderErr)
 		_, tokenCount := fitsWithinBudget(trimmedText)
 		require.LessOrEqual(t, tokenCount, budget,
@@ -357,7 +358,7 @@ func TestTrimLoopMonotonicity(t *testing.T) {
 	prevTokens := 0
 	for i := 1; i <= len(entries); i++ {
 		prefix := entries[:i]
-		text, err := RenderRepoMap(context.Background(), prefix, tagsByFile, nil, root)
+		text, err := RenderRepoMap(context.Background(), prefix, tagsByFile, treesitter.NewParser(), root)
 		require.NoError(t, err)
 		m, _ := CountParityAndSafetyTokens(context.Background(), nil, "", text, "default")
 		// Monotonic: more entries should produce >= tokens.
@@ -400,7 +401,7 @@ func TestTrimLoopEmptyResult(t *testing.T) {
 		return m.SafetyTokens <= budget, m.SafetyTokens
 	}
 
-	fullText, err := RenderRepoMap(context.Background(), entries, tagsByFile, nil, root)
+	fullText, err := RenderRepoMap(context.Background(), entries, tagsByFile, treesitter.NewParser(), root)
 	require.NoError(t, err)
 
 	accepted, _ := fitsWithinBudget(fullText)
@@ -411,7 +412,7 @@ func TestTrimLoopEmptyResult(t *testing.T) {
 	for lo < hi {
 		mid := (lo + hi + 1) / 2
 		candidate := entries[:mid]
-		text, renderErr := RenderRepoMap(context.Background(), candidate, tagsByFile, nil, root)
+		text, renderErr := RenderRepoMap(context.Background(), candidate, tagsByFile, treesitter.NewParser(), root)
 		require.NoError(t, renderErr)
 		ok, _ := fitsWithinBudget(text)
 		if ok {
@@ -453,7 +454,7 @@ func TestExpansionFactorCalibration(t *testing.T) {
 	compact := renderStageEntries(entries)
 	compactTokens := EstimateTokens(compact, "default")
 
-	scopeAware, err := RenderRepoMap(context.Background(), entries, tagsByFile, nil, root)
+	scopeAware, err := RenderRepoMap(context.Background(), entries, tagsByFile, treesitter.NewParser(), root)
 	require.NoError(t, err)
 	scopeTokens := EstimateTokens(scopeAware, "default")
 

@@ -24,6 +24,12 @@ import (
 //go:embed data/cl100k_base.tiktoken
 var cl100kBaseData []byte
 
+//go:embed data/tokenizer_support.v1.json
+var defaultSupportJSON []byte
+
+// DefaultSupportJSON returns the embedded tokenizer support JSON data.
+func DefaultSupportJSON() []byte { return defaultSupportJSON }
+
 const (
 	// encodingCL100kBase is the cl100k_base encoding used by GPT-4 and
 	// as an approximation for Anthropic and Google models.
@@ -346,9 +352,9 @@ func resolveEncodingName(fam familyEntry) string {
 	}
 }
 
-// tiktokenCacheDir returns the cache directory for tiktoken BPE files.
+// TiktokenCacheDir returns the cache directory for tiktoken BPE files.
 // It respects $XDG_CACHE_HOME, falling back to ~/.cache.
-func tiktokenCacheDir() string {
+func TiktokenCacheDir() string {
 	cache := os.Getenv("XDG_CACHE_HOME")
 	if cache == "" {
 		home, err := os.UserHomeDir()

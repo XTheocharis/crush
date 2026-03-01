@@ -144,9 +144,9 @@ func renderStage1File(
 			"file", file, "error", err)
 		return renderFlatDefs(file, stage1Entries)
 	}
-	// Explicitly close tree after construction (NOT deferred in loop).
-	lines := strings.Split(string(content), "\n")
-	rendered := RenderTreeContext(lines, loi)
+	// Build TreeContext from the parsed AST and render scope-aware output.
+	tc := NewTreeContext(file, content, tree, loi)
+	rendered := tc.Render()
 	tree.Close()
 
 	if rendered == "" {

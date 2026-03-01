@@ -305,13 +305,13 @@ func TestTiktokenCacheDir(t *testing.T) {
 
 	t.Run("respects_XDG_CACHE_HOME", func(t *testing.T) {
 		t.Setenv("XDG_CACHE_HOME", "/tmp/test-xdg")
-		dir := tiktokenCacheDir()
+		dir := TiktokenCacheDir()
 		require.Equal(t, "/tmp/test-xdg/crush/tiktoken", dir)
 	})
 
 	t.Run("fallback_to_home_cache", func(t *testing.T) {
 		t.Setenv("XDG_CACHE_HOME", "")
-		dir := tiktokenCacheDir()
+		dir := TiktokenCacheDir()
 		require.Contains(t, dir, "crush/tiktoken")
 	})
 }

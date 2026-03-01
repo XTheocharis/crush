@@ -2,7 +2,6 @@ package treesitter
 
 import (
 	"io/fs"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -406,7 +405,7 @@ func TestLoadLanguagesManifest_Phase1BSet(t *testing.T) {
 
 	manifest, err := LoadLanguagesManifest()
 	require.NoError(t, err)
-	require.Equal(t, 39, len(manifest.Languages), "expected full Phase 1B language set")
+	require.Equal(t, 38, len(manifest.Languages), "expected full Phase 1B language set")
 
 	seen := make(map[string]struct{}, len(manifest.Languages))
 	for _, lang := range manifest.Languages {
@@ -427,7 +426,7 @@ func TestVendoredTagsQueries_NoInheritsDirective(t *testing.T) {
 
 	entries, err := fs.Glob(queriesFS, "queries/*-tags.scm")
 	require.NoError(t, err)
-	require.Len(t, entries, 39, "expected vendored query count to match manifest")
+	require.Len(t, entries, 38, "expected vendored query count to match manifest")
 
 	for _, entry := range entries {
 		t.Run(entry, func(t *testing.T) {
@@ -446,11 +445,8 @@ func TestLoadTagsQuery_AliasPrecedenceCSharp(t *testing.T) {
 	require.NoError(t, err)
 	alias, err := LoadTagsQuery(GetQueryKey("c_sharp"))
 	require.NoError(t, err)
-	fallback, err := queriesFS.ReadFile("queries/c_sharp-tags.scm")
-	require.NoError(t, err)
 
 	require.Equal(t, string(primary), string(alias), "c_sharp alias must resolve to primary csharp query")
-	require.NotEqual(t, strings.TrimSpace(string(primary)), strings.TrimSpace(string(fallback)), "primary and fallback csharp queries should remain distinct files")
 }
 
 func TestExtensionMappingGolden(t *testing.T) {

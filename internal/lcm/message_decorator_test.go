@@ -476,10 +476,11 @@ func main() {
 	require.NoError(t, err)
 	require.Len(t, files, 1)
 
-	// Without parser, should use GoExplorer (native path), not TreeSitterExplorer.
+	// Without parser, GoExplorer has been deleted (W9). Go files now fall
+	// through to TextExplorer or FallbackExplorer since TreeSitterExplorer
+	// requires a parser.
 	require.True(t, files[0].ExplorerUsed.Valid)
 	explorerUsed := strings.ToLower(files[0].ExplorerUsed.String)
-	require.Contains(t, explorerUsed, "go", "Without parser, should use GoExplorer")
 	require.NotContains(t, explorerUsed, "treesitter", "Without parser, should not use TreeSitterExplorer")
 }
 
