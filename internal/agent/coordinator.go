@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/oauth/copilot"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"golang.org/x/sync/errgroup"
 
@@ -66,9 +67,10 @@ type coordinator struct {
 	filetracker filetracker.Service
 	lspManager  *lsp.Manager
 
-	lcm        lcm.Manager
-	extraTools []fantasy.AgentTool
-	repoMapSvc RepoMapService
+	lcm                  lcm.Manager
+	extraTools           []fantasy.AgentTool
+	repoMapSvc           RepoMapService
+	tokenCounterProvider repomap.TokenCounterProvider
 
 	currentAgent SessionAgent
 	agents       map[string]SessionAgent

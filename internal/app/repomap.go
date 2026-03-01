@@ -134,7 +134,7 @@ func (app *App) RunRepoMapControl(ctx context.Context, commandID, sessionID stri
 	}
 }
 
-func (app *App) initRepoMap(ctx context.Context, conn *sql.DB) agent.CoordinatorOption {
+func (app *App) initRepoMap(ctx context.Context, conn *sql.DB) []agent.CoordinatorOption {
 	if app == nil || app.config == nil || app.config.Options == nil || app.config.Options.RepoMap == nil || app.config.Options.RepoMap.Disabled {
 		return nil
 	}
@@ -153,7 +153,15 @@ func (app *App) initRepoMap(ctx context.Context, conn *sql.DB) agent.Coordinator
 	app.repoMapSvc = svc
 	app.repoMapCtl = newRepoMapController(svc, app.config, app.FileTracker)
 	go svc.PreIndex()
-	return agent.WithRepoMap(svc)
+
+	opts := []agent.CoordinatorOption{agent.WithRepoMap(svc)}
+
+	provider, err := repomap.NewDefaultTokenCounterProvider()
+	if err == nil && provider != nil {
+		opts = append(opts, agent.WithTokenCounterProvider(provider))
+	}
+
+	return opts
 }
 
 func (app *App) mapRefreshSync(ctx context.Context, sessionID string) error {

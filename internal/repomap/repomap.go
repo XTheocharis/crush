@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -253,6 +254,11 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		opts.ChatFiles,
 		opts.ParityMode,
 	)
+
+	// Parity mode requires tokenizer-backed counting; fail hard if unavailable.
+	if opts.ParityMode && opts.TokenCounter == nil {
+		return "", 0, fmt.Errorf("parity mode requires tokenizer-backed counting; TokenCounter is nil")
+	}
 
 	budgetProfile := BudgetProfile{
 		ParityMode:   opts.ParityMode,

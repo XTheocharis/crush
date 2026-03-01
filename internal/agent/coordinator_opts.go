@@ -37,6 +37,14 @@ func WithRepoMap(svc RepoMapService) CoordinatorOption {
 	}
 }
 
+// WithTokenCounterProvider wires a tokenizer provider into the coordinator
+// so that repo-map generation can use tokenizer-backed token counting.
+func WithTokenCounterProvider(p repomap.TokenCounterProvider) CoordinatorOption {
+	return func(c *coordinator) {
+		c.tokenCounterProvider = p
+	}
+}
+
 func (c *coordinator) buildRepoMapHook() PrepareStepHook {
 	if c == nil || c.repoMapSvc == nil || !c.repoMapSvc.Available() {
 		return nil
@@ -120,6 +128,7 @@ type repoMapProfileOptions struct {
 	EnhancementTiers     string
 	DeterministicMode    bool
 	TokenCounterMode     string
+	TokenCounter         repomap.TokenCounter
 }
 
 func buildRepoMapGenerateOpts(
@@ -143,6 +152,7 @@ func buildRepoMapGenerateOpts(
 		EnhancementTiers:     profile.EnhancementTiers,
 		DeterministicMode:    profile.DeterministicMode,
 		TokenCounterMode:     profile.TokenCounterMode,
+		TokenCounter:         profile.TokenCounter,
 		ForceRefresh:         forceRefresh,
 	}
 	if mentionText == "" {
@@ -261,6 +271,12 @@ func (c *coordinator) repoMapProfile() repoMapProfileOptions {
 		profile.EnhancementTiers = "none"
 		profile.DeterministicMode = true
 		profile.TokenCounterMode = "tokenizer_backed"
+	}
+	// Resolve a tokenizer-backed counter from the provider when available.
+	if c.tokenCounterProvider != nil && profile.Model != "" {
+		if counter, ok := c.tokenCounterProvider.CounterForModel(profile.Model); ok {
+			profile.TokenCounter = counter
+		}
 	}
 	return profile
 }

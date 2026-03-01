@@ -5,15 +5,28 @@
   "supported_families": [
     {
       "model_family": "anthropic",
-      "tokenizer_id": "claude",
-      "tokenizer_version": "1.0.0",
+      "tokenizer_id": "cl100k_base",
+      "tokenizer_version": "v0.1.0",
       "supported": true,
+      "note": "approximation via cl100k_base",
       "models": [
         "claude-3-opus-20240229",
         "claude-3-sonnet-20240229",
         "claude-3-haiku-20240307",
         "claude-3.5-sonnet-20241022",
         "claude-3-5-sonnet-20241022"
+      ]
+    },
+    {
+      "model_family": "google",
+      "tokenizer_id": "cl100k_base",
+      "tokenizer_version": "v0.1.0",
+      "supported": true,
+      "note": "approximation via cl100k_base",
+      "models": [
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+        "gemini-2.0-flash"
       ]
     },
     {

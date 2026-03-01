@@ -61,7 +61,7 @@ type App struct {
 	FileTracker filetracker.Service
 
 	AgentCoordinator agent.Coordinator
-	repoMapOpt       agent.CoordinatorOption
+	repoMapOpts      []agent.CoordinatorOption
 	repoMapSvc       *repomap.Service
 	repoMapCtl       *RepoMapController
 
@@ -125,7 +125,7 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 		tuiWG:           &sync.WaitGroup{},
 	}
 
-	app.repoMapOpt = app.initRepoMap(ctx, conn)
+	app.repoMapOpts = app.initRepoMap(ctx, conn)
 	app.setupEvents()
 
 	// Check for updates in the background.
@@ -523,8 +523,8 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 	}
 	var err error
 	coordinatorOpts := []agent.CoordinatorOption{}
-	if app.repoMapOpt != nil {
-		coordinatorOpts = append(coordinatorOpts, app.repoMapOpt)
+	if len(app.repoMapOpts) > 0 {
+		coordinatorOpts = append(coordinatorOpts, app.repoMapOpts...)
 	}
 	app.AgentCoordinator, err = agent.NewCoordinator(
 		ctx,

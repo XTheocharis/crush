@@ -59,8 +59,8 @@ func TestRunRepoMapControlProjectRefreshAndReset(t *testing.T) {
 
 	q := db.New(conn)
 	app := &App{config: cfg, FileTracker: filetracker.NewService(q, cfg.WorkingDir())}
-	opt := app.initRepoMap(t.Context(), conn)
-	require.NotNil(t, opt)
+	opts := app.initRepoMap(t.Context(), conn)
+	require.NotEmpty(t, opts)
 	require.NotNil(t, app.repoMapCtl)
 	require.NotNil(t, app.repoMapSvc)
 
