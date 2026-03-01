@@ -20,7 +20,7 @@ func TestIntegration_MultipleFileTypes(t *testing.T) {
 		mustContain      []string
 	}{
 		{
-			name: "Go file with full structure",
+			name: "Go file without tree-sitter",
 			path: "server.go",
 			content: []byte(`package server
 
@@ -42,11 +42,11 @@ func (s *Server) Start() error {
 	return http.ListenAndServe(":8080", s.Router)
 }
 `),
-			expectedExplorer: "go",
-			mustContain:      []string{"Package: server", "net/http", "gorilla/mux", "struct Server", "NewServer", "(*Server) Start"},
+			expectedExplorer: "text",
+			mustContain:      []string{"Text file", "server.go"},
 		},
 		{
-			name: "Python script with shebang",
+			name: "Python script without tree-sitter",
 			path: "script.py",
 			content: []byte(`#!/usr/bin/env python3
 
@@ -67,11 +67,11 @@ def main():
 if __name__ == "__main__":
     main()
 `),
-			expectedExplorer: "python",
-			mustContain:      []string{"Python file", "import argparse", "FileProcessor", "main"},
+			expectedExplorer: "text",
+			mustContain:      []string{"Text file", "script.py"},
 		},
 		{
-			name: "TypeScript React component",
+			name: "TypeScript React component without tree-sitter",
 			path: "Component.tsx",
 			content: []byte(`import React from 'react';
 
@@ -84,11 +84,11 @@ export const MyComponent: React.FC<Props> = ({ title, count }) => {
 	return <div>{title}: {count}</div>;
 };
 `),
-			expectedExplorer: "typescript",
-			mustContain:      []string{"TypeScript file", "react", "Props", "MyComponent"},
+			expectedExplorer: "text",
+			mustContain:      []string{"Text file", "Component.tsx"},
 		},
 		{
-			name: "Rust module",
+			name: "Rust module without tree-sitter",
 			path: "lib.rs",
 			content: []byte(`use std::collections::HashMap;
 
@@ -108,8 +108,8 @@ pub fn load_config() -> Config {
 	Config::new()
 }
 `),
-			expectedExplorer: "rust",
-			mustContain:      []string{"Rust file", "std::collections::HashMap", "Config", "load_config"},
+			expectedExplorer: "text",
+			mustContain:      []string{"Text file", "lib.rs"},
 		},
 		{
 			name: "JSON configuration",
@@ -246,10 +246,10 @@ func TestIntegration_LargeFile(t *testing.T) {
 	})
 	require.NoError(t, err, "Explore failed")
 
-	require.Equal(t, "go", result.ExplorerUsed)
+	require.Equal(t, "text", result.ExplorerUsed)
 
-	// Should still parse successfully
-	require.True(t, strings.Contains(result.Summary, "Package: main"), "Expected to extract package name from large file")
+	// Without tree-sitter, falls through to TextExplorer.
+	require.True(t, strings.Contains(result.Summary, "Text file"), "Expected text explorer for Go file without tree-sitter")
 }
 
 // TestIntegration_InvalidFiles tests handling of invalid/corrupted files.

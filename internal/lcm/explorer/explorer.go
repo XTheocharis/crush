@@ -87,21 +87,11 @@ func NewRegistry(opts ...RegistryOption) *Registry {
 		&LatexExplorer{},
 		&SQLiteExplorer{},
 		&LogsExplorer{},
-		// Phase 3: Language-specific code explorers.
-		&GoExplorer{},
-		&PythonExplorer{},
-		&JavaScriptExplorer{},
-		&TypeScriptExplorer{},
-		&RustExplorer{},
-		&JavaExplorer{},
-		&CppExplorer{},
-		&CExplorer{},
-		&RubyExplorer{},
-		// Phase 4: Shell scripts (checked before generic text)
+		// Phase 3: Shell scripts (checked before generic text)
 		&ShellExplorer{},
-		// Phase 5: Generic text fallback
+		// Phase 4: Generic text fallback
 		&TextExplorer{},
-		// Phase 6: Final fallback
+		// Phase 5: Final fallback
 		&FallbackExplorer{},
 	}
 	// Apply options.

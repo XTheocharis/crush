@@ -151,8 +151,7 @@ func LoadRuntimePersistenceMatrix(profile OutputProfile) (*RuntimePersistenceMat
 		if path.ID == "lcm.tool_output.create" {
 			for _, runtimeKey := range []string{
 				"binary", "json", "csv", "yaml", "toml", "ini", "xml", "html",
-				"markdown", "latex", "sqlite", "logs", "go", "python", "javascript",
-				"typescript", "rust", "java", "cpp", "c", "ruby", "treesitter",
+				"markdown", "latex", "sqlite", "logs", "treesitter",
 				"shell", "text", "fallback",
 			} {
 				matrix.policyByExplorer[runtimeKey] = policy
@@ -222,24 +221,6 @@ func runtimeExplorerKeyFromInventoryExplorer(explorer string) string {
 		return "sqlite"
 	case "LogsExplorer":
 		return "logs"
-	case "GoExplorer":
-		return "go"
-	case "PythonExplorer":
-		return "python"
-	case "JavaScriptExplorer":
-		return "javascript"
-	case "TypeScriptExplorer":
-		return "typescript"
-	case "RustExplorer":
-		return "rust"
-	case "JavaExplorer":
-		return "java"
-	case "CppExplorer":
-		return "cpp"
-	case "CExplorer":
-		return "c"
-	case "RubyExplorer":
-		return "ruby"
 	case "TreeSitterExplorer":
 		return "treesitter"
 	case "ShellExplorer":
@@ -279,24 +260,6 @@ func runtimeExplorerKeyToInventoryExplorer(explorerUsed string) string {
 		return "SQLiteExplorer"
 	case "logs":
 		return "LogsExplorer"
-	case "go":
-		return "GoExplorer"
-	case "python":
-		return "PythonExplorer"
-	case "javascript":
-		return "JavaScriptExplorer"
-	case "typescript":
-		return "TypeScriptExplorer"
-	case "rust":
-		return "RustExplorer"
-	case "java":
-		return "JavaExplorer"
-	case "cpp":
-		return "CppExplorer"
-	case "c":
-		return "CExplorer"
-	case "ruby":
-		return "RubyExplorer"
 	case "treesitter":
 		return "TreeSitterExplorer"
 	case "shell":
@@ -392,24 +355,14 @@ func explorerIdent(explorer Explorer) string {
 		return "XMLExplorer"
 	case *HTMLExplorer:
 		return "HTMLExplorer"
-	case *GoExplorer:
-		return "GoExplorer"
-	case *PythonExplorer:
-		return "PythonExplorer"
-	case *JavaScriptExplorer:
-		return "JavaScriptExplorer"
-	case *TypeScriptExplorer:
-		return "TypeScriptExplorer"
-	case *RustExplorer:
-		return "RustExplorer"
-	case *JavaExplorer:
-		return "JavaExplorer"
-	case *CppExplorer:
-		return "CppExplorer"
-	case *CExplorer:
-		return "CExplorer"
-	case *RubyExplorer:
-		return "RubyExplorer"
+	case *MarkdownExplorer:
+		return "MarkdownExplorer"
+	case *LatexExplorer:
+		return "LatexExplorer"
+	case *SQLiteExplorer:
+		return "SQLiteExplorer"
+	case *LogsExplorer:
+		return "LogsExplorer"
 	case *TreeSitterExplorer:
 		return "TreeSitterExplorer"
 	case *ShellExplorer:
@@ -512,7 +465,6 @@ func GenerateRuntimeInventory(registry *Registry, profile OutputProfile) (*Runti
 	requiredKinds := []string{
 		"native_binary",
 		"data_format_native",
-		"code_format_native",
 		"shell_format_native",
 		"text_format_generic",
 		"fallback_final",
@@ -603,8 +555,6 @@ func KindValue(explorer Explorer) string {
 		return "native_binary"
 	case *JSONExplorer, *CSVExplorer, *YAMLExplorer, *TOMLExplorer, *INIExplorer, *XMLExplorer, *HTMLExplorer, *MarkdownExplorer, *LatexExplorer, *SQLiteExplorer, *LogsExplorer:
 		return "data_format_native"
-	case *GoExplorer, *PythonExplorer, *JavaScriptExplorer, *TypeScriptExplorer, *RustExplorer, *JavaExplorer, *CppExplorer, *CExplorer, *RubyExplorer:
-		return "code_format_native"
 	case *TreeSitterExplorer:
 		return "code_format_enhanced"
 	case *ShellExplorer:

@@ -651,21 +651,21 @@ func TestProtocolArtifact_ExplorerFamilyMatrixMethods(t *testing.T) {
 	efm, err := LoadExplorerFamilyMatrix()
 	require.NoError(t, err)
 
-	exp := efm.GetExplorerByID("GoExplorer")
-	require.NotNil(t, exp, "should find GoExplorer")
-	require.Equal(t, "GoExplorer", exp.ExplorerID)
+	exp := efm.GetExplorerByID("TreeSitterExplorer")
+	require.NotNil(t, exp, "should find TreeSitterExplorer")
+	require.Equal(t, "TreeSitterExplorer", exp.ExplorerID)
 
-	nativeExplorers := efm.GetExplorersByType("code_format_native")
-	require.Greater(t, len(nativeExplorers), 0, "should have code format explorers")
+	enhancedExplorers := efm.GetExplorersByType("code_format_enhanced")
+	require.Greater(t, len(enhancedExplorers), 0, "should have code format explorers")
 
 	found := false
-	for _, e := range nativeExplorers {
-		if e.ExplorerID == "GoExplorer" {
+	for _, e := range enhancedExplorers {
+		if e.ExplorerID == "TreeSitterExplorer" {
 			found = true
 			break
 		}
 	}
-	require.True(t, found, "should find GoExplorer in code_format_native type")
+	require.True(t, found, "should find TreeSitterExplorer in code_format_enhanced type")
 }
 
 func TestProtocolArtifact_ValidateGeneratedAt(t *testing.T) {

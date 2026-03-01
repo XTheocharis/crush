@@ -24,7 +24,7 @@ func TestNewRuntimeAdapter_WithoutParser_UsesDefaultRegistry(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, summary)
-	require.Equal(t, "go", explorerUsed)
+	require.Equal(t, "text", explorerUsed)
 	require.True(t, persist)
 }
 
@@ -62,7 +62,7 @@ func TestRuntimeAdapter_Explore_TrimmedOutputs(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Contains(t, summary, "LLM summary")
-	require.Equal(t, "go+llm", explorerUsed)
+	require.Equal(t, "text+llm", explorerUsed)
 	require.True(t, persist)
 }
 
@@ -82,7 +82,7 @@ func TestNewRuntimeAdapter_WithParityProfile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, summary)
 	require.Contains(t, summary, "##")
-	require.Equal(t, "go", explorerUsed)
+	require.Equal(t, "text", explorerUsed)
 	require.False(t, persist)
 }
 
@@ -106,6 +106,8 @@ func TestRuntimeAdapter_Explore_TreeSitterErrorFallsBack(t *testing.T) {
 	summary, explorerUsed, persist, err := adapter.Explore(context.Background(), "session", "main.go", []byte("package main"))
 	require.NoError(t, err)
 	require.NotEmpty(t, summary)
-	require.Equal(t, "go", explorerUsed)
+	// After tree-sitter failure, Go files fall through to TextExplorer
+	// (no regex code explorers remain).
+	require.Equal(t, "text", explorerUsed)
 	require.True(t, persist)
 }

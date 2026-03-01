@@ -68,84 +68,12 @@
       "description": "Native HTML markup format explorer"
     },
     {
-      "explorer_id": "GoExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["go"],
-      "language_families": ["go"],
-      "model_support": "all",
-      "description": "Native Go code format explorer"
-    },
-    {
-      "explorer_id": "PythonExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["py", "pyw", "pyx", "pxd"],
-      "language_families": ["python"],
-      "model_support": "all",
-      "description": "Native Python code format explorer"
-    },
-    {
-      "explorer_id": "JavaScriptExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["js", "mjs", "cjs", "jsx"],
-      "language_families": ["javascript"],
-      "model_support": "all",
-      "description": "Native JavaScript code format explorer"
-    },
-    {
-      "explorer_id": "TypeScriptExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["ts", "tsx", "mts", "cts"],
-      "language_families": ["typescript"],
-      "model_support": "all",
-      "description": "Native TypeScript code format explorer"
-    },
-    {
-      "explorer_id": "RustExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["rs"],
-      "language_families": ["rust"],
-      "model_support": "all",
-      "description": "Native Rust code format explorer"
-    },
-    {
-      "explorer_id": "JavaExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["java"],
-      "language_families": ["java"],
-      "model_support": "all",
-      "description": "Native Java code format explorer"
-    },
-    {
-      "explorer_id": "CppExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["cpp", "cxx", "cc", "hpp", "hxx", "hh"],
-      "language_families": ["cpp"],
-      "model_support": "all",
-      "description": "Native C++ code format explorer"
-    },
-    {
-      "explorer_id": "CExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["c", "h"],
-      "language_families": ["c"],
-      "model_support": "all",
-      "description": "Native C code format explorer"
-    },
-    {
-      "explorer_id": "RubyExplorer",
-      "explorer_type": "code_format_native",
-      "supported_extensions": ["rb", "rake"],
-      "language_families": ["ruby"],
-      "model_support": "all",
-      "description": "Native Ruby code format explorer"
-    },
-    {
       "explorer_id": "TreeSitterExplorer",
       "explorer_type": "code_format_enhanced",
       "supported_extensions": [],
       "language_families": ["go", "python", "javascript", "typescript", "rust", "java", "c", "cpp", "ruby"],
       "model_support": "llm_enhanced",
-      "description": "Tree-sitter enhanced code analysis (requires parser)"
+      "description": "Tree-sitter enhanced code analysis (requires parser), handles all code languages"
     },
     {
       "explorer_id": "ShellExplorer",

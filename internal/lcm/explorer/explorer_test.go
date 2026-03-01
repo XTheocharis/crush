@@ -265,7 +265,7 @@ func TestSampleContent(t *testing.T) {
 }
 
 // TestFallbackChainOrder verifies Phase 2A fallback chain ordering:
-// Binary -> JSON/CSV/YAML/TOML/INI/XML/HTML/Markdown/LaTeX/SQLite/Logs -> code explorers -> TreeSitterExplorer -> Shell -> Text -> Fallback.
+// Binary -> JSON/CSV/YAML/TOML/INI/XML/HTML/Markdown/LaTeX/SQLite/Logs -> TreeSitterExplorer -> Shell -> Text -> Fallback.
 func TestFallbackChainOrder(t *testing.T) {
 	reg := NewRegistry()
 
@@ -441,10 +441,10 @@ func TestDispatchPriority(t *testing.T) {
 			expectedExplorer: "shell",
 		},
 		{
-			name:             "Go file",
+			name:             "Go file (text fallback without tree-sitter)",
 			path:             "main.go",
 			content:          []byte("package main\nfunc main() {}\n"),
-			expectedExplorer: "go",
+			expectedExplorer: "text",
 		},
 		{
 			name:             "Plain text file",
@@ -513,22 +513,22 @@ func TestShebangDispatchParity(t *testing.T) {
 			expectedExplorer: "shell",
 		},
 		{
-			name:             "python shebang without extension",
+			name:             "python shebang without extension (text fallback)",
 			path:             "pyscript",
 			shebang:          []byte("#!/usr/bin/env python3\nprint('hello')\n"),
-			expectedExplorer: "python",
+			expectedExplorer: "text",
 		},
 		{
-			name:             "python shebang with py extension",
+			name:             "python shebang with py extension (text fallback)",
 			path:             "script.py",
 			shebang:          []byte("#!/usr/bin/env python3\nprint('hello')\n"),
-			expectedExplorer: "python",
+			expectedExplorer: "text",
 		},
 		{
-			name:             "node shebang without extension",
+			name:             "node shebang without extension (text fallback)",
 			path:             "nodescript",
 			shebang:          []byte("#!/usr/bin/env node\nconsole.log('hello')\n"),
-			expectedExplorer: "javascript",
+			expectedExplorer: "text",
 		},
 	}
 

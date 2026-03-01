@@ -19,15 +19,7 @@ const (
 
 var testExplorers = []string{
 	"text",
-	"go",
-	"python",
-	"javascript",
-	"typescript",
-	"rust",
-	"java",
-	"cpp",
-	"c",
-	"ruby",
+	"treesitter",
 	"shell",
 	"json",
 	"yaml",
@@ -189,7 +181,7 @@ func runParityGateCPhase0CComplete() (*phase0CGateEvidence, error) {
 		explorerSet[strings.TrimPrefix(k, "matrix_")] = struct{}{}
 	}
 	explorerSet["text"] = struct{}{}
-	explorerSet["go"] = struct{}{}
+	explorerSet["treesitter"] = struct{}{}
 	explorerSet["binary"] = struct{}{}
 
 	for exp := range explorerSet {
@@ -225,9 +217,9 @@ func verifyRuntimePersistenceWiring(evidence *phase0CGateEvidence) error {
 			expectedPersist: true,
 		},
 		{
-			name:            "go_explorer",
-			path:            "test.go",
-			content:         []byte("package main\n\nfunc main() {}"),
+			name:            "shell_explorer",
+			path:            "test.sh",
+			content:         []byte("#!/bin/bash\necho hello"),
 			expectedPersist: true,
 		},
 		{
@@ -290,15 +282,7 @@ func verifyMatrixEnforcement(inv *RuntimeInventory, evidence *phase0CGateEvidenc
 		pathKind        string
 	}{
 		{"text", true, "ingestion"},
-		{"go", true, "ingestion"},
-		{"python", true, "ingestion"},
-		{"javascript", true, "ingestion"},
-		{"typescript", true, "ingestion"},
-		{"rust", true, "ingestion"},
-		{"java", true, "ingestion"},
-		{"cpp", true, "ingestion"},
-		{"c", true, "ingestion"},
-		{"ruby", true, "ingestion"},
+		{"treesitter", true, "ingestion"},
 		{"shell", true, "ingestion"},
 		{"json", true, "ingestion"},
 		{"yaml", true, "ingestion"},

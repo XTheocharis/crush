@@ -601,7 +601,6 @@ func validateRuntimePathMatrixAgainstInventory(inventory *RuntimeInventory, disc
 	requiredKinds := []string{
 		"native_binary",
 		"data_format_native",
-		"code_format_native",
 		"code_format_enhanced",
 		"shell_format_native",
 		"text_format_generic",

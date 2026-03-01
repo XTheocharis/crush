@@ -434,9 +434,7 @@ func main() {
 	})
 	require.NoError(t, err)
 
-	// Since GoExplorer has higher priority and CanHandle returns true first,
-	// it will be used. TreeSitterExplorer is positioned to catch files that
-	// aren't caught by higher-priority specific explorers.
+	// TreeSitterExplorer handles code files when a parser is configured.
 	// This test just verifies that the chain works.
 	require.NotEmpty(t, result.Summary)
 }
@@ -446,24 +444,6 @@ func explorerTypeName(e Explorer) string {
 	switch e.(type) {
 	case *BinaryExplorer:
 		return "BinaryExplorer"
-	case *GoExplorer:
-		return "GoExplorer"
-	case *PythonExplorer:
-		return "PythonExplorer"
-	case *JavaScriptExplorer:
-		return "JavaScriptExplorer"
-	case *TypeScriptExplorer:
-		return "TypeScriptExplorer"
-	case *RustExplorer:
-		return "RustExplorer"
-	case *JavaExplorer:
-		return "JavaExplorer"
-	case *CppExplorer:
-		return "CppExplorer"
-	case *CExplorer:
-		return "CExplorer"
-	case *RubyExplorer:
-		return "RubyExplorer"
 	case *ShellExplorer:
 		return "ShellExplorer"
 	case *JSONExplorer:
@@ -480,6 +460,14 @@ func explorerTypeName(e Explorer) string {
 		return "XMLExplorer"
 	case *HTMLExplorer:
 		return "HTMLExplorer"
+	case *MarkdownExplorer:
+		return "MarkdownExplorer"
+	case *LatexExplorer:
+		return "LatexExplorer"
+	case *SQLiteExplorer:
+		return "SQLiteExplorer"
+	case *LogsExplorer:
+		return "LogsExplorer"
 	case *TextExplorer:
 		return "TextExplorer"
 	case *FallbackExplorer:
