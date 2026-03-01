@@ -188,6 +188,9 @@ func TestBuildToolsMapRefreshWiresRepoMapService(t *testing.T) {
 	env := testEnv(t)
 	cfg, err := config.Init(env.workingDir, "", false)
 	require.NoError(t, err)
+	// Disable the agent tool — it requires model selection which is not
+	// available in unit tests without a full provider setup.
+	cfg.Options.DisabledTools = append(cfg.Options.DisabledTools, "agent")
 	cfg.SetupAgents()
 
 	svc := &fakeRepoMapService{available: true}

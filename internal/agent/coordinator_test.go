@@ -25,7 +25,9 @@ func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
 
 	cfgDisabled, err := config.Init(env.workingDir, "", false)
 	require.NoError(t, err)
-	cfgDisabled.Options.DisabledTools = []string{"map_refresh"}
+	// Disable both map_refresh (for the test) and agent (requires model
+	// selection which is not available without full provider setup).
+	cfgDisabled.Options.DisabledTools = []string{"map_refresh", "agent"}
 	cfgDisabled.SetupAgents()
 
 	cDisabled := &coordinator{
@@ -43,6 +45,7 @@ func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
 
 	cfgEnabled, err := config.Init(env.workingDir, "", false)
 	require.NoError(t, err)
+	cfgEnabled.Options.DisabledTools = []string{"agent"}
 	cfgEnabled.SetupAgents()
 
 	cEnabled := &coordinator{
