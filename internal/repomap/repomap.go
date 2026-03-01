@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"sort"
@@ -96,6 +97,8 @@ type Service struct {
 	onPreIndexRun        func()
 	onRefreshRun         func()
 
+	disabledSessions sync.Map // one-way disable latch per session
+
 	closeOnce sync.Once
 }
 
@@ -173,6 +176,12 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return "", 0, nil
 	}
 
+	// One-way disable latch: if this session was permanently disabled due to
+	// resource exhaustion in parity mode, return the last known-good map.
+	if s.isDisabledForSession(sessionID) {
+		return fallback(nil)
+	}
+
 	if !opts.ForceRefresh {
 		switch mode {
 		case "manual":
@@ -220,6 +229,11 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 
 	tags, err := s.extractTags(ctx, s.rootDir, fileUniverse, opts.ForceRefresh)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && opts.ParityMode {
+			slog.Warn("Disabling repo map for session — extractTags timed out",
+				"session", sessionID)
+			s.disableForSession(sessionID)
+		}
 		return fallback(err)
 	}
 
@@ -246,6 +260,11 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 	}
 	fit, err := FitToBudget(ctx, entries, budgetProfile, opts.TokenCounter)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && opts.ParityMode {
+			slog.Warn("Disabling repo map for session — FitToBudget timed out",
+				"session", sessionID)
+			s.disableForSession(sessionID)
+		}
 		return fallback(err)
 	}
 
@@ -423,6 +442,7 @@ func (s *Service) Reset(ctx context.Context, sessionID string) error {
 
 	s.sessionCaches.Clear(sessionID)
 	s.renderCaches.Clear(sessionID)
+	s.disabledSessions.Delete(sessionID)
 
 	repoKey := repoKeyForRoot(s.rootDir)
 	if repoKey != "" && s.db != nil {
@@ -756,4 +776,13 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 			return
 		}
 	}
+}
+
+func (s *Service) disableForSession(sessionID string) {
+	s.disabledSessions.Store(sessionID, struct{}{})
+}
+
+func (s *Service) isDisabledForSession(sessionID string) bool {
+	_, ok := s.disabledSessions.Load(sessionID)
+	return ok
 }
