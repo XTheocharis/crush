@@ -4,17 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"io/fs"
 	"log/slog"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/treesitter"
 	"golang.org/x/sync/singleflight"
 )
@@ -558,25 +560,36 @@ func (s *Service) walkAllFiles(ctx context.Context) []string {
 		return nil
 	}
 
+	walker := fsext.NewFastGlobWalker(root)
 	files := make([]string, 0, 256)
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
+
 		select {
 		case <-ctxDone(ctx):
 			return context.Canceled
 		default:
 		}
+
 		if d.IsDir() {
-			if d.Name() == ".git" {
+			if walker.ShouldSkipDir(path) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
+
+		// Skip non-regular files (symlinks, devices, etc.).
 		if !d.Type().IsRegular() {
 			return nil
 		}
+
+		if walker.ShouldSkip(path) {
+			return nil
+		}
+
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
 			return nil
@@ -584,8 +597,32 @@ func (s *Service) walkAllFiles(ctx context.Context) []string {
 		files = append(files, filepath.ToSlash(rel))
 		return nil
 	})
+
+	// Apply ExcludeGlobs filtering via doublestar.Match.
+	if s.cfg != nil && len(s.cfg.ExcludeGlobs) > 0 {
+		filtered := make([]string, 0, len(files))
+		for _, f := range files {
+			if !matchesAnyGlob(f, s.cfg.ExcludeGlobs) {
+				filtered = append(filtered, f)
+			}
+		}
+		files = filtered
+	}
+
 	sort.Strings(files)
 	return files
+}
+
+// matchesAnyGlob reports whether the given path matches any of the
+// provided glob patterns using doublestar.Match. Malformed patterns
+// are silently skipped.
+func matchesAnyGlob(path string, patterns []string) bool {
+	for _, p := range patterns {
+		if matched, err := doublestar.Match(p, path); err == nil && matched {
+			return true
+		}
+	}
+	return false
 }
 
 func ctxDone(ctx context.Context) <-chan struct{} {

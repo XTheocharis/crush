@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
@@ -136,6 +138,16 @@ func (app *App) initRepoMap(ctx context.Context, conn *sql.DB) agent.Coordinator
 	if app == nil || app.config == nil || app.config.Options == nil || app.config.Options.RepoMap == nil || app.config.Options.RepoMap.Disabled {
 		return nil
 	}
+
+	// Validate ExcludeGlobs patterns at init time so users get early
+	// feedback about malformed patterns.
+	for _, pattern := range app.config.Options.RepoMap.ExcludeGlobs {
+		if _, err := doublestar.Match(pattern, ""); err != nil {
+			slog.Warn("Malformed ExcludeGlobs pattern in repo map config",
+				"pattern", pattern, "error", err)
+		}
+	}
+
 	q := db.New(conn)
 	svc := repomap.NewService(app.config, q, conn, app.config.WorkingDir(), ctx)
 	app.repoMapSvc = svc
