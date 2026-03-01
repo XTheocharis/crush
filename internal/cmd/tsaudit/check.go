@@ -28,7 +28,8 @@ type checkOptions struct {
 }
 
 type languagesManifest struct {
-	Languages []manifestLanguage `json:"languages"`
+	AiderCommit string             `json:"aider_commit"`
+	Languages   []manifestLanguage `json:"languages"`
 }
 
 type manifestLanguage struct {
@@ -48,13 +49,15 @@ type driftReport struct {
 	UnexpectedInManifest []string
 	MissingQueryFiles    []string
 	UnexpectedQueryFiles []string
+	InvalidAiderCommit   bool
 }
 
 func (r driftReport) HasDrift() bool {
 	return len(r.MissingInManifest) > 0 ||
 		len(r.UnexpectedInManifest) > 0 ||
 		len(r.MissingQueryFiles) > 0 ||
-		len(r.UnexpectedQueryFiles) > 0
+		len(r.UnexpectedQueryFiles) > 0 ||
+		r.InvalidAiderCommit
 }
 
 var checkCmd = &cobra.Command{
@@ -107,6 +110,11 @@ func runCheck(opts checkOptions) (driftReport, error) {
 	manifestPath := resolvePath(opts.repoRoot, opts.manifestPath)
 	queriesDir := resolvePath(opts.repoRoot, opts.queriesDir)
 
+	manifest, err := loadFullManifest(manifestPath)
+	if err != nil {
+		return driftReport{}, err
+	}
+
 	manifestNames, err := loadManifestNames(manifestPath)
 	if err != nil {
 		return driftReport{}, err
@@ -136,7 +144,28 @@ func runCheck(opts checkOptions) (driftReport, error) {
 		}
 	}
 
-	return compareDrift(manifestNames, queryNames, primary, fallback), nil
+	report := compareDrift(manifestNames, queryNames, primary, fallback)
+
+	commit := strings.TrimSpace(manifest.AiderCommit)
+	if commit == "" || commit == "unknown" {
+		report.InvalidAiderCommit = true
+	}
+
+	return report, nil
+}
+
+func loadFullManifest(manifestPath string) (languagesManifest, error) {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return languagesManifest{}, fmt.Errorf("read manifest %q: %w", manifestPath, err)
+	}
+
+	var m languagesManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return languagesManifest{}, fmt.Errorf("parse manifest %q: %w", manifestPath, err)
+	}
+
+	return m, nil
 }
 
 func resolvePath(root, p string) string {
@@ -280,6 +309,10 @@ func printDrift(cmd *cobra.Command, report driftReport) {
 		for _, value := range values {
 			cmd.Printf("  - %s\n", value)
 		}
+	}
+
+	if report.InvalidAiderCommit {
+		cmd.Println("\naider_commit is empty or \"unknown\" (must be a valid SHA)")
 	}
 
 	printList("Missing in manifest (expected from Aider sources)", report.MissingInManifest)

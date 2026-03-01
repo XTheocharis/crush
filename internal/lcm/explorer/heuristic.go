@@ -273,7 +273,7 @@ func classifyImport(lang, imp string) string {
 		}
 		return treesitter.ImportCategoryThirdParty
 	case "java":
-		if strings.HasPrefix(imp, "java.") || strings.HasPrefix(imp, "javax.") || strings.HasPrefix(imp, "jdk.") {
+		if stdlib.IsJavaStdlib(imp) {
 			return treesitter.ImportCategoryStdlib
 		}
 		return treesitter.ImportCategoryThirdParty
