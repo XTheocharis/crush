@@ -2,6 +2,7 @@ package repomap
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/charmbracelet/crush/internal/treesitter"
 	"github.com/stretchr/testify/require"
 )
+
+var updateGolden = flag.Bool("update", false, "update golden files")
 
 func TestRenderBudgetGoldenBasic(t *testing.T) {
 	t.Parallel()
@@ -78,6 +81,11 @@ func TestRenderBudgetGoldenParityCounters(t *testing.T) {
 
 func assertGolden(t *testing.T, path string, got string) {
 	t.Helper()
+	if *updateGolden {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(got), 0o644))
+		return
+	}
 	want, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, string(want), got)

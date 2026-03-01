@@ -240,6 +240,12 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return fallback(err)
 	}
 
+	// W6.1: Build tagsByFile map for efficient lookup by RenderRepoMap.
+	tagsByFile := make(map[string][]treesitter.Tag, len(tags)/10+1)
+	for _, tag := range tags {
+		tagsByFile[tag.RelPath] = append(tagsByFile[tag.RelPath], tag)
+	}
+
 	graph := buildGraph(tags, opts.ChatFiles, opts.MentionedIdents)
 	personalization := BuildPersonalization(fileUniverse, opts.ChatFiles, opts.MentionedFnames, opts.MentionedIdents)
 	rankedDefs := Rank(graph, personalization)
@@ -260,12 +266,19 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return "", 0, fmt.Errorf("parity mode requires tokenizer-backed counting; TokenCounter is nil")
 	}
 
+	// W6.5 Layer 1: Expansion factor — scope-aware output is typically
+	// 3-10x larger than compact format. Reduce the budget for FitToBudget
+	// so fewer entries survive, then verify post-render.
+	const scopeExpansionFactor = 4
 	budgetProfile := BudgetProfile{
 		ParityMode:   opts.ParityMode,
 		TokenBudget:  resolveTokenBudget(s.cfg, opts),
 		Model:        opts.Model,
 		LanguageHint: "default",
 	}
+	originalBudget := budgetProfile.TokenBudget
+	budgetProfile.TokenBudget = max(budgetProfile.TokenBudget/scopeExpansionFactor, 1)
+
 	fit, err := FitToBudget(ctx, entries, budgetProfile, opts.TokenCounter)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && opts.ParityMode {
@@ -276,8 +289,77 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return fallback(err)
 	}
 
-	mapText := renderStageEntries(fit.Entries)
-	tokenCount := fit.SafetyTokens
+	// Restore original budget for post-render compliance checks.
+	budgetProfile.TokenBudget = originalBudget
+
+	// W6.2: Scope-aware rendering via RenderRepoMap, with compact fallback.
+	counter := opts.TokenCounter
+	model := opts.Model
+	parser := s.ensureParser()
+	rootDir := s.rootDir
+
+	mapText, renderErr := RenderRepoMap(ctx, fit.Entries, tagsByFile, parser, rootDir)
+	if renderErr != nil {
+		if errors.Is(renderErr, context.DeadlineExceeded) {
+			slog.Warn("Disabling repo map for session — render timed out",
+				"session", sessionID)
+			s.disableForSession(sessionID)
+		}
+		mapText = renderStageEntries(fit.Entries)
+	}
+
+	// W6.5 Layer 2: Post-render trim loop — monotonic hard-cap acceptance.
+	// Binary search to find the largest prefix of entries that fits within
+	// the original budget after scope-aware rendering.
+	fitsWithinBudget := func(text string) (bool, int) {
+		m, err := CountParityAndSafetyTokens(ctx, counter, model, text, "default")
+		if err != nil {
+			est := EstimateTokens(text, "default")
+			return est <= originalBudget, est
+		}
+		return m.SafetyTokens <= originalBudget, m.SafetyTokens
+	}
+
+	accepted, tokenCount := fitsWithinBudget(mapText)
+	if !accepted && len(fit.Entries) > 0 {
+		lo, hi := 0, len(fit.Entries)-1
+		for lo < hi {
+			mid := (lo + hi + 1) / 2
+			candidate := fit.Entries[:mid]
+			text, trimRenderErr := RenderRepoMap(ctx, candidate, tagsByFile, parser, rootDir)
+			if trimRenderErr != nil {
+				break // Context cancelled.
+			}
+			ok, _ := fitsWithinBudget(text)
+			if ok {
+				lo = mid
+			} else {
+				hi = mid - 1
+			}
+		}
+		if lo == 0 {
+			slog.Warn("Post-render trim reduced repo map to zero entries",
+				"original_entries", len(fit.Entries),
+				"budget", originalBudget)
+		}
+		fit.Entries = fit.Entries[:lo]
+		mapText, _ = RenderRepoMap(ctx, fit.Entries, tagsByFile, parser, rootDir)
+		_, tokenCount = fitsWithinBudget(mapText)
+	}
+
+	// Post-trim parity quality check (parity mode only).
+	if budgetProfile.ParityMode && tokenCount > 0 {
+		m, mErr := CountParityAndSafetyTokens(ctx, counter, model, mapText, "default")
+		if mErr == nil {
+			delta := parityComparatorDelta(m.ParityTokens, originalBudget)
+			if delta > 0.15 {
+				slog.Warn("Parity mode: repo map token count diverges from budget",
+					"parity_tokens", m.ParityTokens,
+					"budget", originalBudget,
+					"delta", delta)
+			}
+		}
+	}
 
 	s.sessionCaches.Store(sessionID, mapText, tokenCount)
 	if cacheKey != "" {
@@ -519,6 +601,15 @@ func (s *Service) Close() error {
 	return err
 }
 
+func (s *Service) disableForSession(sessionID string) {
+	s.disabledSessions.Store(sessionID, struct{}{})
+}
+
+func (s *Service) isDisabledForSession(sessionID string) bool {
+	_, ok := s.disabledSessions.Load(sessionID)
+	return ok
+}
+
 func (s *Service) preIndexSignal() <-chan struct{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -638,6 +729,11 @@ func ctxDone(ctx context.Context) <-chan struct{} {
 	return ctx.Done()
 }
 
+// renderCacheVersion distinguishes scope-aware output from the prior
+// compact S0|/S1| format. Bump when the rendering strategy changes to
+// invalidate all cached entries.
+const renderCacheVersion = "v2-scope"
+
 func buildRenderCacheKey(mode string, opts GenerateOpts) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" {
@@ -655,12 +751,14 @@ func buildRenderCacheKey(mode string, opts GenerateOpts) string {
 		return ""
 	case "files":
 		return strings.Join([]string{
+			renderCacheVersion,
 			mode,
 			joinParts(chatFiles),
 			itoa(opts.TokenBudget),
 		}, "|")
 	case "auto":
 		return strings.Join([]string{
+			renderCacheVersion,
 			mode,
 			joinParts(chatFiles),
 			joinParts(mentionedFnames),
@@ -669,6 +767,7 @@ func buildRenderCacheKey(mode string, opts GenerateOpts) string {
 		}, "|")
 	default:
 		return strings.Join([]string{
+			renderCacheVersion,
 			"auto",
 			joinParts(chatFiles),
 			joinParts(mentionedFnames),
@@ -819,13 +918,4 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 			return
 		}
 	}
-}
-
-func (s *Service) disableForSession(sessionID string) {
-	s.disabledSessions.Store(sessionID, struct{}{})
-}
-
-func (s *Service) isDisabledForSession(sessionID string) bool {
-	_, ok := s.disabledSessions.Load(sessionID)
-	return ok
 }
