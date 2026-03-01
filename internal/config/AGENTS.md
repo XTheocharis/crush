@@ -76,3 +76,40 @@ Both levels merge independently, with `Options.RepoMap` defaulting to `DefaultRe
 2. Add merge logic to the struct's `merge()` method following the patterns above
 3. Add a test case in `merge_test.go` verifying the merge behavior
 4. Run `go test ./internal/config/... -v -run TestConfigMerging` to verify
+
+## Repo Map Runtime Behavior
+
+### ExcludeGlobs Enforcement
+
+`ExcludeGlobs` patterns in `RepoMapOptions` are enforced by the file walker at
+generation time. Patterns use doublestar glob syntax (e.g., `vendor/**`,
+`*.generated.go`). Invalid patterns are logged as warnings at init time in
+`internal/app/repomap.go` but do not prevent startup. The walker skips any file
+matching an exclude pattern before tag extraction or ranking.
+
+### Tokenizer Provider
+
+The repo map uses tiktoken-go for token counting. The `cl100k_base` BPE rank
+data (~1.6 MB) is embedded in the binary at compile time via `//go:embed`.
+The `o200k_base` encoding is lazy-downloaded from OpenAI CDN and cached under
+`$XDG_CACHE_HOME/crush/tiktoken/` (or `~/.cache/crush/tiktoken/`).
+
+`InitTiktokenLoader(cacheDir)` must be called once before creating any
+`TiktokenCounter`. This is done in `internal/app/repomap.go:initRepoMap()`.
+The provider maps model families to encodings via
+`data/tokenizer_support.v1.json` (also embedded).
+
+### Disable Latch (Parity Mode)
+
+In parity mode, if `Generate()` encounters `context.DeadlineExceeded` at any
+of three handler sites (extractTags, FitToBudget, RenderRepoMap), the session
+is permanently disabled via a one-way latch (`disableForSession`). Subsequent
+calls for that session return the last known-good cached map without
+regenerating. The latch is stored in a `sync.Map` keyed by session ID.
+
+Key behaviors:
+- The latch only engages when `opts.ParityMode` is true.
+- Enhancement mode treats timeouts as transient (no latch).
+- `Reset(sessionID)` clears the latch for that session only.
+- `context.Canceled` does not trigger the latch.
+- The latch is per-session; other sessions are unaffected.
