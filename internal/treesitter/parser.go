@@ -381,6 +381,49 @@ func (p *parser) Analyze(ctx context.Context, path string, content []byte) (*Fil
 	}, nil
 }
 
+// ParseTree parses the source content and returns a cloned AST tree.
+// The caller owns the returned tree and must call tree.Close() when done.
+// Unlike Analyze(), ParseTree does not require a tags query — only a grammar.
+func (p *parser) ParseTree(ctx context.Context, path string, content []byte) (*tree_sitter.Tree, error) {
+	lang := MapPath(path)
+	if lang == "" {
+		return nil, fmt.Errorf("unsupported file: %s", path)
+	}
+	if !p.SupportsLanguage(lang) {
+		return nil, fmt.Errorf("unsupported language %q for %s", lang, path)
+	}
+
+	lp, ok := p.pool.Acquire(ctx, lang)
+	if !ok {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return nil, ErrParserPoolClosed
+	}
+	defer p.pool.release(lp)
+
+	tsLang := p.treeLangs[GetQueryKey(lang)]
+	if tsLang == nil {
+		return nil, fmt.Errorf("no grammar loaded for %q", lang)
+	}
+	if err := lp.parser.SetLanguage(tsLang); err != nil {
+		return nil, fmt.Errorf("set parser language %q: %w", lang, err)
+	}
+
+	cacheKey := treeCacheKey(path, content)
+	tree, ok := p.treeCache.Get(cacheKey)
+	if !ok {
+		tree = lp.parser.Parse(content, nil)
+		if tree == nil {
+			return nil, fmt.Errorf("tree-sitter parse returned nil for %s", path)
+		}
+		p.treeCache.Put(cacheKey, tree, content)
+		tree = tree.Clone()
+	}
+
+	return tree, nil
+}
+
 func treeCacheKey(path string, content []byte) string {
 	h := fnv.New64a()
 	_, _ = h.Write(content)

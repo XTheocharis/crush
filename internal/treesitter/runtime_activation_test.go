@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
 type runtimeLanguageExceptionsArtifact struct {
 	Version   string   `json:"version"`
 	Languages []string `json:"languages"`

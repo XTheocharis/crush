@@ -2,11 +2,14 @@ package repomap
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 	"unsafe"
+
+	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
@@ -30,6 +33,10 @@ func (f *fakeParser) Analyze(ctx context.Context, path string, content []byte) (
 		return &clone, nil
 	}
 	return &treesitter.FileAnalysis{}, nil
+}
+
+func (f *fakeParser) ParseTree(_ context.Context, _ string, _ []byte) (*tree_sitter.Tree, error) {
+	return nil, fmt.Errorf("ParseTree not implemented in fake")
 }
 
 func (f *fakeParser) Languages() []string               { return []string{"go"} }

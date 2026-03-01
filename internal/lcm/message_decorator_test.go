@@ -2,8 +2,11 @@ package lcm
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 
 	"github.com/charmbracelet/crush/internal/lcm/explorer"
 	"github.com/charmbracelet/crush/internal/message"
@@ -365,6 +368,10 @@ func (m *mockTreeSitterParser) SupportsLanguage(lang string) bool {
 
 func (m *mockTreeSitterParser) HasTags(lang string) bool {
 	return m.SupportsLanguage(lang)
+}
+
+func (m *mockTreeSitterParser) ParseTree(_ context.Context, _ string, _ []byte) (*tree_sitter.Tree, error) {
+	return nil, fmt.Errorf("ParseTree not implemented in mock")
 }
 
 func (m *mockTreeSitterParser) Close() error {

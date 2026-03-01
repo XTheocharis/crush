@@ -3,7 +3,10 @@ package explorer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+
+	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 
 	"github.com/charmbracelet/crush/internal/treesitter"
 	"github.com/stretchr/testify/require"
@@ -42,6 +45,10 @@ func (m *mockTreeSitterParser) HasTags(lang string) bool {
 		return false
 	}
 	return m.hasTags[lang]
+}
+
+func (m *mockTreeSitterParser) ParseTree(_ context.Context, _ string, _ []byte) (*tree_sitter.Tree, error) {
+	return nil, fmt.Errorf("ParseTree not implemented in mock")
 }
 
 func (m *mockTreeSitterParser) Close() error { return nil }

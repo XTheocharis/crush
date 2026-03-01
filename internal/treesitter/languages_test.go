@@ -671,4 +671,3 @@ func TestManifestRuntimeExceptionsArtifactConsistency(t *testing.T) {
 		require.True(t, HasTagsQuery(lang), "exception language %q must keep vendored tags query", lang)
 	}
 }
-

@@ -3,6 +3,8 @@ package treesitter
 import (
 	"context"
 	"fmt"
+
+	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 const (
@@ -60,6 +62,7 @@ type ImportInfo struct {
 // Parser is the tree-sitter analysis interface used by repo-map service.
 type Parser interface {
 	Analyze(ctx context.Context, path string, content []byte) (*FileAnalysis, error)
+	ParseTree(ctx context.Context, path string, content []byte) (*tree_sitter.Tree, error)
 	Languages() []string
 	SupportsLanguage(lang string) bool
 	HasTags(lang string) bool
