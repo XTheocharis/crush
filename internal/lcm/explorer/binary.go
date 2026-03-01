@@ -107,7 +107,7 @@ func (e *FallbackExplorer) CanHandle(path string, content []byte) bool {
 
 func (e *FallbackExplorer) Explore(ctx context.Context, input ExploreInput) (ExploreResult, error) {
 	if !looksLikeText(input.Content) {
-		// Treat as binary
+		// Treat as binary.
 		summary := fmt.Sprintf("Unknown binary file: %s (%d bytes)\nHex preview: %s",
 			filepath.Base(input.Path), len(input.Content), hexDump(input.Content))
 		return ExploreResult{
@@ -117,14 +117,27 @@ func (e *FallbackExplorer) Explore(ctx context.Context, input ExploreInput) (Exp
 		}, nil
 	}
 
-	// Treat as text
+	// Detect language via shebang before producing the text summary.
+	lang := detectShebang(input.Content)
+	explorerUsed := "fallback"
+	if lang != "" {
+		explorerUsed = "fallback:shebang:" + lang
+	}
+
+	// Treat as text.
 	if len(input.Content) > MaxFullLoadSize {
-		summary := fmt.Sprintf("File too large: %s (%d bytes)\nMaximum size for full load: %d bytes",
-			filepath.Base(input.Path), len(input.Content), MaxFullLoadSize)
+		var summary strings.Builder
+		fmt.Fprintf(&summary, "File too large: %s (%d bytes)\n",
+			filepath.Base(input.Path), len(input.Content))
+		fmt.Fprintf(&summary, "Maximum size for full load: %d bytes\n", MaxFullLoadSize)
+		if lang != "" {
+			fmt.Fprintf(&summary, "Detected language: %s (via shebang)\n", lang)
+		}
+		result := summary.String()
 		return ExploreResult{
-			Summary:       summary,
-			ExplorerUsed:  "fallback",
-			TokenEstimate: estimateTokens(summary),
+			Summary:       result,
+			ExplorerUsed:  explorerUsed,
+			TokenEstimate: estimateTokens(result),
 		}, nil
 	}
 
@@ -132,7 +145,12 @@ func (e *FallbackExplorer) Explore(ctx context.Context, input ExploreInput) (Exp
 	lineCount := strings.Count(string(input.Content), "\n") + 1
 
 	var summary strings.Builder
-	fmt.Fprintf(&summary, "Unknown text file: %s\n", filepath.Base(input.Path))
+	if lang != "" {
+		fmt.Fprintf(&summary, "Text file: %s (detected: %s via shebang)\n",
+			filepath.Base(input.Path), lang)
+	} else {
+		fmt.Fprintf(&summary, "Unknown text file: %s\n", filepath.Base(input.Path))
+	}
 	fmt.Fprintf(&summary, "Lines: %d\n", lineCount)
 	fmt.Fprintf(&summary, "Size: %d bytes\n", len(input.Content))
 	if sampled {
@@ -145,7 +163,7 @@ func (e *FallbackExplorer) Explore(ctx context.Context, input ExploreInput) (Exp
 	result := summary.String()
 	return ExploreResult{
 		Summary:       result,
-		ExplorerUsed:  "fallback",
+		ExplorerUsed:  explorerUsed,
 		TokenEstimate: estimateTokens(result),
 	}, nil
 }
