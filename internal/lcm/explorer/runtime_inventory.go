@@ -150,7 +150,7 @@ func LoadRuntimePersistenceMatrix(profile OutputProfile) (*RuntimePersistenceMat
 		}
 		if path.ID == "lcm.tool_output.create" {
 			for _, runtimeKey := range []string{
-				"binary", "json", "csv", "yaml", "toml", "ini", "xml", "html",
+				"archive", "pdf", "image", "executable", "binary", "json", "csv", "yaml", "toml", "ini", "xml", "html",
 				"markdown", "latex", "sqlite", "logs", "treesitter",
 				"shell", "text", "fallback",
 			} {
@@ -197,6 +197,14 @@ func (m *RuntimePersistenceMatrix) PolicyForExplorer(explorerUsed string) Runtim
 
 func runtimeExplorerKeyFromInventoryExplorer(explorer string) string {
 	switch strings.TrimSpace(explorer) {
+	case "ArchiveExplorer":
+		return "archive"
+	case "PDFExplorer":
+		return "pdf"
+	case "ImageExplorer":
+		return "image"
+	case "ExecutableExplorer":
+		return "executable"
 	case "BinaryExplorer":
 		return "binary"
 	case "JSONExplorer":
@@ -236,6 +244,14 @@ func runtimeExplorerKeyFromInventoryExplorer(explorer string) string {
 
 func runtimeExplorerKeyToInventoryExplorer(explorerUsed string) string {
 	switch strings.TrimSpace(explorerUsed) {
+	case "archive":
+		return "ArchiveExplorer"
+	case "pdf":
+		return "PDFExplorer"
+	case "image":
+		return "ImageExplorer"
+	case "executable":
+		return "ExecutableExplorer"
 	case "binary":
 		return "BinaryExplorer"
 	case "json":
@@ -324,21 +340,20 @@ func DiscoverRuntimePaths(registry *Registry, profile OutputProfile) []Discovere
 		})
 	}
 
-	// Add tree-sitter path if parser is present.
-	if registry.tsParser != nil {
-		paths = append(paths, DiscoveredPath{
-			ExplorerName: "TreeSitterExplorer",
-			Kind:         "code_format_enhanced",
-			Position:     9, // Position after HTMLExplorer
-		})
-	}
-
 	return paths
 }
 
 // explorerIdent returns the canonical identifier for an explorer.
 func explorerIdent(explorer Explorer) string {
 	switch e := explorer.(type) {
+	case *ArchiveExplorer:
+		return "ArchiveExplorer"
+	case *PDFExplorer:
+		return "PDFExplorer"
+	case *ImageExplorer:
+		return "ImageExplorer"
+	case *ExecutableExplorer:
+		return "ExecutableExplorer"
 	case *BinaryExplorer:
 		return "BinaryExplorer"
 	case *JSONExplorer:
@@ -389,7 +404,13 @@ func CheckDrift(registry *Registry, profile OutputProfile) (*DriftReport, error)
 	}
 
 	discovered := DiscoverRuntimePaths(registry, profile)
+	return checkDriftAgainst(discovered, inventory), nil
+}
 
+// checkDriftAgainst performs the core drift comparison between discovered
+// paths and an inventory artifact. Entries with InScope=false are excluded
+// from comparison because they have no corresponding discovered explorer.
+func checkDriftAgainst(discovered []DiscoveredPath, inventory *RuntimeInventory) *DriftReport {
 	report := &DriftReport{
 		MissingPaths:  make([]RuntimeIngestionPath, 0),
 		ExtraPaths:    make([]DiscoveredPath, 0),
@@ -399,27 +420,33 @@ func CheckDrift(registry *Registry, profile OutputProfile) (*DriftReport, error)
 	// Build map of discovered paths for lookups.
 	discoveredMap := make(map[string]DiscoveredPath)
 	for _, path := range discovered {
-		key := fmt.Sprintf("%s:%s", path.ExplorerName, path.Kind)
+		key := path.ExplorerName
 		discoveredMap[key] = path
 	}
 
-	// Check for missing paths.
+	// Check for missing paths (in artifact but not discovered).
 	for _, artifactPath := range inventory.Paths {
-		key := fmt.Sprintf("%s:%s", artifactPath.Explorer, artifactPath.PathKind)
+		if !artifactPath.InScope {
+			continue
+		}
+		key := artifactPath.Explorer
 		if _, exists := discoveredMap[key]; !exists {
 			report.MissingPaths = append(report.MissingPaths, artifactPath)
 		}
 	}
 
-	// Check for extra paths.
+	// Check for extra paths (discovered but not in artifact).
 	artifactMap := make(map[string]bool)
 	for _, artifactPath := range inventory.Paths {
-		key := fmt.Sprintf("%s:%s", artifactPath.Explorer, artifactPath.PathKind)
+		if !artifactPath.InScope {
+			continue
+		}
+		key := artifactPath.Explorer
 		artifactMap[key] = true
 	}
 
 	for _, discPath := range discovered {
-		key := fmt.Sprintf("%s:%s", discPath.ExplorerName, discPath.Kind)
+		key := discPath.ExplorerName
 		if !artifactMap[key] {
 			report.ExtraPaths = append(report.ExtraPaths, discPath)
 		}
@@ -427,9 +454,12 @@ func CheckDrift(registry *Registry, profile OutputProfile) (*DriftReport, error)
 
 	// Check ordering for common paths.
 	for _, discPath := range discovered {
-		key := fmt.Sprintf("%s:%s", discPath.ExplorerName, discPath.Kind)
+		key := discPath.ExplorerName
 		for _, artifactPath := range inventory.Paths {
-			artifactKey := fmt.Sprintf("%s:%s", artifactPath.Explorer, artifactPath.PathKind)
+			if !artifactPath.InScope {
+				continue
+			}
+			artifactKey := artifactPath.Explorer
 			if key == artifactKey {
 				artifactPos, ok := artifactPath.FallbackChainPosition.(float64)
 				if ok {
@@ -447,7 +477,7 @@ func CheckDrift(registry *Registry, profile OutputProfile) (*DriftReport, error)
 		}
 	}
 
-	return report, nil
+	return report
 }
 
 // GenerateRuntimeInventory creates a new runtime inventory artifact.
@@ -553,6 +583,14 @@ func KindValue(explorer Explorer) string {
 	switch e := explorer.(type) {
 	case *BinaryExplorer:
 		return "native_binary"
+	case *ArchiveExplorer:
+		return "archive_format_native"
+	case *PDFExplorer:
+		return "document_format_native"
+	case *ImageExplorer:
+		return "image_format_native"
+	case *ExecutableExplorer:
+		return "executable_format_native"
 	case *JSONExplorer, *CSVExplorer, *YAMLExplorer, *TOMLExplorer, *INIExplorer, *XMLExplorer, *HTMLExplorer, *MarkdownExplorer, *LatexExplorer, *SQLiteExplorer, *LogsExplorer:
 		return "data_format_native"
 	case *TreeSitterExplorer:

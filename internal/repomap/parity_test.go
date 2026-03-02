@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/treesitter"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,6 +30,62 @@ func TestParityGateA1RankingConcordanceThresholdEnforcement(t *testing.T) {
 	metrics, err := computeRankingConcordance(aider, crush, 30)
 	require.NoError(t, err, "compute ranking concordance")
 	require.Error(t, enforceRankingThresholds(metrics), "expected threshold enforcement error")
+}
+
+func TestParityGateA1RealPipelineRanking(t *testing.T) {
+	t.Parallel()
+
+	// Build a real repo with cross-references to verify the pipeline produces
+	// meaningful rankings. main.go calls Hello() from lib.go and add() from
+	// util.go, so lib.go and util.go should appear in the ranked output.
+	dir := initGitRepo(t, map[string]string{
+		"main.go": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(Hello())\n\tfmt.Println(add(1, 2))\n}\n",
+		"lib.go":  "package main\n\n// Hello returns a greeting.\nfunc Hello() string {\n\treturn \"hello\"\n}\n",
+		"util.go": "package main\n\nfunc add(a, b int) int {\n\treturn a + b\n}\n\nfunc unused() {}\n",
+	})
+
+	// Extract tags using a real tree-sitter parser.
+	parser := treesitter.NewParser()
+	defer parser.Close()
+
+	var allTags []treesitter.Tag
+	for _, name := range []string{"main.go", "lib.go", "util.go"} {
+		content, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err)
+		analysis, err := parser.Analyze(context.Background(), name, content)
+		require.NoError(t, err)
+		allTags = append(allTags, analysis.Tags...)
+	}
+	require.NotEmpty(t, allTags, "expected tags from Go files")
+
+	// Build graph, rank, assemble stages, render.
+	graph := buildGraph(allTags, nil, nil)
+	ranked := Rank(graph, nil)
+	rankedFiles := AggregateRankedFiles(ranked, allTags)
+
+	fileRanking := make([]string, 0, len(rankedFiles))
+	for _, rf := range rankedFiles {
+		fileRanking = append(fileRanking, rf.Path)
+	}
+	require.NotEmpty(t, fileRanking, "expected ranked files")
+
+	// lib.go and util.go define symbols called by main.go — they should rank.
+	require.Contains(t, fileRanking, "lib.go", "lib.go should appear in ranking")
+	require.Contains(t, fileRanking, "util.go", "util.go should appear in ranking")
+
+	// Build tag map and render.
+	tagsByFile := make(map[string][]treesitter.Tag)
+	for _, tag := range allTags {
+		tagsByFile[tag.RelPath] = append(tagsByFile[tag.RelPath], tag)
+	}
+
+	entries := AssembleStageEntries(nil, ranked, nil, nil, nil, false)
+	require.NotEmpty(t, entries, "expected stage entries")
+
+	rendered, err := RenderRepoMap(context.Background(), entries, tagsByFile, parser, dir)
+	require.NoError(t, err)
+	require.NotEmpty(t, rendered, "expected non-empty rendered repo map")
+	require.Contains(t, rendered, "Hello", "Hello function should appear in rendered map")
 }
 
 func TestParityGateA2StageRenderFidelity(t *testing.T) {
@@ -551,5 +610,19 @@ func validParityGatePreflightProfile() *ParityPreflightProfile {
 		TokenCounterMode:        "tokenizer_backed",
 		FixedSeed:               1337,
 		ParityMode:              true,
+	}
+}
+
+func TestExplorerFamilyMatrixFamiliesNonEmpty(t *testing.T) {
+	t.Parallel()
+
+	efm, err := LoadExplorerFamilyMatrix()
+	require.NoError(t, err, "failed to load explorer family matrix")
+	require.NotEmpty(t, efm.Families, "explorer family matrix families array must not be empty")
+
+	for i, fam := range efm.Families {
+		require.NotEmpty(t, fam.Family, "families[%d]: family name must not be empty", i)
+		require.Greater(t, fam.ScoreWeight, 0.0, "families[%d]: score_weight must be positive", i)
+		require.Greater(t, fam.Threshold, 0.0, "families[%d]: threshold must be positive", i)
 	}
 }

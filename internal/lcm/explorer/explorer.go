@@ -71,9 +71,17 @@ type Registry struct {
 func NewRegistry(opts ...RegistryOption) *Registry {
 	r := &Registry{formatterProfile: OutputProfileEnhancement}
 	// Register in priority order.
-	// Binary -> Data formats -> Code -> Shell -> Text -> Fallback.
+	// Archive -> Binary -> Data formats -> Code -> Shell -> Text -> Fallback.
 	r.explorers = []Explorer{
-		// Phase 1: Binary/executable types
+		// Phase 0: Archive formats (before generic binary)
+		&ArchiveExplorer{},
+		// Phase 0b: PDF documents (before generic binary)
+		&PDFExplorer{},
+		// Phase 0c: Image files (before generic binary for richer metadata)
+		&ImageExplorer{},
+		// Phase 0d: Executable/binary subtypes (before generic binary)
+		&ExecutableExplorer{},
+		// Phase 1: Generic binary catch-all
 		&BinaryExplorer{},
 		// Phase 2: Data/document explorers (checked before code)
 		&JSONExplorer{},
@@ -101,13 +109,28 @@ func NewRegistry(opts ...RegistryOption) *Registry {
 	// Apply formatter profile to explorers that need it.
 	// This must be done after options are applied so we have the final profile.
 	for i, e := range r.explorers {
-		if sqlExp, ok := e.(*SQLiteExplorer); ok {
-			sqlExp.formatterProfile = r.formatterProfile
-			r.explorers[i] = sqlExp
-		}
-		if latexExp, ok := e.(*LatexExplorer); ok {
-			latexExp.formatterProfile = r.formatterProfile
-			r.explorers[i] = latexExp
+		switch exp := e.(type) {
+		case *ArchiveExplorer:
+			exp.formatterProfile = r.formatterProfile
+			r.explorers[i] = exp
+		case *PDFExplorer:
+			exp.formatterProfile = r.formatterProfile
+			r.explorers[i] = exp
+		case *ImageExplorer:
+			exp.formatterProfile = r.formatterProfile
+			r.explorers[i] = exp
+		case *ExecutableExplorer:
+			exp.formatterProfile = r.formatterProfile
+			r.explorers[i] = exp
+		case *SQLiteExplorer:
+			exp.formatterProfile = r.formatterProfile
+			r.explorers[i] = exp
+		case *LatexExplorer:
+			exp.formatterProfile = r.formatterProfile
+			r.explorers[i] = exp
+		case *LogsExplorer:
+			exp.formatterProfile = r.formatterProfile
+			r.explorers[i] = exp
 		}
 	}
 	// If a tree-sitter parser is provided, add TreeSitterExplorer to the chain.

@@ -471,6 +471,40 @@ line 17
 		return fmt.Errorf("enhancement raw canonical marker check failed: %w", err)
 	}
 
+	// Verify parity profile enforces section item caps.
+	parityListLines := strings.Split(strings.TrimSpace(parityList), "\n")
+	displayedItems := 0
+	for _, line := range parityListLines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "- ") {
+			continue
+		}
+		if _, _, isMarker := parseNormalizedParityMarker(trimmed); isMarker {
+			break
+		}
+		displayedItems++
+	}
+	if displayedItems > defaultSectionItemLimit {
+		return fmt.Errorf("parity list displayed %d items, exceeds cap %d", displayedItems, defaultSectionItemLimit)
+	}
+
+	// Verify parity raw content enforces line caps.
+	parityRawLines := strings.Split(strings.TrimSpace(parityRaw), "\n")
+	displayedContentLines := 0
+	for _, line := range parityRawLines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "- ") {
+			continue
+		}
+		if _, _, isMarker := parseNormalizedParityMarker(trimmed); isMarker {
+			break
+		}
+		displayedContentLines++
+	}
+	if displayedContentLines > defaultSectionLineLimit {
+		return fmt.Errorf("parity raw displayed %d content lines, exceeds cap %d", displayedContentLines, defaultSectionLineLimit)
+	}
+
 	return nil
 }
 
@@ -599,6 +633,10 @@ func validateRuntimePathMatrixAgainstInventory(inventory *RuntimeInventory, disc
 	}
 
 	requiredKinds := []string{
+		"archive_format_native",
+		"document_format_native",
+		"image_format_native",
+		"executable_format_native",
 		"native_binary",
 		"data_format_native",
 		"code_format_enhanced",
@@ -632,9 +670,14 @@ func validateRuntimePathMatrixAgainstInventory(inventory *RuntimeInventory, disc
 	}
 
 	requiredInventory := map[string]string{
-		"lcm.tool_output.create": "ingestion",
-		"lcm.describe.readback":  "retrieval",
-		"lcm.expand.readback":    "retrieval",
+		"lcm.tool_output.create":            "ingestion",
+		"lcm.describe.readback":             "retrieval",
+		"lcm.expand.readback":               "retrieval",
+		"volt.prompt.file.persist":          "ingestion",
+		"volt.prompt.user_text.nonpersist":  "ingestion",
+		"volt.tool.large_output.nonpersist": "ingestion",
+		"volt.tool.read.nonpersist":         "ingestion",
+		"volt.map_shared.persist":           "ingestion",
 	}
 	inventoryByID := make(map[string]RuntimeIngestionPath, len(inventory.Paths))
 	for _, p := range inventory.Paths {
@@ -1314,6 +1357,56 @@ func runParityGateB5DeterministicE2EParityCheck() error {
 		return fmt.Errorf("runtime parity fail-closed check failed: %w", err)
 	}
 
+	// Deterministic E2E: run real Explore() on fixture files, verify
+	// determinism and no tier leakage.
+	fixtureDir := filepath.Join("testdata", "parity_volt", "fixtures")
+	fixtureFiles := []string{
+		"binary_elf_header.bin",
+		"negative_truncated.json",
+		"negative_unsupported.xyz",
+	}
+
+	reg := NewRegistry()
+	for _, fname := range fixtureFiles {
+		fpath := filepath.Join(fixtureDir, fname)
+		content, readErr := os.ReadFile(fpath)
+		if readErr != nil {
+			return fmt.Errorf("read fixture %s: %w", fname, readErr)
+		}
+
+		// Run twice to verify determinism.
+		result1, err1 := reg.Explore(context.Background(), ExploreInput{
+			Path:    fname,
+			Content: content,
+		})
+		if err1 != nil {
+			return fmt.Errorf("explore %s run 1: %w", fname, err1)
+		}
+		result2, err2 := reg.Explore(context.Background(), ExploreInput{
+			Path:    fname,
+			Content: content,
+		})
+		if err2 != nil {
+			return fmt.Errorf("explore %s run 2: %w", fname, err2)
+		}
+
+		if result1.Summary != result2.Summary {
+			return fmt.Errorf("explore %s: determinism violation, summaries differ", fname)
+		}
+		if result1.ExplorerUsed != result2.ExplorerUsed {
+			return fmt.Errorf("explore %s: determinism violation, explorer mismatch %s vs %s",
+				fname, result1.ExplorerUsed, result2.ExplorerUsed)
+		}
+
+		// No tier leakage: explorerUsed must not contain +llm or +agent.
+		if strings.Contains(result1.ExplorerUsed, "+llm") {
+			return fmt.Errorf("explore %s: tier leakage, explorerUsed contains +llm", fname)
+		}
+		if strings.Contains(result1.ExplorerUsed, "+agent") {
+			return fmt.Errorf("explore %s: tier leakage, explorerUsed contains +agent", fname)
+		}
+	}
+
 	return nil
 }
 
@@ -1353,4 +1446,81 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func TestExplorerFamilyMatrixFamiliesNonEmpty(t *testing.T) {
+	t.Parallel()
+
+	efm, err := LoadExplorerFamilyMatrix()
+	require.NoError(t, err, "failed to load explorer family matrix")
+	require.NotEmpty(t, efm.Families, "explorer family matrix families array must not be empty")
+
+	for i, fam := range efm.Families {
+		require.NotEmpty(t, fam.Family, "families[%d]: family name must not be empty", i)
+		require.Greater(t, fam.ScoreWeight, 0.0, "families[%d]: score_weight must be positive", i)
+		require.Greater(t, fam.Threshold, 0.0, "families[%d]: threshold must be positive", i)
+	}
+}
+
+func TestParityFixtureDispatchBinaryAndNegative(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+
+	tests := []struct {
+		name             string
+		path             string
+		content          []byte
+		expectedExplorer string
+	}{
+		{
+			name:             "ELF header dispatches to executable",
+			path:             "binary_elf_header.bin",
+			content:          []byte{0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			expectedExplorer: "executable",
+		},
+		{
+			name: "PNG header dispatches to image",
+			path: "binary_png_header.png",
+			content: func() []byte {
+				sig := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+				ihdr := make([]byte, 25)
+				ihdr[0], ihdr[1], ihdr[2], ihdr[3] = 0, 0, 0, 13
+				copy(ihdr[4:8], []byte("IHDR"))
+				ihdr[8], ihdr[9], ihdr[10], ihdr[11] = 0, 0, 0, 1
+				ihdr[12], ihdr[13], ihdr[14], ihdr[15] = 0, 0, 0, 1
+				ihdr[16] = 8
+				ihdr[17] = 6
+				return append(sig, ihdr...)
+			}(),
+			expectedExplorer: "image",
+		},
+		{
+			name:             "truncated JSON dispatches to json",
+			path:             "negative_truncated.json",
+			content:          []byte(`{"key": "value", "incomplete":`),
+			expectedExplorer: "json",
+		},
+		{
+			// TextExplorer claims .xyz because content is valid UTF-8 text.
+			// TASKS predicted FallbackExplorer, but TextExplorer precedes it
+			// in the chain and accepts any valid text content.
+			name:             "unsupported extension dispatches to text",
+			path:             "negative_unsupported.xyz",
+			content:          []byte("This is a file with an unsupported extension.\nIt should be handled by the fallback explorer.\n"),
+			expectedExplorer: "text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result, err := reg.Explore(context.Background(), ExploreInput{
+				Path:    tt.path,
+				Content: tt.content,
+			})
+			require.NoError(t, err, "Explore should not return error")
+			require.Equal(t, tt.expectedExplorer, result.ExplorerUsed)
+		})
+	}
 }

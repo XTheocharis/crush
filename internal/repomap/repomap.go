@@ -1,6 +1,7 @@
 package repomap
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -222,9 +224,20 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return fallback(nil)
 	}
 
-	fileUniverse := s.AllFiles(ctx)
-	if len(fileUniverse) == 0 {
-		fileUniverse = s.walkAllFiles(ctx)
+	// Parity mode uses git-tracked files (mirroring Aider); non-parity
+	// mode keeps the existing walker-based behaviour unchanged.
+	var fileUniverse []string
+	if opts.ParityMode {
+		if tracked, err := s.gitTrackedFiles(ctx); err == nil && len(tracked) > 0 {
+			fileUniverse = tracked
+		} else {
+			fileUniverse = opts.ChatFiles // Aider-equivalent fallback.
+		}
+	} else {
+		fileUniverse = s.AllFiles(ctx)
+		if len(fileUniverse) == 0 {
+			fileUniverse = s.walkAllFiles(ctx)
+		}
 	}
 	if len(fileUniverse) == 0 {
 		return fallback(nil)
@@ -649,6 +662,35 @@ func (s *Service) checkContextsDone(ctx context.Context) error {
 	default:
 		return nil
 	}
+}
+
+// gitTrackedFiles returns git-tracked files (cached index) for parity
+// mode. .crushignore is NOT applied: parity mode mirrors Aider's
+// behaviour where only ExcludeGlobs filter the git-tracked universe.
+func (s *Service) gitTrackedFiles(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "-z", "--cached")
+	cmd.Dir = s.rootDir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	out = bytes.TrimSuffix(out, []byte{0}) // Trailing NUL from -z.
+	if len(out) == 0 {
+		return nil, nil
+	}
+	var files []string
+	for _, entry := range bytes.Split(out, []byte{0}) {
+		rel := filepath.ToSlash(string(entry))
+		if rel == "" {
+			continue
+		}
+		if s.cfg != nil && matchesAnyGlob(rel, s.cfg.ExcludeGlobs) {
+			continue
+		}
+		files = append(files, rel)
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 func (s *Service) walkAllFiles(ctx context.Context) []string {

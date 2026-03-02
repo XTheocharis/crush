@@ -239,6 +239,26 @@ func (l *ParityFixtureLoader) LoadAllFixtures() (map[string][]byte, error) {
 		}
 	}
 
+	if len(index.Binary) > 0 {
+		for name, path := range index.Binary {
+			content, err := LoadFixtureFile(l.cfg, path)
+			if err != nil {
+				return nil, err
+			}
+			fixtures[name] = content
+		}
+	}
+
+	if len(index.Negative) > 0 {
+		for name, path := range index.Negative {
+			content, err := LoadFixtureFile(l.cfg, path)
+			if err != nil {
+				return nil, err
+			}
+			fixtures[name] = content
+		}
+	}
+
 	return fixtures, nil
 }
 
@@ -286,6 +306,14 @@ func GenerateFixtureIndex(cfg ParityTestFixtureConfig, meta FixtureMetadata) (*P
 			index.Format["logs"] = name
 		case "format_sqlite_seed.sql":
 			index.Format["sqlite_seed"] = name
+		case "binary_elf_header.bin":
+			index.Binary["elf_header"] = name
+		case "binary_png_header.png":
+			index.Binary["png_header"] = name
+		case "negative_truncated.json":
+			index.Negative["truncated_json"] = name
+		case "negative_unsupported.xyz":
+			index.Negative["unsupported_ext"] = name
 		}
 	}
 
@@ -340,10 +368,11 @@ func ComputeFixturesSHA256(fixturesDir string) (string, error) {
 		ext := strings.ToLower(filepath.Ext(path))
 		normalized := data
 		if ext == ".json" {
-			normalized, err = normalizeFixtureJSONForHash(data)
-			if err != nil {
-				return "", fmt.Errorf("normalize fixture %q for hash: %w", path, err)
+			if n, nErr := normalizeFixtureJSONForHash(data); nErr == nil {
+				normalized = n
 			}
+			// Intentionally invalid JSON (e.g. negative fixtures) falls
+			// through to raw bytes for hashing.
 		}
 
 		combined.Write(normalized)

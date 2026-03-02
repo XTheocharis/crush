@@ -4,7 +4,7 @@
   "provenance": {
     "aider_commit_sha": "7afaa26f8b8b7b56146f0674d2a67e795b616b7c",
     "comparator_path": "https://github.com/Aider-AI/aider/tree/7afaa26f8b8b7b56146f0674d2a67e795b616b7c",
-    "fixtures_sha256": "f1fa4a92d2990688b760c39657787ccdb66b3858f4a32dfe110b49a997db54f3",
+    "fixtures_sha256": "1efe349b1bb0aea3a5ed0d9f6cbe728cb48ac4e7dbfcaf6b8973a8fd1f70427b",
     "grep_ast_provenance": "grep-ast@v0.8.1",
     "tokenizer_id": "cl100k_base",
     "tokenizer_version": "v0.1.0"

@@ -115,7 +115,25 @@ cleanup
 }
 
 func TestBinaryExplorer(t *testing.T) {
-	// Binary content (PNG header)
+	// Generic binary content without a known magic signature. Archive, PDF,
+	// Image, and Executable explorers all pass on it, so BinaryExplorer
+	// handles it as the generic catch-all.
+	content := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09}
+
+	reg := NewRegistry()
+	result, err := reg.Explore(context.Background(), ExploreInput{
+		Path:    "program.wav",
+		Content: content,
+	})
+	require.NoError(t, err, "Explore failed")
+
+	require.Equal(t, "binary", result.ExplorerUsed, "Expected binary explorer")
+
+	require.True(t, strings.Contains(result.Summary, "Binary file"), "Expected summary to contain 'Binary file'")
+}
+
+func TestBinaryExplorer_PNGGoesToImage(t *testing.T) {
+	// PNG header should be handled by ImageExplorer, not BinaryExplorer.
 	content := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00}
 
 	reg := NewRegistry()
@@ -125,9 +143,7 @@ func TestBinaryExplorer(t *testing.T) {
 	})
 	require.NoError(t, err, "Explore failed")
 
-	require.Equal(t, "binary", result.ExplorerUsed, "Expected binary explorer")
-
-	require.True(t, strings.Contains(result.Summary, "Binary file"), "Expected summary to contain 'Binary file'")
+	require.Equal(t, "image", result.ExplorerUsed, "Expected image explorer for PNG")
 }
 
 func TestTextExplorer(t *testing.T) {
@@ -360,7 +376,7 @@ func TestDispatchPriority(t *testing.T) {
 			name:             "PNG binary file",
 			path:             "image.png",
 			content:          []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
-			expectedExplorer: "binary",
+			expectedExplorer: "image",
 		},
 		{
 			name:             "JSON file",
@@ -623,9 +639,10 @@ func TestFallbackExplorerHandlesEverything(t *testing.T) {
 	}
 }
 
-// TestBinaryPriorityOverDataFormats verifies that binary files are handled
-// by BinaryExplorer before any data format explorers.
-func TestBinaryPriorityOverDataFormats(t *testing.T) {
+// TestSpecializedExplorerPriorityOverDataFormats verifies that binary-like
+// files are handled by their specialized explorers before any data format
+// explorers. Priority: Archive > PDF > Image > Executable > Binary > Data.
+func TestSpecializedExplorerPriorityOverDataFormats(t *testing.T) {
 	reg := NewRegistry()
 
 	tests := []struct {
@@ -638,31 +655,31 @@ func TestBinaryPriorityOverDataFormats(t *testing.T) {
 			name:             "PNG header",
 			path:             "image.png",
 			content:          []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
-			expectedExplorer: "binary",
+			expectedExplorer: "image",
 		},
 		{
 			name:             "JPEG header",
 			path:             "photo.jpg",
 			content:          []byte{0xFF, 0xD8, 0xFF, 0xE0},
-			expectedExplorer: "binary",
+			expectedExplorer: "image",
 		},
 		{
 			name:             "PDF header",
 			path:             "document.pdf",
 			content:          []byte("%PDF-1.4\n"),
-			expectedExplorer: "binary",
+			expectedExplorer: "pdf",
 		},
 		{
 			name:             "ZIP header",
 			path:             "archive.zip",
 			content:          []byte{0x50, 0x4B, 0x03, 0x04},
-			expectedExplorer: "binary",
+			expectedExplorer: "archive",
 		},
 		{
 			name:             "ELF header",
 			path:             "binary",
 			content:          []byte{0x7F, 0x45, 0x4C, 0x46},
-			expectedExplorer: "binary",
+			expectedExplorer: "executable",
 		},
 	}
 

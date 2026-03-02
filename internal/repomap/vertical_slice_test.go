@@ -323,7 +323,7 @@ func runVerticalSliceHarness(fx verticalSliceFixture, profile fixtureProfile) ve
 		ParityTokens:           fit.ParityTokens,
 		SafetyTokens:           fit.SafetyTokens,
 		RawHash:                stableHash(rendered),
-		NormalizedHash:         stableHash(normalizeParityMap(rendered)),
+		NormalizedHash:         stableHash(NormalizeParityMap(rendered)),
 		TrimmedStages:          fit.TrimmedStages,
 		Stage0Preserved:        allStage0Preserved(entries, fit.Entries),
 		RenderedFileEntryCount: countRenderedFileEntries(fit.Entries),
@@ -373,25 +373,6 @@ func countRenderedFileEntries(entries []StageEntry) int {
 		}
 	}
 	return count
-}
-
-func normalizeParityMap(text string) string {
-	if text == "" {
-		return ""
-	}
-	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	stage3 := make([]string, 0)
-	other := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.HasPrefix(line, "S3|") {
-			stage3 = append(stage3, line)
-		} else {
-			other = append(other, line)
-		}
-	}
-	sort.Strings(stage3)
-	normalized := append(other, stage3...)
-	return strings.Join(normalized, "\n") + "\n"
 }
 
 func stableHash(text string) string {

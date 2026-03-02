@@ -180,14 +180,14 @@ deploy
 			mustContain:      []string{"CSV file", "Columns: 4", "id", "name", "email"},
 		},
 		{
-			name: "Binary file (PNG)",
+			name: "Image file (PNG)",
 			path: "logo.png",
 			content: []byte{
 				0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
 				0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
 			},
-			expectedExplorer: "binary",
-			mustContain:      []string{"Binary file", "logo.png", "Hex preview"},
+			expectedExplorer: "image",
+			mustContain:      []string{"Image file", "logo.png", "Format: PNG"},
 		},
 		{
 			name: "Plain text",

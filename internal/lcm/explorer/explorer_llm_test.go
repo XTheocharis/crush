@@ -442,6 +442,14 @@ func main() {
 // explorerTypeName returns the name of an explorer type for testing.
 func explorerTypeName(e Explorer) string {
 	switch e.(type) {
+	case *ArchiveExplorer:
+		return "ArchiveExplorer"
+	case *PDFExplorer:
+		return "PDFExplorer"
+	case *ImageExplorer:
+		return "ImageExplorer"
+	case *ExecutableExplorer:
+		return "ExecutableExplorer"
 	case *BinaryExplorer:
 		return "BinaryExplorer"
 	case *ShellExplorer:

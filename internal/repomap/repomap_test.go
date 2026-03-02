@@ -3,8 +3,13 @@ package repomap
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
+	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/db"
 	"github.com/stretchr/testify/require"
 )
 
@@ -351,4 +356,221 @@ func TestDisableLatchResetOnlyAffectsTargetSession(t *testing.T) {
 		"sess-2 latch must be cleared by reset")
 	require.True(t, svc.isDisabledForSession("sess-3"),
 		"sess-3 latch must survive reset of sess-2")
+}
+
+// initGitRepo creates a temporary git repo with the given files committed.
+// Returns the root directory path.
+func initGitRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(context.Background(), args[0], args[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "command %v failed: %s", args, out)
+	}
+
+	run("git", "init")
+	run("git", "checkout", "-b", "main")
+
+	for name, content := range files {
+		full := filepath.Join(dir, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+	}
+
+	run("git", "add", "-A")
+	run("git", "commit", "-m", "init")
+
+	return dir
+}
+
+// TestGitTrackedFilesParityMode verifies that parity mode uses
+// git-tracked files as the file universe.
+func TestGitTrackedFilesParityMode(t *testing.T) {
+	t.Parallel()
+
+	dir := initGitRepo(t, map[string]string{
+		"main.go":        "package main",
+		"lib/utils.go":   "package lib",
+		"docs/README.md": "# docs",
+	})
+
+	svc := NewService(nil, nil, nil, dir, context.Background())
+
+	files, err := svc.gitTrackedFiles(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"docs/README.md", "lib/utils.go", "main.go"}, files)
+}
+
+// TestGitTrackedFilesFallbackNonGitDir verifies that gitTrackedFiles
+// returns an error when run outside a git repository, causing parity
+// mode to fall back to ChatFiles.
+func TestGitTrackedFilesFallbackNonGitDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir() // Not a git repo.
+	svc := NewService(nil, nil, nil, dir, context.Background())
+
+	files, err := svc.gitTrackedFiles(context.Background())
+	require.Error(t, err)
+	require.Nil(t, files)
+}
+
+// TestGitTrackedFilesExcludeGlobs verifies that ExcludeGlobs are
+// applied to filter the git-tracked file universe.
+func TestGitTrackedFilesExcludeGlobs(t *testing.T) {
+	t.Parallel()
+
+	dir := initGitRepo(t, map[string]string{
+		"main.go":           "package main",
+		"vendor/dep.go":     "package dep",
+		"vendor/sub/lib.go": "package sub",
+		"internal/app.go":   "package internal",
+		"build.log":         "log output",
+	})
+
+	cfg := &config.Config{
+		Options: &config.Options{
+			RepoMap: &config.RepoMapOptions{
+				ExcludeGlobs: []string{"vendor/**", "*.log"},
+			},
+		},
+	}
+
+	svc := NewService(cfg, nil, nil, dir, context.Background())
+
+	files, err := svc.gitTrackedFiles(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"internal/app.go", "main.go"}, files)
+}
+
+// TestGenerateParityModeUsesGitTracked verifies that Generate() in
+// parity mode uses git-tracked files and falls back to ChatFiles when
+// not in a git repo.
+func TestGenerateParityModeUsesGitTracked(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non_git_dir_falls_back_to_chat_files", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		svc := NewService(nil, nil, nil, dir, context.Background())
+
+		// With no git repo and no ChatFiles, parity mode falls back to
+		// empty ChatFiles → empty fileUniverse → fallback(nil).
+		m, tok, err := svc.Generate(context.Background(), GenerateOpts{
+			SessionID:  "sess-parity-fallback",
+			ParityMode: true,
+		})
+		require.NoError(t, err)
+		require.Empty(t, m)
+		require.Zero(t, tok)
+	})
+
+	t.Run("non_git_dir_uses_chat_files_fallback", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		svc := NewService(nil, nil, nil, dir, context.Background())
+
+		// Pre-populate cache so we can observe the fallback path
+		// (db is nil so Generate hits fallback after fileUniverse).
+		svc.sessionCaches.Store("sess-fb", "cached-map", 50)
+
+		m, tok, err := svc.Generate(context.Background(), GenerateOpts{
+			SessionID:  "sess-fb",
+			ParityMode: true,
+			ChatFiles:  []string{"foo.go", "bar.go"},
+		})
+		require.NoError(t, err)
+		// db is nil → fallback returns cached map.
+		require.Equal(t, "cached-map", m)
+		require.Equal(t, 50, tok)
+	})
+}
+
+// TestGenerateNonParityModeUnchanged verifies that non-parity mode
+// still uses the walker-based file universe (existing behaviour).
+func TestGenerateNonParityModeUnchanged(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil, nil, ".", context.Background())
+
+	// With nil db, Generate falls back. Pre-populate the cache.
+	svc.sessionCaches.Store("sess-enh", "enhance-map", 77)
+
+	m, tok, err := svc.Generate(context.Background(), GenerateOpts{
+		SessionID:  "sess-enh",
+		ParityMode: false,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "enhance-map", m)
+	require.Equal(t, 77, tok)
+}
+
+// TestGitTrackedFilesEmptyRepo verifies that an empty git repo (no
+// committed files) returns nil without error.
+func TestGitTrackedFilesEmptyRepo(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cmd := exec.CommandContext(context.Background(), "git", "init")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git init failed: %s", out)
+
+	svc := NewService(nil, nil, nil, dir, context.Background())
+
+	files, err := svc.gitTrackedFiles(context.Background())
+	require.NoError(t, err)
+	require.Nil(t, files)
+}
+
+// TestGenerateProducesTreeContextOutput verifies that Generate() exercises
+// the TreeContext render path end-to-end (S2.2). The output must contain
+// scope-aware markers (│ for shown lines, ⋮ for collapsed gaps). This test
+// fails if RenderRepoMap is replaced with renderStageEntries in Generate.
+func TestGenerateProducesTreeContextOutput(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	// Real database is required: Generate() returns fallback when db is nil.
+	conn, err := db.Connect(ctx, t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	q := db.New(conn)
+
+	dir := initGitRepo(t, map[string]string{
+		"main.go": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(Hello())\n\tfmt.Println(add(1, 2))\n}\n",
+		"lib.go":  "package main\n\n// Hello returns a greeting.\nfunc Hello() string {\n\treturn \"hello\"\n}\n",
+		"util.go": "package main\n\nfunc add(a, b int) int {\n\treturn a + b\n}\n\nfunc unused() {}\n",
+	})
+
+	svc := NewService(nil, q, conn, dir, ctx)
+	defer svc.Close()
+
+	m, tok, err := svc.Generate(ctx, GenerateOpts{
+		SessionID:    "sess-s2-treecontext",
+		ParityMode:   false,
+		TokenBudget:  100_000,
+		ForceRefresh: true,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, m, "expected non-empty repo map from Generate")
+	require.Greater(t, tok, 0, "expected positive token count")
+
+	// TreeContext scope-aware markers must be present in the output.
+	// │ prefixes shown lines; ⋮ marks collapsed gaps.
+	require.Contains(t, m, "│", "expected │ (pipe) marker from TreeContext rendering")
+	require.Contains(t, m, ":\n│", "expected file header followed by TreeContext output")
 }

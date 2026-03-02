@@ -220,10 +220,80 @@ func TestCheckDrift_NoDrift_DefaultRegistry(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, report)
 
-	// Verify the report structure
+	// Verify the report structure.
 	require.NotNil(t, report.MissingPaths)
 	require.NotNil(t, report.ExtraPaths)
 	require.NotNil(t, report.OrderingDrift)
+
+	// No artifact paths should be missing from discovery.
+	require.Empty(t, report.MissingPaths)
+
+	// No ordering drift expected for common paths.
+	require.Empty(t, report.OrderingDrift)
+
+	// TextExplorer and FallbackExplorer are in the artifact,
+	// so they must NOT appear in ExtraPaths.
+	for _, extra := range report.ExtraPaths {
+		require.NotEqual(t, "TextExplorer", extra.ExplorerName,
+			"TextExplorer must not be in ExtraPaths")
+		require.NotEqual(t, "FallbackExplorer", extra.ExplorerName,
+			"FallbackExplorer must not be in ExtraPaths")
+	}
+}
+
+func TestCheckDrift_DetectsMissingPath(t *testing.T) {
+	t.Parallel()
+
+	// Build a synthetic inventory with an extra in-scope path that has no
+	// corresponding explorer in the default registry.
+	inventory := &RuntimeInventory{
+		Version:         "1",
+		GeneratedAt:     "2026-02-26T00:00:00Z",
+		DiscoveryMethod: "deterministic_static_plus_runtime",
+		Profile:         "parity",
+		Paths: []RuntimeIngestionPath{
+			{
+				ID:       "lcm.tool_output.create",
+				PathKind: "ingestion",
+				InScope:  true,
+				Explorer: "TextExplorer",
+			},
+			{
+				ID:       "lcm.phantom.path",
+				PathKind: "ingestion",
+				InScope:  true,
+				Explorer: "PhantomExplorer",
+			},
+			{
+				ID:       "lcm.oob.ignored",
+				PathKind: "ingestion",
+				InScope:  false,
+				Explorer: "",
+			},
+		},
+	}
+
+	registry := NewRegistry()
+	discovered := DiscoverRuntimePaths(registry, OutputProfileParity)
+	report := checkDriftAgainst(discovered, inventory)
+
+	// PhantomExplorer is in-scope in the artifact but not in the registry,
+	// so it must appear in MissingPaths.
+	require.NotEmpty(t, report.MissingPaths, "expected MissingPaths to be non-empty")
+	found := false
+	for _, mp := range report.MissingPaths {
+		if mp.Explorer == "PhantomExplorer" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "PhantomExplorer should be in MissingPaths")
+
+	// The out-of-scope entry (empty explorer) must NOT appear in MissingPaths.
+	for _, mp := range report.MissingPaths {
+		require.NotEqual(t, "lcm.oob.ignored", mp.ID,
+			"out-of-scope entry must be excluded from MissingPaths")
+	}
 }
 
 func TestCheckDrift_WithParser(t *testing.T) {
@@ -237,6 +307,19 @@ func TestCheckDrift_WithParser(t *testing.T) {
 	report, err := CheckDrift(registry, OutputProfileEnhancement)
 	require.NoError(t, err)
 	require.NotNil(t, report)
+
+	// No artifact paths should be missing.
+	require.Empty(t, report.MissingPaths)
+	require.Empty(t, report.OrderingDrift)
+
+	// TreeSitterExplorer is parser-specific and must appear in ExtraPaths.
+	var foundTS bool
+	for _, extra := range report.ExtraPaths {
+		if extra.ExplorerName == "TreeSitterExplorer" {
+			foundTS = true
+		}
+	}
+	require.True(t, foundTS, "TreeSitterExplorer must be in ExtraPaths for parser-backed registry")
 }
 
 func TestCheckDrift_WithLLM(t *testing.T) {
@@ -246,6 +329,19 @@ func TestCheckDrift_WithLLM(t *testing.T) {
 	report, err := CheckDrift(registry, OutputProfileEnhancement)
 	require.NoError(t, err)
 	require.NotNil(t, report)
+
+	// No artifact paths should be missing.
+	require.Empty(t, report.MissingPaths)
+	require.Empty(t, report.OrderingDrift)
+
+	// LLMClient is LLM-specific and must appear in ExtraPaths.
+	var foundLLM bool
+	for _, extra := range report.ExtraPaths {
+		if extra.ExplorerName == "LLMClient" {
+			foundLLM = true
+		}
+	}
+	require.True(t, foundLLM, "LLMClient must be in ExtraPaths for LLM-backed registry")
 }
 
 func TestGenerateRuntimeInventory(t *testing.T) {

@@ -361,7 +361,7 @@ type XMLExplorer struct{}
 
 func (e *XMLExplorer) CanHandle(path string, content []byte) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	if ext == "xml" || ext == "xsd" || ext == "xsl" || ext == "xslt" {
+	if ext == "xml" || ext == "xsd" || ext == "xsl" || ext == "xslt" || ext == "svg" {
 		return true
 	}
 	// Check if content starts with XML declaration

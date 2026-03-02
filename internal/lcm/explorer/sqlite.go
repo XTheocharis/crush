@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -44,185 +43,14 @@ func (e *SQLiteExplorer) Explore(ctx context.Context, input ExploreInput) (Explo
 	fmt.Fprintf(&summary, "SQLite database: %s\n", name)
 	fmt.Fprintf(&summary, "Size: %d bytes\n", len(input.Content))
 
-	// Create temp file for SQLite library (it requires a file path, not bytes)
-	tempFile, err := os.CreateTemp("", "crush-sqlite-*.db")
+	// Use withTempFile because the SQLite library requires a file path, not
+	// bytes. The helper creates the file, writes content, closes it, then
+	// calls our callback with the path.
+	err := withTempFile("crush-sqlite-*.db", input.Content, func(tempPath string) error {
+		return e.exploreDB(ctx, &summary, tempPath)
+	})
 	if err != nil {
-		summary.WriteString("\nError: Could not create temp file for SQLite inspection")
-		result := summary.String()
-		return ExploreResult{
-			Summary:       result,
-			ExplorerUsed:  "sqlite",
-			TokenEstimate: estimateTokens(result),
-		}, nil
-	}
-	tempPath := tempFile.Name()
-	defer func() {
-		tempFile.Close()
-		os.Remove(tempPath)
-	}()
-
-	// Write content to temp file
-	if _, err := tempFile.Write(input.Content); err != nil {
-		summary.WriteString("\nError: Could not write database content to temp file")
-		result := summary.String()
-		return ExploreResult{
-			Summary:       result,
-			ExplorerUsed:  "sqlite",
-			TokenEstimate: estimateTokens(result),
-		}, nil
-	}
-	tempFile.Close()
-
-	// Open database in read-only mode
-	dsn := fmt.Sprintf("file:%s?mode=ro", url.QueryEscape(tempPath))
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		summary.WriteString("\nError: Could not open SQLite database (may be corrupted or invalid)")
-		result := summary.String()
-		return ExploreResult{
-			Summary:       result,
-			ExplorerUsed:  "sqlite",
-			TokenEstimate: estimateTokens(result),
-		}, nil
-	}
-	defer db.Close()
-
-	// Verify it's a valid SQLite database by checking SQLite version
-	var version string
-	if err := db.QueryRowContext(ctx, "SELECT sqlite_version()").Scan(&version); err != nil {
-		summary.WriteString("\nError: Invalid SQLite database file")
-		result := summary.String()
-		return ExploreResult{
-			Summary:       result,
-			ExplorerUsed:  "sqlite",
-			TokenEstimate: estimateTokens(result),
-		}, nil
-	}
-	fmt.Fprintf(&summary, "SQLite version: %s\n", version)
-
-	// Get table inventory
-	tables, err := e.getTables(ctx, db)
-	if err != nil {
-		summary.WriteString("\nError: Could not read table inventory")
-		result := summary.String()
-		return ExploreResult{
-			Summary:       result,
-			ExplorerUsed:  "sqlite",
-			TokenEstimate: estimateTokens(result),
-		}, nil
-	}
-
-	fmt.Fprintf(&summary, "Tables: %d\n", len(tables))
-	if len(tables) > 0 {
-		summary.WriteString("\nTable inventory:\n")
-		for _, table := range tables {
-			fmt.Fprintf(&summary, "  - %s\n", table)
-		}
-	}
-
-	// Get index inventory
-	indexes, err := e.getIndexes(ctx, db)
-	if err != nil {
-		summary.WriteString("\nError: Could not read index inventory")
-		result := summary.String()
-		return ExploreResult{
-			Summary:       result,
-			ExplorerUsed:  "sqlite",
-			TokenEstimate: estimateTokens(result),
-		}, nil
-	}
-
-	fmt.Fprintf(&summary, "\nIndexes: %d\n", len(indexes))
-	if len(indexes) > 0 {
-		summary.WriteString("\nIndex inventory:\n")
-		for _, idx := range indexes {
-			fmt.Fprintf(&summary, "  - %s on %s\n", idx.Name, idx.Table)
-		}
-	}
-
-	// Get per-table column summaries
-	if len(tables) > 0 {
-		summary.WriteString("\nSchema details:\n")
-		for _, table := range tables {
-			columns, err := e.getColumns(ctx, db, table)
-			if err != nil {
-				fmt.Fprintf(&summary, "  %s: (error reading schema)\n", table)
-				continue
-			}
-			if len(columns) == 0 {
-				fmt.Fprintf(&summary, "  %s: (no columns)\n", table)
-				continue
-			}
-			fmt.Fprintf(&summary, "  %s (%d columns):\n", table, len(columns))
-			for _, col := range columns {
-				fmt.Fprintf(&summary, "    - %s %s\n", col.Name, col.Type)
-			}
-		}
-	}
-
-	// PARITY MODE: Sample row summaries
-	sampleRows, err := e.getSampleRows(ctx, db, tables)
-	if err == nil {
-		summary.WriteString("\nSample row summaries:\n")
-		for _, table := range tables {
-			if rows, ok := sampleRows[table]; ok && len(rows) > 0 {
-				fmt.Fprintf(&summary, "  %s:\n", table)
-				for _, row := range rows {
-					fmt.Fprintf(&summary, "    %s\n", row)
-				}
-			}
-		}
-	}
-
-	// EXCEED MODE: Views, triggers, and constraints
-	if e.formatterProfile == OutputProfileEnhancement {
-		// Get view inventory
-		views, err := e.getViews(ctx, db)
-		if err == nil {
-			fmt.Fprintf(&summary, "\nViews: %d\n", len(views))
-			if len(views) > 0 {
-				summary.WriteString("\nView inventory:\n")
-				for _, view := range views {
-					fmt.Fprintf(&summary, "  - %s\n", view.Name)
-					fmt.Fprintf(&summary, "    SQL: %s\n", view.SQL)
-				}
-			}
-		}
-
-		// Get trigger inventory
-		triggers, err := e.getTriggers(ctx, db)
-		if err == nil {
-			fmt.Fprintf(&summary, "\nTriggers: %d\n", len(triggers))
-			if len(triggers) > 0 {
-				summary.WriteString("\nTrigger inventory:\n")
-				for _, trig := range triggers {
-					fmt.Fprintf(&summary, "  - %s on %s (%s)\n", trig.Name, trig.Table, trig.Timing)
-					fmt.Fprintf(&summary, "    Event: %s\n", trig.Event)
-					fmt.Fprintf(&summary, "    SQL: %s\n", trig.SQL)
-				}
-			}
-		}
-
-		// Get constraint details
-		constraints, err := e.getConstraints(ctx, db, tables)
-		if err == nil {
-			constraintCount := 0
-			for _, tblConstraints := range constraints {
-				constraintCount += len(tblConstraints)
-			}
-			if constraintCount > 0 {
-				fmt.Fprintf(&summary, "\nConstraints: %d\n", constraintCount)
-				summary.WriteString("\nConstraint details:\n")
-				for _, table := range tables {
-					if tblConstraints, ok := constraints[table]; ok && len(tblConstraints) > 0 {
-						fmt.Fprintf(&summary, "  %s:\n", table)
-						for _, c := range tblConstraints {
-							fmt.Fprintf(&summary, "    - %s: %s\n", c.Type, c.Definition)
-						}
-					}
-				}
-			}
-		}
+		summary.WriteString("\nError: " + err.Error())
 	}
 
 	result := summary.String()
@@ -231,6 +59,140 @@ func (e *SQLiteExplorer) Explore(ctx context.Context, input ExploreInput) (Explo
 		ExplorerUsed:  "sqlite",
 		TokenEstimate: estimateTokens(result),
 	}, nil
+}
+
+// exploreDB opens the SQLite database at path and writes its schema summary
+// into the provided builder.
+func (e *SQLiteExplorer) exploreDB(ctx context.Context, summary *strings.Builder, path string) error {
+	// Open database in read-only mode.
+	dsn := fmt.Sprintf("file:%s?mode=ro", url.QueryEscape(path))
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return fmt.Errorf("could not open SQLite database (may be corrupted or invalid)")
+	}
+	defer db.Close()
+
+	// Verify it's a valid SQLite database by checking SQLite version.
+	var version string
+	if err := db.QueryRowContext(ctx, "SELECT sqlite_version()").Scan(&version); err != nil {
+		return fmt.Errorf("invalid SQLite database file")
+	}
+	fmt.Fprintf(summary, "SQLite version: %s\n", version)
+
+	// Get table inventory.
+	tables, err := e.getTables(ctx, db)
+	if err != nil {
+		return fmt.Errorf("could not read table inventory")
+	}
+
+	fmt.Fprintf(summary, "Tables: %d\n", len(tables))
+	if len(tables) > 0 {
+		summary.WriteString("\nTable inventory:\n")
+		for _, table := range tables {
+			fmt.Fprintf(summary, "  - %s\n", table)
+		}
+	}
+
+	// Get index inventory.
+	indexes, err := e.getIndexes(ctx, db)
+	if err != nil {
+		return fmt.Errorf("could not read index inventory")
+	}
+
+	fmt.Fprintf(summary, "\nIndexes: %d\n", len(indexes))
+	if len(indexes) > 0 {
+		summary.WriteString("\nIndex inventory:\n")
+		for _, idx := range indexes {
+			fmt.Fprintf(summary, "  - %s on %s\n", idx.Name, idx.Table)
+		}
+	}
+
+	// Get per-table column summaries.
+	if len(tables) > 0 {
+		summary.WriteString("\nSchema details:\n")
+		for _, table := range tables {
+			columns, err := e.getColumns(ctx, db, table)
+			if err != nil {
+				fmt.Fprintf(summary, "  %s: (error reading schema)\n", table)
+				continue
+			}
+			if len(columns) == 0 {
+				fmt.Fprintf(summary, "  %s: (no columns)\n", table)
+				continue
+			}
+			fmt.Fprintf(summary, "  %s (%d columns):\n", table, len(columns))
+			for _, col := range columns {
+				fmt.Fprintf(summary, "    - %s %s\n", col.Name, col.Type)
+			}
+		}
+	}
+
+	// PARITY MODE: Sample row summaries.
+	sampleRows, err := e.getSampleRows(ctx, db, tables)
+	if err == nil {
+		summary.WriteString("\nSample row summaries:\n")
+		for _, table := range tables {
+			if rows, ok := sampleRows[table]; ok && len(rows) > 0 {
+				fmt.Fprintf(summary, "  %s:\n", table)
+				for _, row := range rows {
+					fmt.Fprintf(summary, "    %s\n", row)
+				}
+			}
+		}
+	}
+
+	// EXCEED MODE: Views, triggers, and constraints.
+	if e.formatterProfile == OutputProfileEnhancement {
+		// Get view inventory.
+		views, err := e.getViews(ctx, db)
+		if err == nil {
+			fmt.Fprintf(summary, "\nViews: %d\n", len(views))
+			if len(views) > 0 {
+				summary.WriteString("\nView inventory:\n")
+				for _, view := range views {
+					fmt.Fprintf(summary, "  - %s\n", view.Name)
+					fmt.Fprintf(summary, "    SQL: %s\n", view.SQL)
+				}
+			}
+		}
+
+		// Get trigger inventory.
+		triggers, err := e.getTriggers(ctx, db)
+		if err == nil {
+			fmt.Fprintf(summary, "\nTriggers: %d\n", len(triggers))
+			if len(triggers) > 0 {
+				summary.WriteString("\nTrigger inventory:\n")
+				for _, trig := range triggers {
+					fmt.Fprintf(summary, "  - %s on %s (%s)\n", trig.Name, trig.Table, trig.Timing)
+					fmt.Fprintf(summary, "    Event: %s\n", trig.Event)
+					fmt.Fprintf(summary, "    SQL: %s\n", trig.SQL)
+				}
+			}
+		}
+
+		// Get constraint details.
+		constraints, err := e.getConstraints(ctx, db, tables)
+		if err == nil {
+			constraintCount := 0
+			for _, tblConstraints := range constraints {
+				constraintCount += len(tblConstraints)
+			}
+			if constraintCount > 0 {
+				fmt.Fprintf(summary, "\nConstraints: %d\n", constraintCount)
+				summary.WriteString("\nConstraint details:\n")
+				for _, table := range tables {
+					if tblConstraints, ok := constraints[table]; ok && len(tblConstraints) > 0 {
+						fmt.Fprintf(summary, "  %s:\n", table)
+						for _, c := range tblConstraints {
+							fmt.Fprintf(summary, "    - %s: %s\n", c.Type, c.Definition)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 type indexInfo struct {

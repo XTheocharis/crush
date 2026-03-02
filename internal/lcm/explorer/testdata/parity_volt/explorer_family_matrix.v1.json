@@ -1,7 +1,7 @@
 {
   "version": "1",
   "description": "Explorer family matrix for parity testing. Maps explorers to supported file types, language families, and model-level support.",
-  "generated_at": "2025-02-26T00:00:00Z",
+  "generated_at": "2026-02-26T00:00:00Z",
   "explorers": [
     {
       "explorer_id": "BinaryExplorer",
@@ -108,7 +108,7 @@
       "description": "Native Markdown format explorer"
     },
     {
-      "explorer_id": "LaTeXExplorer",
+      "explorer_id": "LatexExplorer",
       "explorer_type": "markdown_native",
       "supported_extensions": ["tex", "latex"],
       "language_families": ["latex"],
@@ -130,6 +130,50 @@
       "language_families": ["logs"],
       "model_support": "all",
       "description": "Native logs explorer"
+    },
+    {
+      "explorer_id": "ArchiveExplorer",
+      "explorer_type": "archive_format_native",
+      "supported_extensions": [],
+      "language_families": [],
+      "model_support": "all",
+      "description": "Native archive format explorer"
+    },
+    {
+      "explorer_id": "PDFExplorer",
+      "explorer_type": "document_format_native",
+      "supported_extensions": [],
+      "language_families": [],
+      "model_support": "all",
+      "description": "Native PDF document format explorer"
+    },
+    {
+      "explorer_id": "ImageExplorer",
+      "explorer_type": "image_format_native",
+      "supported_extensions": [],
+      "language_families": [],
+      "model_support": "all",
+      "description": "Native image format explorer"
+    },
+    {
+      "explorer_id": "ExecutableExplorer",
+      "explorer_type": "executable_format_native",
+      "supported_extensions": [],
+      "language_families": [],
+      "model_support": "all",
+      "description": "Native executable format explorer"
     }
+  ],
+  "families": [
+    {"family": "code", "parity_required": true, "allowed_exclusion": false, "score_weight": 1.0, "threshold": 0.8},
+    {"family": "data_format", "parity_required": true, "allowed_exclusion": false, "score_weight": 0.8, "threshold": 0.7},
+    {"family": "shell", "parity_required": true, "allowed_exclusion": false, "score_weight": 0.6, "threshold": 0.6},
+    {"family": "text", "parity_required": true, "allowed_exclusion": false, "score_weight": 0.5, "threshold": 0.5},
+    {"family": "binary", "parity_required": false, "allowed_exclusion": true, "exclusion_rationale": "binary format analysis is enhancement-only", "score_weight": 0.3, "threshold": 0.3},
+    {"family": "markdown", "parity_required": true, "allowed_exclusion": false, "score_weight": 0.7, "threshold": 0.6},
+    {"family": "pdf", "parity_required": false, "allowed_exclusion": true, "exclusion_rationale": "PDF text extraction requires external tools", "score_weight": 0.4, "threshold": 0.4},
+    {"family": "image", "parity_required": false, "allowed_exclusion": true, "exclusion_rationale": "image metadata is enhancement-only", "score_weight": 0.3, "threshold": 0.3},
+    {"family": "executable", "parity_required": false, "allowed_exclusion": true, "exclusion_rationale": "executable analysis requires external tools", "score_weight": 0.3, "threshold": 0.3},
+    {"family": "archive", "parity_required": false, "allowed_exclusion": true, "exclusion_rationale": "archive listing is enhancement-only", "score_weight": 0.4, "threshold": 0.4}
   ]
 }

@@ -1,7 +1,7 @@
 {
   "version": "1",
   "description": "Explorer family matrix for repomap parity testing. Maps explorers to supported file types and language families for the comparator.",
-  "generated_at": "2025-02-26T00:00:00Z",
+  "generated_at": "2026-02-26T00:00:00Z",
   "explorers": [
     {
       "explorer_id": "TreeSitterExplorer",
@@ -11,5 +11,8 @@
       "model_support": "llm_enhanced",
       "description": "Tree-sitter enhanced code analysis for repomap, handles all code languages"
     }
+  ],
+  "families": [
+    {"family": "code", "parity_required": true, "allowed_exclusion": false, "score_weight": 1.0, "threshold": 0.8}
   ]
 }

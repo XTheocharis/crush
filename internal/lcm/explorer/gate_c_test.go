@@ -18,6 +18,10 @@ const (
 )
 
 var testExplorers = []string{
+	"archive",
+	"pdf",
+	"image",
+	"executable",
 	"text",
 	"treesitter",
 	"shell",
@@ -223,7 +227,7 @@ func verifyRuntimePersistenceWiring(evidence *phase0CGateEvidence) error {
 			expectedPersist: true,
 		},
 		{
-			name:            "binary_explorer",
+			name:            "executable_explorer",
 			path:            "test.bin",
 			content:         []byte{0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00},
 			expectedPersist: true,
@@ -281,6 +285,10 @@ func verifyMatrixEnforcement(inv *RuntimeInventory, evidence *phase0CGateEvidenc
 		expectedPersist bool
 		pathKind        string
 	}{
+		{"archive", true, "ingestion"},
+		{"pdf", true, "ingestion"},
+		{"image", true, "ingestion"},
+		{"executable", true, "ingestion"},
 		{"text", true, "ingestion"},
 		{"treesitter", true, "ingestion"},
 		{"shell", true, "ingestion"},
@@ -291,6 +299,10 @@ func verifyMatrixEnforcement(inv *RuntimeInventory, evidence *phase0CGateEvidenc
 		{"ini", true, "ingestion"},
 		{"xml", true, "ingestion"},
 		{"html", true, "ingestion"},
+		{"markdown", true, "ingestion"},
+		{"latex", true, "ingestion"},
+		{"sqlite", true, "ingestion"},
+		{"logs", true, "ingestion"},
 		{"binary", true, "ingestion"},
 		{"fallback", true, "retrieval"},
 	}

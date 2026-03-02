@@ -43,12 +43,24 @@ type ExplorerInfo struct {
 	Description         string   `json:"description"`
 }
 
+// ExplorerFamilyEntry describes a family of explorers for parity validation.
+type ExplorerFamilyEntry struct {
+	Family             string  `json:"family"`
+	ParityRequired     bool    `json:"parity_required"`
+	AllowedExclusion   bool    `json:"allowed_exclusion"`
+	ExclusionRationale string  `json:"exclusion_rationale,omitempty"`
+	RequiredEvidence   string  `json:"required_evidence,omitempty"`
+	ScoreWeight        float64 `json:"score_weight"`
+	Threshold          float64 `json:"threshold"`
+}
+
 // ExplorerFamilyMatrix is the explorer family matrix artifact.
 type ExplorerFamilyMatrix struct {
-	Version     string         `json:"version"`
-	Description string         `json:"description"`
-	GeneratedAt string         `json:"generated_at"`
-	Explorers   []ExplorerInfo `json:"explorers"`
+	Version     string                `json:"version"`
+	Description string                `json:"description"`
+	GeneratedAt string                `json:"generated_at"`
+	Explorers   []ExplorerInfo        `json:"explorers"`
+	Families    []ExplorerFamilyEntry `json:"families,omitempty"`
 }
 
 // ProtocolArtifact encapsulates a versioned protocol artifact.

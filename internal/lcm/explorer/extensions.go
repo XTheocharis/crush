@@ -90,20 +90,8 @@ var TEXT_EXTENSIONS = map[string]string{
 }
 
 // BINARY_EXTENSIONS is the set of file extensions always treated as binary.
+// Extensions claimed by specific explorers (Archive, PDF, Image, Executable)
+// are handled there and omitted here. Only audio/video formats remain.
 var BINARY_EXTENSIONS = map[string]struct{}{
-	"exe": {}, "dll": {}, "so": {}, "dylib": {}, "a": {}, "lib": {},
-	"obj": {}, "bin": {}, "elf": {},
-	// Extension-less binaries (e.g. Linux ELF executables named "binary") are
-	// detected by binary signatures in BinaryExplorer.
-	"app": {}, "deb": {}, "rpm": {}, "msi": {}, "dmg": {},
-	"png": {}, "jpg": {}, "jpeg": {}, "gif": {}, "bmp": {}, "ico": {}, "svg": {},
-	"webp": {}, "tiff": {}, "tif": {},
-	"raw": {}, "cr2": {}, "nef": {}, "arw": {}, "dng": {}, "psd": {},
 	"mp3": {}, "mp4": {}, "avi": {}, "mov": {}, "mkv": {}, "wav": {}, "flac": {},
-	"zip": {}, "tar": {}, "gz": {}, "bz2": {}, "xz": {}, "7z": {}, "rar": {},
-	"pdf":   {},
-	"class": {}, "jar": {},
-	"wasm": {},
-	"pyc":  {}, "pyo": {},
-	"o": {},
 }

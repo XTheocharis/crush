@@ -151,8 +151,8 @@ func TestParserRuntimeActivation_Gate(t *testing.T) {
 		{name: "c_sharp alias", lang: "c_sharp", queryKey: "csharp", extension: "cs", canonicalExtLang: "csharp", activationType: "ok"},
 		{name: "jsx alias", lang: "jsx", queryKey: "javascript", extension: "jsx", canonicalExtLang: "javascript", activationType: "ok"},
 
-		// Languages with runtime grammar but broken query (should fail with error)
-		{name: "julia broken-query", lang: "julia", queryKey: "julia", extension: "jl", activationType: "broken-query"},
+		// Julia (runtime-registered + query-backed)
+		{name: "julia", lang: "julia", queryKey: "julia", extension: "jl", activationType: "ok"},
 
 		// Manifest languages without runtime grammar (should not parse tags)
 		{name: "commonlisp no-runtime", lang: "commonlisp", queryKey: "commonlisp", extension: "lisp", activationType: "no-runtime"},

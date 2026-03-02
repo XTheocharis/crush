@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -72,6 +73,7 @@ func (c *coordinator) buildRepoMapHook() PrepareStepHook {
 		inChatOrReadOnlyFiles := unionRepoPaths(chatFiles, readOnlyFiles)
 		addableRepoFiles := subtractRepoPaths(allRepoFiles, inChatOrReadOnlyFiles)
 
+		profile := c.repoMapProfile()
 		opts := buildRepoMapGenerateOpts(
 			sessionID,
 			chatFiles,
@@ -79,19 +81,65 @@ func (c *coordinator) buildRepoMapHook() PrepareStepHook {
 			allRepoFiles,
 			addableRepoFiles,
 			inChatOrReadOnlyFiles,
-			c.repoMapProfile(),
+			profile,
 			true,
 		)
-		if len(opts.MentionedFnames) > 0 || len(opts.MentionedIdents) > 0 {
-			_, _, _ = c.repoMapSvc.Refresh(callCtx, sessionID, opts)
-		}
 
-		repoMapText := c.repoMapSvc.LastGoodMap(sessionID)
-		if repoMapText == "" {
-			return callCtx, prepared, nil
-		}
-		if c.lcm != nil {
-			_ = c.lcm.SetRepoMapTokens(callCtx, sessionID, int64(c.repoMapSvc.LastTokenCount(sessionID)))
+		var repoMapText string
+		if profile.ParityMode {
+			// Parity mode: 3-attempt fallback chain using Refresh()
+			// return values directly.
+			// Attempt 1 — full (hinted with chat files).
+			mapText, tokenCount, err := c.repoMapSvc.Refresh(callCtx, sessionID, opts)
+			if err == nil && mapText != "" {
+				repoMapText = mapText
+				slog.Debug("Repo map: parity attempt 1 (full) succeeded")
+			} else {
+				// Attempt 2 — disjoint (no chat files, expanded budget).
+				slog.Debug("Repo map: parity attempt 1 failed, trying attempt 2 (disjoint)")
+				opts2 := opts
+				opts2.ChatFiles = nil
+				opts2.TokenBudget = 0
+				opts2.ForceRefresh = false
+				mapText, tokenCount, err = c.repoMapSvc.Refresh(callCtx, sessionID, opts2)
+				if err == nil && mapText != "" {
+					repoMapText = mapText
+					slog.Debug("Repo map: parity attempt 2 (disjoint) succeeded")
+				} else {
+					// Attempt 3 — unhinted (no files, no mentions).
+					slog.Debug("Repo map: parity attempt 2 failed, trying attempt 3 (unhinted)")
+					opts3 := opts
+					opts3.ChatFiles = nil
+					opts3.MentionedFnames = nil
+					opts3.MentionedIdents = nil
+					opts3.TokenBudget = 0
+					opts3.ForceRefresh = false
+					mapText, tokenCount, err = c.repoMapSvc.Refresh(callCtx, sessionID, opts3)
+					if err == nil && mapText != "" {
+						repoMapText = mapText
+						slog.Debug("Repo map: parity attempt 3 (unhinted) succeeded")
+					}
+				}
+			}
+			if repoMapText == "" {
+				return callCtx, prepared, nil
+			}
+			if c.lcm != nil {
+				_ = c.lcm.SetRepoMapTokens(callCtx, sessionID, int64(tokenCount))
+			}
+		} else {
+			// Non-parity mode: preserve existing behavior with mentions
+			// guard and LastGoodMap/LastTokenCount fallback.
+			if len(opts.MentionedFnames) > 0 || len(opts.MentionedIdents) > 0 {
+				_, _, _ = c.repoMapSvc.Refresh(callCtx, sessionID, opts)
+			}
+			repoMapText = c.repoMapSvc.LastGoodMap(sessionID)
+			if repoMapText == "" {
+				return callCtx, prepared, nil
+			}
+			if c.lcm != nil {
+				_ = c.lcm.SetRepoMapTokens(callCtx, sessionID, int64(c.repoMapSvc.LastTokenCount(sessionID)))
+			}
 		}
 
 		userMsg := fantasy.NewUserMessage(

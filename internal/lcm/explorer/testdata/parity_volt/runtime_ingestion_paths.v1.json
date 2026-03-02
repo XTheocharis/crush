@@ -51,6 +51,77 @@
       ],
       "description": "Readback path for expanded large file content",
       "explorer": "FallbackExplorer"
+    },
+    {
+      "id": "volt.prompt.file.persist",
+      "path_kind": "ingestion",
+      "entrypoint": "prompt_dispatch",
+      "trigger": "file_reference",
+      "in_scope": false,
+      "persists_exploration_parity": true,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope"
+      ],
+      "description": "Volt prompt file reference ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.prompt.user_text.nonpersist",
+      "path_kind": "ingestion",
+      "entrypoint": "prompt_dispatch",
+      "trigger": "user_text_input",
+      "in_scope": false,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": false,
+      "config_gates": [
+        "session_scope"
+      ],
+      "description": "Volt prompt user text ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.tool.large_output.nonpersist",
+      "path_kind": "ingestion",
+      "entrypoint": "tool_output",
+      "trigger": "large_tool_result",
+      "in_scope": false,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": false,
+      "config_gates": [
+        "session_scope",
+        "output_size_threshold"
+      ],
+      "description": "Volt tool large output ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.tool.read.nonpersist",
+      "path_kind": "ingestion",
+      "entrypoint": "tool_dispatch",
+      "trigger": "file_read_tool",
+      "in_scope": false,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": false,
+      "config_gates": [
+        "session_scope"
+      ],
+      "description": "Volt tool file read ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.map_shared.persist",
+      "path_kind": "ingestion",
+      "entrypoint": "map_shared_dispatch",
+      "trigger": "shared_context_injection",
+      "in_scope": false,
+      "persists_exploration_parity": true,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope"
+      ],
+      "description": "Volt map shared context ingestion path",
+      "explorer": ""
     }
   ]
 }

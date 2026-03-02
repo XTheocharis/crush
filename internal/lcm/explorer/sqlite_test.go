@@ -257,7 +257,7 @@ func TestSQLiteExplorer_Explore(t *testing.T) {
 
 		summary := result.Summary
 		require.Contains(t, summary, "SQLite database: corrupted.db")
-		require.Contains(t, summary, "Error: Invalid SQLite database file")
+		require.Contains(t, summary, "Error: invalid SQLite database file")
 	})
 
 	t.Run("non-sqlite content with extension", func(t *testing.T) {
