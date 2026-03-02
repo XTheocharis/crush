@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"testing"
 
 	"charm.land/fantasy"
@@ -11,35 +10,6 @@ import (
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/stretchr/testify/require"
 )
-
-// mockSessionAgent mirrors the upstream mock in coordinator_test.go.
-// After merging upstream, remove this definition and add
-// SetPrepareStepHooks to the upstream mock instead.
-type mockSessionAgent struct {
-	model     Model
-	runFunc   func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
-	cancelled []string
-}
-
-func (m *mockSessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
-	return m.runFunc(ctx, call)
-}
-
-func (m *mockSessionAgent) Model() Model                                  { return m.model }
-func (m *mockSessionAgent) SetModels(large, small Model)                  {}
-func (m *mockSessionAgent) SetTools(tools []fantasy.AgentTool)            {}
-func (m *mockSessionAgent) SetSystemPrompt(systemPrompt string)           {}
-func (m *mockSessionAgent) SetPrepareStepHooks(hooks []PrepareStepHook)   {}
-func (m *mockSessionAgent) Cancel(sessionID string)                       { m.cancelled = append(m.cancelled, sessionID) }
-func (m *mockSessionAgent) CancelAll()                                    {}
-func (m *mockSessionAgent) IsSessionBusy(sessionID string) bool           { return false }
-func (m *mockSessionAgent) IsBusy() bool                                  { return false }
-func (m *mockSessionAgent) QueuedPrompts(sessionID string) int            { return 0 }
-func (m *mockSessionAgent) QueuedPromptsList(sessionID string) []string   { return nil }
-func (m *mockSessionAgent) ClearQueue(sessionID string)                   {}
-func (m *mockSessionAgent) Summarize(context.Context, string, fantasy.ProviderOptions) error {
-	return nil
-}
 
 // busyMockAgent wraps mockSessionAgent to report as busy.
 type busyMockAgent struct {

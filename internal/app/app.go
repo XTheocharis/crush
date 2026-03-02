@@ -259,6 +259,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 			done <- response{
 				err: fmt.Errorf("failed to start agent processing stream: %w", err),
 			}
+			return
 		}
 		done <- response{
 			result: result,
@@ -580,7 +581,7 @@ func (app *App) Shutdown() {
 	var wg sync.WaitGroup
 
 	// Shared shutdown context for all timeout-bounded cleanup.
-	shutdownCtx, cancel := context.WithTimeout(app.globalCtx, 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(app.globalCtx), 5*time.Second)
 	defer cancel()
 
 	// Send exit event

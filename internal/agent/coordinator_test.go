@@ -2,421 +2,385 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
-	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func toolNames(ts []fantasy.AgentTool) []string {
-	names := make([]string, 0, len(ts))
-	for _, t := range ts {
-		names = append(names, t.Info().Name)
-	}
-	return names
+// mockSessionAgent is a minimal mock for the SessionAgent interface.
+type mockSessionAgent struct {
+	model     Model
+	runFunc   func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
+	cancelled []string
 }
 
-func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
-	env := testEnv(t)
-
-	cfgDisabled, err := config.Init(env.workingDir, "", false)
-	require.NoError(t, err)
-	// Disable both map_refresh (for the test) and agent (requires model
-	// selection which is not available without full provider setup).
-	cfgDisabled.Options.DisabledTools = []string{"map_refresh", "agent"}
-	cfgDisabled.SetupAgents()
-
-	cDisabled := &coordinator{
-		cfg:         cfgDisabled,
-		sessions:    env.sessions,
-		messages:    env.messages,
-		permissions: permission.NewPermissionService(env.workingDir, true, nil),
-		history:     env.history,
-		filetracker: *env.filetracker,
-	}
-
-	coderTools, err := cDisabled.buildTools(t.Context(), cfgDisabled.Agents[config.AgentCoder])
-	require.NoError(t, err)
-	require.NotContains(t, toolNames(coderTools), tools.MapRefreshToolName)
-
-	cfgEnabled, err := config.Init(env.workingDir, "", false)
-	require.NoError(t, err)
-	cfgEnabled.Options.DisabledTools = []string{"agent"}
-	cfgEnabled.SetupAgents()
-
-	cEnabled := &coordinator{
-		cfg:         cfgEnabled,
-		sessions:    env.sessions,
-		messages:    env.messages,
-		permissions: permission.NewPermissionService(env.workingDir, true, nil),
-		history:     env.history,
-		filetracker: *env.filetracker,
-	}
-
-	coderTools, err = cEnabled.buildTools(t.Context(), cfgEnabled.Agents[config.AgentCoder])
-	require.NoError(t, err)
-	require.Contains(t, toolNames(coderTools), tools.MapRefreshToolName)
-
-	taskTools, err := cEnabled.buildTools(t.Context(), cfgEnabled.Agents[config.AgentTask])
-	require.NoError(t, err)
-	require.NotContains(t, toolNames(taskTools), tools.MapRefreshToolName)
-	require.NotContains(t, toolNames(taskTools), "map_reset")
+func (m *mockSessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+	return m.runFunc(ctx, call)
 }
 
-func TestRecoverSession(t *testing.T) {
-	t.Run("no messages", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create coordinator with mock services
-		coordinator := &coordinator{
-			sessions: env.sessions,
-			messages: env.messages,
-		}
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Verify no messages were modified
-		msgs, err := env.messages.List(t.Context(), sess.ID)
-		require.NoError(t, err)
-		require.Empty(t, msgs)
-	})
-
-	t.Run("already finished messages", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create a finished assistant message (with Finish part)
-		_, err = env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.Assistant,
-			Parts: []message.ContentPart{message.TextContent{Text: "Hello!"}, message.Finish{Reason: message.FinishReasonEndTurn}},
-		})
-		require.NoError(t, err)
-
-		// Create coordinator with mock services
-		coordinator := &coordinator{
-			sessions: env.sessions,
-			messages: env.messages,
-		}
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Verify the message was not modified
-		msgs, err := env.messages.List(t.Context(), sess.ID)
-		require.NoError(t, err)
-		require.Len(t, msgs, 1)
-		require.True(t, msgs[0].IsFinished())
-	})
-
-	t.Run("incomplete summary message", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create an incomplete summary message (simulating a crash during summarization)
-		summaryMsg, err := env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:             message.Assistant,
-			Parts:            []message.ContentPart{message.TextContent{Text: "Partial summary..."}},
-			Model:            "test-model",
-			Provider:         "test-provider",
-			IsSummaryMessage: true,
-		})
-		require.NoError(t, err)
-
-		// Verify the message is not finished
-		require.False(t, summaryMsg.IsFinished())
-
-		// Create coordinator with mock services
-		coordinator := &coordinator{
-			sessions: env.sessions,
-			messages: env.messages,
-		}
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Verify the summary message was recovered
-		recoveredMsg, err := env.messages.Get(t.Context(), summaryMsg.ID)
-		require.NoError(t, err)
-		require.True(t, recoveredMsg.IsFinished())
-		require.Equal(t, message.FinishReasonError, recoveredMsg.FinishReason())
-		require.Contains(t, recoveredMsg.FinishPart().Message, "Session interrupted")
-	})
-
-	t.Run("incomplete assistant message with tool calls", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create an incomplete assistant message with tool calls
-		// (simulating a crash during tool execution)
-		toolCall := message.ToolCall{
-			ID:               "tc-1",
-			Name:             "bash",
-			Input:            `echo "hello"`,
-			ProviderExecuted: false,
-			Finished:         false,
-		}
-
-		assistantMsg, err := env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.Assistant,
-			Parts: []message.ContentPart{message.ToolCall(toolCall)},
-			Model: "test-model",
-		})
-		require.NoError(t, err)
-
-		// Verify the message is not finished
-		require.False(t, assistantMsg.IsFinished())
-
-		// Create coordinator with mock services
-		coordinator := &coordinator{
-			sessions: env.sessions,
-			messages: env.messages,
-		}
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Verify the assistant message was recovered
-		recoveredMsg, err := env.messages.Get(t.Context(), assistantMsg.ID)
-		require.NoError(t, err)
-		require.True(t, recoveredMsg.IsFinished())
-		require.Equal(t, message.FinishReasonError, recoveredMsg.FinishReason())
-		require.Contains(t, recoveredMsg.FinishPart().Message, "Session interrupted")
-
-		// Verify the tool call was marked as finished
-		toolCalls := recoveredMsg.ToolCalls()
-		require.Len(t, toolCalls, 1)
-		require.True(t, toolCalls[0].Finished)
-	})
-
-	t.Run("incomplete assistant message without tool calls", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create an incomplete assistant message with partial content but no tool calls
-		assistantMsg, err := env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.Assistant,
-			Parts: []message.ContentPart{message.TextContent{Text: "This is a partial response..."}},
-			Model: "test-model",
-		})
-		require.NoError(t, err)
-
-		// Verify the message is not finished
-		require.False(t, assistantMsg.IsFinished())
-
-		// Create coordinator with mock services
-		coordinator := &coordinator{
-			sessions: env.sessions,
-			messages: env.messages,
-		}
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Verify the assistant message was recovered
-		recoveredMsg, err := env.messages.Get(t.Context(), assistantMsg.ID)
-		require.NoError(t, err)
-		require.True(t, recoveredMsg.IsFinished())
-		require.Equal(t, message.FinishReasonError, recoveredMsg.FinishReason())
-		require.Contains(t, recoveredMsg.FinishPart().Message, "Session interrupted")
-		require.Equal(t, "This is a partial response...", recoveredMsg.Content().Text)
-	})
-
-	t.Run("session is busy - skips recovery", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create a dummy agent that reports as busy
-		agent := &dummyAgent{t: t, isBusy: true}
-
-		coordinator := &coordinator{
-			sessions:     env.sessions,
-			messages:     env.messages,
-			currentAgent: agent,
-		}
-
-		// Create an incomplete assistant message
-		_, err = env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.Assistant,
-			Parts: []message.ContentPart{message.TextContent{Text: "Partial..."}},
-			Model: "test-model",
-		})
-		require.NoError(t, err)
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Message should NOT be recovered since session is "busy"
-		msgs, err := env.messages.List(t.Context(), sess.ID)
-		require.NoError(t, err)
-		require.Len(t, msgs, 1)
-		require.False(t, msgs[0].IsFinished(), "message should not be finished when session is busy")
-	})
-
-	t.Run("multiple incomplete messages", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create an incomplete summary message
-		_, err = env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:             message.Assistant,
-			Parts:            []message.ContentPart{message.TextContent{Text: "Partial summary..."}},
-			IsSummaryMessage: true,
-		})
-		require.NoError(t, err)
-
-		// Create an incomplete assistant message with tool calls
-		toolCall := message.ToolCall{
-			ID:               "tc-1",
-			Name:             "bash",
-			Input:            `echo "hello"`,
-			ProviderExecuted: false,
-			Finished:         false,
-		}
-		_, err = env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.Assistant,
-			Parts: []message.ContentPart{message.ToolCall(toolCall)},
-		})
-		require.NoError(t, err)
-
-		coordinator := &coordinator{
-			sessions: env.sessions,
-			messages: env.messages,
-		}
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Verify both messages were recovered
-		msgs, err := env.messages.List(t.Context(), sess.ID)
-		require.NoError(t, err)
-		require.Len(t, msgs, 2)
-
-		for _, msg := range msgs {
-			require.True(t, msg.IsFinished(), "message %s should be finished", msg.ID)
-		}
-	})
-
-	t.Run("mixed finished and unfinished messages", func(t *testing.T) {
-		env := testEnv(t)
-
-		sess, err := env.sessions.Create(t.Context(), "Test Session")
-		require.NoError(t, err)
-
-		// Create a finished user message (Finish part is added automatically)
-		_, err = env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.User,
-			Parts: []message.ContentPart{message.TextContent{Text: "Hello!"}},
-		})
-		require.NoError(t, err)
-
-		// Create a finished assistant message (with Finish part)
-		_, err = env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.Assistant,
-			Parts: []message.ContentPart{message.TextContent{Text: "Hi there!"}, message.Finish{Reason: message.FinishReasonEndTurn}},
-		})
-		require.NoError(t, err)
-
-		// Create an incomplete assistant message with tool calls
-		toolCall := message.ToolCall{
-			ID:               "tc-1",
-			Name:             "bash",
-			Input:            `echo "hello"`,
-			ProviderExecuted: false,
-			Finished:         false,
-		}
-		_, err = env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
-			Role:  message.Assistant,
-			Parts: []message.ContentPart{message.ToolCall(toolCall)},
-		})
-		require.NoError(t, err)
-
-		coordinator := &coordinator{
-			sessions: env.sessions,
-			messages: env.messages,
-		}
-
-		err = coordinator.RecoverSession(t.Context(), sess.ID)
-		require.NoError(t, err)
-
-		// Verify all messages are now correct
-		msgs, err := env.messages.List(t.Context(), sess.ID)
-		require.NoError(t, err)
-		require.Len(t, msgs, 3)
-
-		// User message should be finished (was already)
-		require.True(t, msgs[0].IsFinished())
-
-		// First assistant message should be finished (was already)
-		require.True(t, msgs[1].IsFinished())
-
-		// Second assistant message should now be finished
-		require.True(t, msgs[2].IsFinished())
-	})
+func (m *mockSessionAgent) Model() Model                                { return m.model }
+func (m *mockSessionAgent) SetModels(large, small Model)                {}
+func (m *mockSessionAgent) SetTools(tools []fantasy.AgentTool)          {}
+func (m *mockSessionAgent) SetSystemPrompt(systemPrompt string)         {}
+func (m *mockSessionAgent) SetPrepareStepHooks(hooks []PrepareStepHook) {}
+func (m *mockSessionAgent) Cancel(sessionID string) {
+	m.cancelled = append(m.cancelled, sessionID)
 }
-
-// dummyAgent implements SessionAgent for testing purposes.
-type dummyAgent struct {
-	t      *testing.T
-	isBusy bool
-}
-
-func (a *dummyAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
-	return nil, nil
-}
-
-func (a *dummyAgent) SetModels(large, small Model) {}
-
-func (a *dummyAgent) SetTools(tools []fantasy.AgentTool) {}
-
-func (a *dummyAgent) SetSystemPrompt(systemPrompt string)         {}
-func (a *dummyAgent) SetPrepareStepHooks(hooks []PrepareStepHook) {}
-
-func (a *dummyAgent) Cancel(sessionID string) {}
-
-func (a *dummyAgent) CancelAll() {}
-
-func (a *dummyAgent) IsSessionBusy(sessionID string) bool {
-	return a.isBusy
-}
-
-func (a *dummyAgent) IsBusy() bool {
-	return a.isBusy
-}
-
-func (a *dummyAgent) QueuedPrompts(sessionID string) int {
-	return 0
-}
-
-func (a *dummyAgent) QueuedPromptsList(sessionID string) []string {
+func (m *mockSessionAgent) CancelAll()                                  {}
+func (m *mockSessionAgent) IsSessionBusy(sessionID string) bool         { return false }
+func (m *mockSessionAgent) IsBusy() bool                                { return false }
+func (m *mockSessionAgent) QueuedPrompts(sessionID string) int          { return 0 }
+func (m *mockSessionAgent) QueuedPromptsList(sessionID string) []string { return nil }
+func (m *mockSessionAgent) ClearQueue(sessionID string)                 {}
+func (m *mockSessionAgent) Summarize(context.Context, string, fantasy.ProviderOptions) error {
 	return nil
 }
 
-func (a *dummyAgent) ClearQueue(sessionID string) {}
-
-func (a *dummyAgent) Summarize(ctx context.Context, sessionID string, opts fantasy.ProviderOptions) error {
-	return nil
+// newTestCoordinator creates a minimal coordinator for unit testing runSubAgent.
+func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCfg config.ProviderConfig) *coordinator {
+	cfg, err := config.Init(env.workingDir, "", false)
+	require.NoError(t, err)
+	cfg.Providers.Set(providerID, providerCfg)
+	return &coordinator{
+		cfg:      cfg,
+		sessions: env.sessions,
+	}
 }
 
-func (a *dummyAgent) Model() Model {
-	return Model{}
+// newMockAgent creates a mockSessionAgent with the given provider and run function.
+func newMockAgent(providerID string, maxTokens int64, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) *mockSessionAgent {
+	return &mockSessionAgent{
+		model: Model{
+			CatwalkCfg: catwalk.Model{
+				DefaultMaxTokens: maxTokens,
+			},
+			ModelCfg: config.SelectedModel{
+				Provider: providerID,
+			},
+		},
+		runFunc: runFunc,
+	}
+}
+
+// agentResultWithText creates a minimal AgentResult with the given text response.
+func agentResultWithText(text string) *fantasy.AgentResult {
+	return &fantasy.AgentResult{
+		Response: fantasy.Response{
+			Content: fantasy.ResponseContent{
+				fantasy.TextContent{Text: text},
+			},
+		},
+	}
+}
+
+func TestRunSubAgent(t *testing.T) {
+	const providerID = "test-provider"
+	providerCfg := config.ProviderConfig{ID: providerID}
+
+	t.Run("happy path", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		agent := newMockAgent(providerID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+			assert.Equal(t, "do something", call.Prompt)
+			assert.Equal(t, int64(4096), call.MaxOutputTokens)
+			return agentResultWithText("done"), nil
+		})
+
+		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "do something",
+			SessionTitle:   "Test Session",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "done", resp.Content)
+		assert.False(t, resp.IsError)
+	})
+
+	t.Run("ModelCfg.MaxTokens overrides default", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		agent := &mockSessionAgent{
+			model: Model{
+				CatwalkCfg: catwalk.Model{
+					DefaultMaxTokens: 4096,
+				},
+				ModelCfg: config.SelectedModel{
+					Provider:  providerID,
+					MaxTokens: 8192,
+				},
+			},
+			runFunc: func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+				assert.Equal(t, int64(8192), call.MaxOutputTokens)
+				return agentResultWithText("ok"), nil
+			},
+		}
+
+		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "ok", resp.Content)
+	})
+
+	t.Run("session creation failure with canceled context", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		agent := newMockAgent(providerID, 4096, nil)
+
+		// Use a canceled context to trigger CreateTaskSession failure.
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		_, err = coord.runSubAgent(ctx, subAgentParams{
+			Agent:          agent,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("provider not configured", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		// Agent references a provider that doesn't exist in config.
+		agent := newMockAgent("unknown-provider", 4096, nil)
+
+		_, err = coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "model provider not configured")
+	})
+
+	t.Run("agent run error returns error response", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+			return nil, errors.New("agent exploded")
+		})
+
+		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+		})
+		// runSubAgent returns (errorResponse, nil) when agent.Run fails — not a Go error.
+		require.NoError(t, err)
+		assert.True(t, resp.IsError)
+		assert.Equal(t, "error generating response", resp.Content)
+	})
+
+	t.Run("session setup callback is invoked", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		var setupCalledWith string
+		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+			return agentResultWithText("ok"), nil
+		})
+
+		_, err = coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+			SessionSetup: func(sessionID string) {
+				setupCalledWith = sessionID
+			},
+		})
+		require.NoError(t, err)
+		assert.NotEmpty(t, setupCalledWith, "SessionSetup should have been called")
+	})
+
+	t.Run("cost propagation to parent session", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		agent := newMockAgent(providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+			// Simulate the agent incurring cost by updating the child session.
+			childSession, err := env.sessions.Get(ctx, call.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			childSession.Cost = 0.05
+			_, err = env.sessions.Save(ctx, childSession)
+			if err != nil {
+				return nil, err
+			}
+			return agentResultWithText("ok"), nil
+		})
+
+		_, err = coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+		})
+		require.NoError(t, err)
+
+		updated, err := env.sessions.Get(t.Context(), parentSession.ID)
+		require.NoError(t, err)
+		assert.InDelta(t, 0.05, updated.Cost, 1e-9)
+	})
+}
+
+func TestUpdateParentSessionCost(t *testing.T) {
+	t.Run("accumulates cost correctly", func(t *testing.T) {
+		env := testEnv(t)
+		cfg, err := config.Init(env.workingDir, "", false)
+		require.NoError(t, err)
+		coord := &coordinator{cfg: cfg, sessions: env.sessions}
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		child, err := env.sessions.CreateTaskSession(t.Context(), "tool-1", parent.ID, "Child")
+		require.NoError(t, err)
+
+		// Set child cost.
+		child.Cost = 0.10
+		_, err = env.sessions.Save(t.Context(), child)
+		require.NoError(t, err)
+
+		err = coord.updateParentSessionCost(t.Context(), child.ID, parent.ID)
+		require.NoError(t, err)
+
+		updated, err := env.sessions.Get(t.Context(), parent.ID)
+		require.NoError(t, err)
+		assert.InDelta(t, 0.10, updated.Cost, 1e-9)
+	})
+
+	t.Run("accumulates multiple child costs", func(t *testing.T) {
+		env := testEnv(t)
+		cfg, err := config.Init(env.workingDir, "", false)
+		require.NoError(t, err)
+		coord := &coordinator{cfg: cfg, sessions: env.sessions}
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		child1, err := env.sessions.CreateTaskSession(t.Context(), "tool-1", parent.ID, "Child1")
+		require.NoError(t, err)
+		child1.Cost = 0.05
+		_, err = env.sessions.Save(t.Context(), child1)
+		require.NoError(t, err)
+
+		child2, err := env.sessions.CreateTaskSession(t.Context(), "tool-2", parent.ID, "Child2")
+		require.NoError(t, err)
+		child2.Cost = 0.03
+		_, err = env.sessions.Save(t.Context(), child2)
+		require.NoError(t, err)
+
+		err = coord.updateParentSessionCost(t.Context(), child1.ID, parent.ID)
+		require.NoError(t, err)
+		err = coord.updateParentSessionCost(t.Context(), child2.ID, parent.ID)
+		require.NoError(t, err)
+
+		updated, err := env.sessions.Get(t.Context(), parent.ID)
+		require.NoError(t, err)
+		assert.InDelta(t, 0.08, updated.Cost, 1e-9)
+	})
+
+	t.Run("child session not found", func(t *testing.T) {
+		env := testEnv(t)
+		cfg, err := config.Init(env.workingDir, "", false)
+		require.NoError(t, err)
+		coord := &coordinator{cfg: cfg, sessions: env.sessions}
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		err = coord.updateParentSessionCost(t.Context(), "non-existent", parent.ID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get child session")
+	})
+
+	t.Run("parent session not found", func(t *testing.T) {
+		env := testEnv(t)
+		cfg, err := config.Init(env.workingDir, "", false)
+		require.NoError(t, err)
+		coord := &coordinator{cfg: cfg, sessions: env.sessions}
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		child, err := env.sessions.CreateTaskSession(t.Context(), "tool-1", parent.ID, "Child")
+		require.NoError(t, err)
+
+		err = coord.updateParentSessionCost(t.Context(), child.ID, "non-existent")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get parent session")
+	})
+
+	t.Run("zero cost handled correctly", func(t *testing.T) {
+		env := testEnv(t)
+		cfg, err := config.Init(env.workingDir, "", false)
+		require.NoError(t, err)
+		coord := &coordinator{cfg: cfg, sessions: env.sessions}
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		child, err := env.sessions.CreateTaskSession(t.Context(), "tool-1", parent.ID, "Child")
+		require.NoError(t, err)
+
+		err = coord.updateParentSessionCost(t.Context(), child.ID, parent.ID)
+		require.NoError(t, err)
+
+		updated, err := env.sessions.Get(t.Context(), parent.ID)
+		require.NoError(t, err)
+		assert.InDelta(t, 0.0, updated.Cost, 1e-9)
+	})
 }
