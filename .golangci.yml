@@ -37,6 +37,9 @@ linters:
       - text: '(slog|log)\.\w+'
         linters:
           - noctx
+      - text: 'QF1012'
+        linters:
+          - staticcheck
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
