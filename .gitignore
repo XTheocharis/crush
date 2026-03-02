@@ -54,6 +54,7 @@ completions/crush.*sh
 profiles/
 
 # Local assistant state
+.claude/
 .serena/
 tasks_backup.jsonl
 docs/
