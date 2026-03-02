@@ -111,8 +111,9 @@ type sessionAgent struct {
 	disableAutoSummarize bool
 	isYolo               bool
 
-	messageQueue         *csync.Map[string, []SessionAgentCall]
-	activeRequests       *csync.Map[string, context.CancelFunc]
+	messageQueue   *csync.Map[string, []SessionAgentCall]
+	activeRequests *csync.Map[string, context.CancelFunc]
+
 	queueGenerationBySID *csync.Map[string, *atomic.Int64]
 	prepareStepHooks     *csync.Slice[PrepareStepHook]
 }
@@ -1034,30 +1035,8 @@ func (a *sessionAgent) SetSystemPrompt(systemPrompt string) {
 	a.systemPrompt.Set(systemPrompt)
 }
 
-func (a *sessionAgent) SetPrepareStepHooks(hooks []PrepareStepHook) {
-	a.prepareStepHooks.SetSlice(hooks)
-}
-
 func (a *sessionAgent) Model() Model {
 	return a.largeModel.Get()
-}
-
-func (a *sessionAgent) currentQueueGeneration(sessionID string) int64 {
-	counter, ok := a.queueGenerationBySID.Get(sessionID)
-	if !ok || counter == nil {
-		counter = &atomic.Int64{}
-		a.queueGenerationBySID.Set(sessionID, counter)
-	}
-	return counter.Load()
-}
-
-func (a *sessionAgent) incrementQueueGeneration(sessionID string) int64 {
-	counter, ok := a.queueGenerationBySID.Get(sessionID)
-	if !ok || counter == nil {
-		counter = &atomic.Int64{}
-		a.queueGenerationBySID.Set(sessionID, counter)
-	}
-	return counter.Add(1)
 }
 
 // convertToToolResult converts a fantasy tool result to a message tool result.

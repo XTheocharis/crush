@@ -793,18 +793,3 @@ func GlobalSkillsDirs() []string {
 }
 
 func isAppleTerminal() bool { return os.Getenv("TERM_PROGRAM") == "Apple_Terminal" }
-
-func newConfig() *Config {
-	return &Config{
-		Agents:       map[string]Agent{},
-		MCP:          map[string]MCPConfig{},
-		LSP:          map[string]LSPConfig{},
-		Models:       map[SelectedModelType]SelectedModel{},
-		RecentModels: map[SelectedModelType][]SelectedModel{},
-		Options: &Options{
-			TUI: &TUIOptions{},
-		},
-		Permissions: &Permissions{},
-		Providers:   csync.NewMap[string, ProviderConfig](),
-	}
-}

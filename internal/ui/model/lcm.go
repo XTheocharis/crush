@@ -39,6 +39,34 @@ func CompactionEventToMsg(event lcm.CompactionEvent) tea.Msg {
 	}
 }
 
+// handleCompactionStarted updates UI state when LCM compaction begins.
+func (m *UI) handleCompactionStarted() tea.Cmd {
+	m.lcmCompacting = true
+	m.lcmCompactingStart = time.Now()
+	m.renderPills()
+	return m.lcmSpinner.Tick
+}
+
+// handleCompactionFinished updates UI state when LCM compaction ends.
+func (m *UI) handleCompactionFinished() {
+	m.lcmCompacting = false
+	m.renderPills()
+}
+
+// updateLCMSpinner ticks the LCM spinner during compaction.
+// Returns nil if not compacting or no tick needed.
+func (m *UI) updateLCMSpinner(msg tea.Msg) tea.Cmd {
+	if !m.lcmCompacting {
+		return nil
+	}
+	var cmd tea.Cmd
+	m.lcmSpinner, cmd = m.lcmSpinner.Update(msg)
+	if cmd != nil {
+		m.renderPills()
+	}
+	return cmd
+}
+
 // compactionPill renders a compact status indicator for LCM compaction.
 // When compacting is true, shows "⟳ Compacting (Xs)" with elapsed time.
 // Returns "" when not compacting.

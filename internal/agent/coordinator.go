@@ -88,7 +88,6 @@ func NewCoordinator(
 	filetracker filetracker.Service,
 	lspManager *lsp.Manager,
 	lcm lcm.Manager,
-	extraTools []fantasy.AgentTool,
 	opts ...CoordinatorOption,
 ) (Coordinator, error) {
 	c := &coordinator{
@@ -100,7 +99,6 @@ func NewCoordinator(
 		filetracker: filetracker,
 		lspManager:  lspManager,
 		lcm:         lcm,
-		extraTools:  extraTools,
 		agents:      make(map[string]SessionAgent),
 	}
 	for _, opt := range opts {
@@ -414,20 +412,7 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		}
 	}
 
-	var mapRefreshSync tools.MapRefreshFn
-	var mapRefreshAsync tools.MapRefreshFn
-	if c.repoMapSvc != nil {
-		mapRefreshSync = func(callCtx context.Context, sessionID string) error {
-			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, c.repoMapProfile(), true)
-			_, _, err := c.repoMapSvc.Refresh(callCtx, sessionID, opts)
-			return err
-		}
-		mapRefreshAsync = func(callCtx context.Context, sessionID string) error {
-			opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, c.repoMapProfile(), true)
-			c.repoMapSvc.RefreshAsync(sessionID, opts)
-			return nil
-		}
-	}
+	mapRefreshSync, mapRefreshAsync := buildMapRefreshFns(c.repoMapSvc, c.repoMapProfile())
 
 	allTools = append(allTools,
 		tools.NewBashTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Options.Attribution, modelName),
@@ -926,51 +911,9 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 	return c.currentAgent.Summarize(ctx, sessionID, getProviderOptions(c.currentAgent.Model(), providerCfg))
 }
 
-func (c *coordinator) RecoverSession(ctx context.Context, sessionID string) error {
-	if c.currentAgent != nil && c.currentAgent.IsSessionBusy(sessionID) {
-		return nil
-	}
-
-	msgs, err := c.messages.List(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to list messages: %w", err)
-	}
-
-	for _, msg := range msgs {
-		if msg.IsFinished() {
-			continue
-		}
-
-		msg.FinishThinking()
-		for _, tc := range msg.ToolCalls() {
-			if !tc.Finished {
-				msg.FinishToolCall(tc.ID)
-			}
-		}
-
-		msg.AddFinish(message.FinishReasonError, "Session interrupted", "The session was previously interrupted")
-		if updateErr := c.messages.Update(ctx, msg); updateErr != nil {
-			slog.Error("Failed to recover message", "message_id", msg.ID, "error", updateErr)
-		}
-	}
-
-	return nil
-}
-
 func (c *coordinator) isUnauthorized(err error) bool {
 	var providerErr *fantasy.ProviderError
 	return errors.As(err, &providerErr) && providerErr.StatusCode == http.StatusUnauthorized
-}
-
-// lcmContextFiles converts lcm.ContextFile values to prompt.ContextFile values
-// for injection into the system prompt.
-func lcmContextFiles(mgr lcm.Manager) []prompt.ContextFile {
-	lcmFiles := mgr.GetContextFiles()
-	promptFiles := make([]prompt.ContextFile, len(lcmFiles))
-	for i, f := range lcmFiles {
-		promptFiles[i] = prompt.ContextFile{Path: f.Name, Content: f.Content}
-	}
-	return promptFiles
 }
 
 func (c *coordinator) refreshOAuth2Token(ctx context.Context, providerCfg config.ProviderConfig) error {

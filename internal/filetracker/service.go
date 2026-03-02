@@ -26,7 +26,8 @@ type Service interface {
 }
 
 type service struct {
-	q          *db.Queries
+	q *db.Queries
+
 	workingDir string
 }
 

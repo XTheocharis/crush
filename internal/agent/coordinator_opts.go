@@ -2,14 +2,18 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/agent/prompt"
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/lcm"
+	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/repomap"
 )
 
@@ -43,6 +47,14 @@ func WithRepoMap(svc RepoMapService) CoordinatorOption {
 func WithTokenCounterProvider(p repomap.TokenCounterProvider) CoordinatorOption {
 	return func(c *coordinator) {
 		c.tokenCounterProvider = p
+	}
+}
+
+// WithExtraTools appends additional tools (e.g., LCM tools) to the
+// coordinator's tool set.
+func WithExtraTools(tools []fantasy.AgentTool) CoordinatorOption {
+	return func(c *coordinator) {
+		c.extraTools = tools
 	}
 }
 
@@ -327,4 +339,65 @@ func (c *coordinator) repoMapProfile() repoMapProfileOptions {
 		}
 	}
 	return profile
+}
+
+// buildMapRefreshFns returns sync and async repo-map refresh callbacks for the
+// tool layer. Both are nil when svc is nil.
+func buildMapRefreshFns(svc RepoMapService, profile repoMapProfileOptions) (tools.MapRefreshFn, tools.MapRefreshFn) {
+	if svc == nil {
+		return nil, nil
+	}
+	syncFn := func(ctx context.Context, sessionID string) error {
+		opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, profile, true)
+		_, _, err := svc.Refresh(ctx, sessionID, opts)
+		return err
+	}
+	asyncFn := func(ctx context.Context, sessionID string) error {
+		opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, profile, true)
+		svc.RefreshAsync(sessionID, opts)
+		return nil
+	}
+	return syncFn, asyncFn
+}
+
+// lcmContextFiles converts lcm.ContextFile values to prompt.ContextFile values
+// for injection into the system prompt.
+func lcmContextFiles(mgr lcm.Manager) []prompt.ContextFile {
+	lcmFiles := mgr.GetContextFiles()
+	promptFiles := make([]prompt.ContextFile, len(lcmFiles))
+	for i, f := range lcmFiles {
+		promptFiles[i] = prompt.ContextFile{Path: f.Name, Content: f.Content}
+	}
+	return promptFiles
+}
+
+func (c *coordinator) RecoverSession(ctx context.Context, sessionID string) error {
+	if c.currentAgent != nil && c.currentAgent.IsSessionBusy(sessionID) {
+		return nil
+	}
+
+	msgs, err := c.messages.List(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to list messages: %w", err)
+	}
+
+	for _, msg := range msgs {
+		if msg.IsFinished() {
+			continue
+		}
+
+		msg.FinishThinking()
+		for _, tc := range msg.ToolCalls() {
+			if !tc.Finished {
+				msg.FinishToolCall(tc.ID)
+			}
+		}
+
+		msg.AddFinish(message.FinishReasonError, "Session interrupted", "The session was previously interrupted")
+		if updateErr := c.messages.Update(ctx, msg); updateErr != nil {
+			slog.Error("Failed to recover message", "message_id", msg.ID, "error", updateErr)
+		}
+	}
+
+	return nil
 }

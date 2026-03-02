@@ -27,7 +27,6 @@ import (
 	"github.com/charmbracelet/crush/internal/format"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/lcm"
-	"github.com/charmbracelet/crush/internal/lcm/explorer"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
@@ -36,7 +35,7 @@ import (
 	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/shell"
-	"github.com/charmbracelet/crush/internal/treesitter"
+
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/update"
@@ -87,18 +86,7 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 	sessions := session.NewService(q, conn)
 	messages := message.NewService(q)
 
-	// Initialize LCM if configured.
-	var lcmMgr lcm.Manager
-	if cfg.Options.LCM != nil {
-		lcmMgr = lcm.NewManager(q, conn)
-		messages = lcm.NewMessageDecorator(messages, lcmMgr, q, conn, lcm.MessageDecoratorConfig{
-			DisableLargeToolOutput:        cfg.Options.LCM.DisableLargeToolOutput,
-			LargeToolOutputTokenThreshold: cfg.Options.LCM.LargeToolOutputTokenThreshold,
-			Parser:                        treesitter.NewParser(),
-			ExplorerOutputProfile:         lcmExplorerOutputProfile(cfg.Options.LCM.ExplorerOutputProfile),
-		})
-		slog.Info("LCM enabled")
-	}
+	messages, lcmMgr := initLCM(cfg, q, conn, messages)
 	files := history.NewService(q, conn)
 	skipPermissionsRequests := cfg.Permissions != nil && cfg.Permissions.SkipRequests
 	var allowedTools []string
@@ -166,13 +154,6 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 // Config returns the application configuration.
 func (app *App) Config() *config.Config {
 	return app.config
-}
-
-func lcmExplorerOutputProfile(profile string) explorer.OutputProfile {
-	if strings.EqualFold(strings.TrimSpace(profile), string(explorer.OutputProfileParity)) {
-		return explorer.OutputProfileParity
-	}
-	return explorer.OutputProfileEnhancement
 }
 
 // RunNonInteractive runs the application in non-interactive mode with the
@@ -522,7 +503,9 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		return fmt.Errorf("coder agent configuration is missing")
 	}
 	var err error
-	coordinatorOpts := []agent.CoordinatorOption{}
+	coordinatorOpts := []agent.CoordinatorOption{
+		agent.WithExtraTools(lcm.ExtraAgentTools(app.lcmManager)),
+	}
 	if len(app.repoMapOpts) > 0 {
 		coordinatorOpts = append(coordinatorOpts, app.repoMapOpts...)
 	}
@@ -536,7 +519,6 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		app.FileTracker,
 		app.LSPManager,
 		app.lcmManager,
-		lcm.ExtraAgentTools(app.lcmManager),
 		coordinatorOpts...,
 	)
 	if err != nil {

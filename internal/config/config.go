@@ -163,26 +163,6 @@ func (pc *ProviderConfig) SetupGitHubCopilot() {
 	maps.Copy(pc.ExtraHeaders, copilot.Headers())
 }
 
-func (pc ProviderConfig) merge(t ProviderConfig) ProviderConfig {
-	pc.ID = cmp.Or(t.ID, pc.ID)
-	pc.Name = cmp.Or(t.Name, pc.Name)
-	pc.BaseURL = cmp.Or(t.BaseURL, pc.BaseURL)
-	pc.Type = cmp.Or(t.Type, pc.Type)
-	pc.APIKey = cmp.Or(t.APIKey, pc.APIKey)
-	pc.APIKeyTemplate = cmp.Or(t.APIKeyTemplate, pc.APIKeyTemplate)
-	pc.OAuthToken = cmp.Or(t.OAuthToken, pc.OAuthToken)
-	pc.Disable = pc.Disable || t.Disable
-	pc.SystemPromptPrefix = cmp.Or(t.SystemPromptPrefix, pc.SystemPromptPrefix)
-	pc.ExtraHeaders = mergeMaps(pc.ExtraHeaders, t.ExtraHeaders)
-	pc.ExtraBody = mergeMaps(pc.ExtraBody, t.ExtraBody)
-	pc.ProviderOptions = mergeMaps(pc.ProviderOptions, t.ProviderOptions)
-	pc.ExtraParams = mergeMaps(pc.ExtraParams, t.ExtraParams)
-	if len(t.Models) > 0 {
-		pc.Models = t.Models
-	}
-	return pc
-}
-
 type MCPType string
 
 const (
@@ -205,21 +185,6 @@ type MCPConfig struct {
 	Headers map[string]string `json:"headers,omitempty" jsonschema:"description=HTTP headers for HTTP/SSE MCP servers"`
 }
 
-func (m MCPConfig) merge(o MCPConfig) MCPConfig {
-	m.Env = mergeMaps(m.Env, o.Env)
-	m.Headers = mergeMaps(m.Headers, o.Headers)
-	m.Disabled = m.Disabled || o.Disabled
-	m.DisabledTools = append(m.DisabledTools, o.DisabledTools...)
-	m.Timeout = max(m.Timeout, o.Timeout)
-	m.Command = cmp.Or(o.Command, m.Command)
-	if len(o.Args) > 0 {
-		m.Args = o.Args
-	}
-	m.Type = cmp.Or(o.Type, m.Type)
-	m.URL = cmp.Or(o.URL, m.URL)
-	return m
-}
-
 type LSPConfig struct {
 	Disabled    bool              `json:"disabled,omitempty" jsonschema:"description=Whether this LSP server is disabled,default=false"`
 	Command     string            `json:"command,omitempty" jsonschema:"description=Command to execute for the LSP server,example=gopls"`
@@ -232,21 +197,6 @@ type LSPConfig struct {
 	Timeout     int               `json:"timeout,omitempty" jsonschema:"description=Timeout in seconds for LSP server initialization,default=30,example=60,example=120"`
 }
 
-func (l LSPConfig) merge(o LSPConfig) LSPConfig {
-	l.Env = mergeMaps(l.Env, o.Env)
-	l.InitOptions = mergeMaps(l.InitOptions, o.InitOptions)
-	l.Options = mergeMaps(l.Options, o.Options)
-	l.RootMarkers = sortedCompact(append(l.RootMarkers, o.RootMarkers...))
-	l.FileTypes = sortedCompact(append(l.FileTypes, o.FileTypes...))
-	l.Disabled = l.Disabled || o.Disabled
-	l.Timeout = max(l.Timeout, o.Timeout)
-	if len(o.Args) > 0 {
-		l.Args = o.Args
-	}
-	l.Command = cmp.Or(o.Command, l.Command)
-	return l
-}
-
 type TUIOptions struct {
 	CompactMode bool   `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
 	DiffMode    string `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
@@ -255,15 +205,6 @@ type TUIOptions struct {
 
 	Completions Completions `json:"completions,omitzero" jsonschema:"description=Completions UI options"`
 	Transparent *bool       `json:"transparent,omitempty" jsonschema:"description=Enable transparent background for the TUI interface,default=false"`
-}
-
-func (o TUIOptions) merge(t TUIOptions) TUIOptions {
-	o.CompactMode = o.CompactMode || t.CompactMode
-	o.DiffMode = cmp.Or(t.DiffMode, o.DiffMode)
-	o.Completions.MaxDepth = cmp.Or(t.Completions.MaxDepth, o.Completions.MaxDepth)
-	o.Completions.MaxItems = cmp.Or(t.Completions.MaxItems, o.Completions.MaxItems)
-	o.Transparent = cmp.Or(t.Transparent, o.Transparent)
-	return o
 }
 
 // Completions defines options for the completions UI.
@@ -305,69 +246,24 @@ func (Attribution) JSONSchemaExtend(schema *jsonschema.Schema) {
 }
 
 type Options struct {
-	ContextPaths              []string        `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=CRUSH.md"`
-	SkillsPaths               []string        `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/crush/skills,example=./skills"`
-	TUI                       *TUIOptions     `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
-	Debug                     bool            `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
-	DebugLSP                  bool            `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
-	DisableAutoSummarize      bool            `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
-	DataDirectory             string          `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.crush,example=.crush"` // Relative to the cwd
-	DisabledTools             []string        `json:"disabled_tools,omitempty" jsonschema:"description=List of built-in tools to disable and hide from the agent,example=bash,example=sourcegraph"`
-	DisableProviderAutoUpdate bool            `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
-	DisableDefaultProviders   bool            `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled, providers must be fully specified in the config file with base_url, models, and api_key - no merging with defaults occurs,default=false"`
-	Attribution               *Attribution    `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
-	DisableMetrics            bool            `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
-	InitializeAs              string          `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=CRUSH.md,example=CLAUDE.md,example=docs/LLMs.md"`
-	AutoLSP                   *bool           `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
-	Progress                  *bool           `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
-	LCM                       *LCMOptions     `json:"lcm,omitempty" jsonschema:"description=Lossless Context Management options"`
-	RepoMap                   *RepoMapOptions `json:"repo_map,omitempty" jsonschema:"description=Repository map configuration"`
-}
+	ContextPaths              []string     `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=CRUSH.md"`
+	SkillsPaths               []string     `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/crush/skills,example=./skills"`
+	TUI                       *TUIOptions  `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
+	Debug                     bool         `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
+	DebugLSP                  bool         `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
+	DisableAutoSummarize      bool         `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
+	DataDirectory             string       `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.crush,example=.crush"` // Relative to the cwd
+	DisabledTools             []string     `json:"disabled_tools,omitempty" jsonschema:"description=List of built-in tools to disable and hide from the agent,example=bash,example=sourcegraph"`
+	DisableProviderAutoUpdate bool         `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
+	DisableDefaultProviders   bool         `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled, providers must be fully specified in the config file with base_url, models, and api_key - no merging with defaults occurs,default=false"`
+	Attribution               *Attribution `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
+	DisableMetrics            bool         `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
+	InitializeAs              string       `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=CRUSH.md,example=CLAUDE.md,example=docs/LLMs.md"`
+	AutoLSP                   *bool        `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
+	Progress                  *bool        `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
 
-func (o Options) merge(t Options) Options {
-	o.ContextPaths = append(o.ContextPaths, t.ContextPaths...)
-	o.SkillsPaths = append(o.SkillsPaths, t.SkillsPaths...)
-	o.Debug = o.Debug || t.Debug
-	o.DebugLSP = o.DebugLSP || t.DebugLSP
-	o.DisableAutoSummarize = o.DisableAutoSummarize || t.DisableAutoSummarize
-	o.DisableProviderAutoUpdate = o.DisableProviderAutoUpdate || t.DisableProviderAutoUpdate
-	o.DisableDefaultProviders = o.DisableDefaultProviders || t.DisableDefaultProviders
-	o.DisableMetrics = o.DisableMetrics || t.DisableMetrics
-	o.DataDirectory = cmp.Or(t.DataDirectory, o.DataDirectory)
-	o.InitializeAs = cmp.Or(t.InitializeAs, o.InitializeAs)
-	o.DisabledTools = append(o.DisabledTools, t.DisabledTools...)
-	o.AutoLSP = cmp.Or(t.AutoLSP, o.AutoLSP)
-	o.Progress = cmp.Or(t.Progress, o.Progress)
-	if t.TUI != nil {
-		if o.TUI == nil {
-			o.TUI = &TUIOptions{}
-		}
-		*o.TUI = o.TUI.merge(*t.TUI)
-	}
-	if t.Attribution != nil {
-		if o.Attribution == nil {
-			o.Attribution = &Attribution{}
-		}
-		o.Attribution.TrailerStyle = cmp.Or(t.Attribution.TrailerStyle, o.Attribution.TrailerStyle)
-		o.Attribution.CoAuthoredBy = cmp.Or(t.Attribution.CoAuthoredBy, o.Attribution.CoAuthoredBy)
-		o.Attribution.GeneratedWith = o.Attribution.GeneratedWith || t.Attribution.GeneratedWith
-	}
-	if t.LCM != nil {
-		if o.LCM == nil {
-			o.LCM = &LCMOptions{}
-		}
-		o.LCM.CtxCutoffThreshold = cmp.Or(t.LCM.CtxCutoffThreshold, o.LCM.CtxCutoffThreshold)
-		o.LCM.DisableLargeToolOutput = o.LCM.DisableLargeToolOutput || t.LCM.DisableLargeToolOutput
-		o.LCM.LargeToolOutputTokenThreshold = cmp.Or(t.LCM.LargeToolOutputTokenThreshold, o.LCM.LargeToolOutputTokenThreshold)
-		o.LCM.ExplorerOutputProfile = cmp.Or(t.LCM.ExplorerOutputProfile, o.LCM.ExplorerOutputProfile)
-	}
-	if t.RepoMap != nil {
-		if o.RepoMap == nil {
-			o.RepoMap = &RepoMapOptions{}
-		}
-		*o.RepoMap = o.RepoMap.merge(*t.RepoMap)
-	}
-	return o
+	LCM     *LCMOptions     `json:"lcm,omitempty" jsonschema:"description=Lossless Context Management options"`
+	RepoMap *RepoMapOptions `json:"repo_map,omitempty" jsonschema:"description=Repository map configuration"`
 }
 
 type MCPs map[string]MCPConfig
@@ -457,17 +353,10 @@ type Agent struct {
 }
 
 type Tools struct {
-	Ls      ToolLs         `json:"ls,omitzero"`
-	Grep    ToolGrep       `json:"grep,omitzero"`
-	RepoMap RepoMapOptions `json:"repo_map" jsonschema:"description=Repository map generation options"`
-}
+	Ls   ToolLs   `json:"ls,omitzero"`
+	Grep ToolGrep `json:"grep,omitzero"`
 
-func (o Tools) merge(t Tools) Tools {
-	o.Ls.MaxDepth = cmp.Or(t.Ls.MaxDepth, o.Ls.MaxDepth)
-	o.Ls.MaxItems = cmp.Or(t.Ls.MaxItems, o.Ls.MaxItems)
-	o.Grep.Timeout = cmp.Or(t.Grep.Timeout, o.Grep.Timeout)
-	o.RepoMap = o.RepoMap.merge(t.RepoMap)
-	return o
+	RepoMap RepoMapOptions `json:"repo_map" jsonschema:"description=Repository map generation options"`
 }
 
 type ToolLs struct {
@@ -520,52 +409,6 @@ type Config struct {
 	resolver       VariableResolver
 	dataConfigDir  string             `json:"-"`
 	knownProviders []catwalk.Provider `json:"-"`
-}
-
-func (c Config) merge(t Config) Config {
-	for name, mcp := range t.MCP {
-		existing, ok := c.MCP[name]
-		if !ok {
-			c.MCP[name] = mcp
-			continue
-		}
-		c.MCP[name] = existing.merge(mcp)
-	}
-	for name, lsp := range t.LSP {
-		existing, ok := c.LSP[name]
-		if !ok {
-			c.LSP[name] = lsp
-			continue
-		}
-		c.LSP[name] = existing.merge(lsp)
-	}
-	// simple override
-	maps.Copy(c.Models, t.Models)
-	c.Schema = cmp.Or(c.Schema, t.Schema)
-	if t.Options != nil {
-		*c.Options = c.Options.merge(*t.Options)
-	}
-	if t.Permissions != nil {
-		c.Permissions.AllowedTools = append(c.Permissions.AllowedTools, t.Permissions.AllowedTools...)
-	}
-	if c.Providers != nil {
-		for key, value := range t.Providers.Seq2() {
-			existing, ok := c.Providers.Get(key)
-			if !ok {
-				c.Providers.Set(key, value)
-				continue
-			}
-			c.Providers.Set(key, existing.merge(value))
-		}
-	}
-	c.Tools = c.Tools.merge(t.Tools)
-
-	// RecentModels are not merged - use whichever is not empty
-	if len(t.RecentModels) > 0 {
-		c.RecentModels = t.RecentModels
-	}
-
-	return c
 }
 
 func (c *Config) WorkingDir() string {
@@ -951,12 +794,12 @@ func (c *Config) Resolver() VariableResolver {
 	return c.resolver
 }
 
-func (pc *ProviderConfig) TestConnection(resolver VariableResolver) error {
+func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 	var (
-		providerID = catwalk.InferenceProvider(pc.ID)
+		providerID = catwalk.InferenceProvider(c.ID)
 		testURL    = ""
 		headers    = make(map[string]string)
-		apiKey, _  = resolver.ResolveValue(pc.APIKey)
+		apiKey, _  = resolver.ResolveValue(c.APIKey)
 	)
 
 	switch providerID {
@@ -964,14 +807,14 @@ func (pc *ProviderConfig) TestConnection(resolver VariableResolver) error {
 		// NOTE: MiniMax has no good endpoint we can use to validate the API key.
 		// Let's at least check the pattern.
 		if !strings.HasPrefix(apiKey, "sk-") {
-			return fmt.Errorf("invalid API key format for provider %s", pc.ID)
+			return fmt.Errorf("invalid API key format for provider %s", c.ID)
 		}
 		return nil
 	}
 
-	switch pc.Type {
+	switch c.Type {
 	case catwalk.TypeOpenAI, catwalk.TypeOpenAICompat, catwalk.TypeOpenRouter:
-		baseURL, _ := resolver.ResolveValue(pc.BaseURL)
+		baseURL, _ := resolver.ResolveValue(c.BaseURL)
 		baseURL = cmp.Or(baseURL, "https://api.openai.com/v1")
 
 		switch providerID {
@@ -983,7 +826,7 @@ func (pc *ProviderConfig) TestConnection(resolver VariableResolver) error {
 
 		headers["Authorization"] = "Bearer " + apiKey
 	case catwalk.TypeAnthropic:
-		baseURL, _ := resolver.ResolveValue(pc.BaseURL)
+		baseURL, _ := resolver.ResolveValue(c.BaseURL)
 		baseURL = cmp.Or(baseURL, "https://api.anthropic.com/v1")
 
 		switch providerID {
@@ -996,7 +839,7 @@ func (pc *ProviderConfig) TestConnection(resolver VariableResolver) error {
 		headers["x-api-key"] = apiKey
 		headers["anthropic-version"] = "2023-06-01"
 	case catwalk.TypeGoogle:
-		baseURL, _ := resolver.ResolveValue(pc.BaseURL)
+		baseURL, _ := resolver.ResolveValue(c.BaseURL)
 		baseURL = cmp.Or(baseURL, "https://generativelanguage.googleapis.com")
 		testURL = baseURL + "/v1beta/models?key=" + url.QueryEscape(apiKey)
 	}
@@ -1007,29 +850,29 @@ func (pc *ProviderConfig) TestConnection(resolver VariableResolver) error {
 	client := &http.Client{}
 	req, err := http.NewRequestWithContext(ctx, "GET", testURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request for provider %s: %w", pc.ID, err)
+		return fmt.Errorf("failed to create request for provider %s: %w", c.ID, err)
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	for k, v := range pc.ExtraHeaders {
+	for k, v := range c.ExtraHeaders {
 		req.Header.Set(k, v)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to create request for provider %s: %w", pc.ID, err)
+		return fmt.Errorf("failed to create request for provider %s: %w", c.ID, err)
 	}
 	defer resp.Body.Close()
 
 	switch providerID {
 	case catwalk.InferenceProviderZAI:
 		if resp.StatusCode == http.StatusUnauthorized {
-			return fmt.Errorf("failed to connect to provider %s: %s", pc.ID, resp.Status)
+			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, resp.Status)
 		}
 	default:
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed to connect to provider %s: %s", pc.ID, resp.Status)
+			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, resp.Status)
 		}
 	}
 	return nil
@@ -1058,17 +901,4 @@ func ptrValOr[T any](t *T, el T) T {
 		return el
 	}
 	return *t
-}
-
-func mergeMaps[K comparable, V any](base, overlay map[K]V) map[K]V {
-	if base == nil {
-		base = make(map[K]V)
-	}
-	maps.Copy(base, overlay)
-	return base
-}
-
-func sortedCompact[S ~[]E, E cmp.Ordered](s S) S {
-	slices.Sort(s)
-	return slices.Compact(s)
 }

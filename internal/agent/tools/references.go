@@ -172,15 +172,15 @@ func formatReferences(locations []protocol.Location) string {
 	sort.Strings(files)
 
 	var output strings.Builder
-	fmt.Fprintf(&output, "Found %d reference(s) in %d file(s):\n\n", len(locations), len(files))
+	output.WriteString(fmt.Sprintf("Found %d reference(s) in %d file(s):\n\n", len(locations), len(files)))
 
 	for _, file := range files {
 		refs := fileRefs[file]
-		fmt.Fprintf(&output, "%s (%d reference(s)):\n", file, len(refs))
+		output.WriteString(fmt.Sprintf("%s (%d reference(s)):\n", file, len(refs)))
 		for _, ref := range refs {
 			line := ref.Range.Start.Line + 1
 			char := ref.Range.Start.Character + 1
-			fmt.Fprintf(&output, "  Line %d, Column %d\n", line, char)
+			output.WriteString(fmt.Sprintf("  Line %d, Column %d\n", line, char))
 		}
 		output.WriteString("\n")
 	}

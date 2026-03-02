@@ -262,6 +262,7 @@ td {
 }
 
 @media (prefers-color-scheme: light) {
+
   /* Override charm brand colors in footer */
   .footer-container .st2 {
     fill: #644ced !important;

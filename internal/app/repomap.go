@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/filetracker"
+	"github.com/charmbracelet/crush/internal/lcm/explorer"
 	"github.com/charmbracelet/crush/internal/repomap"
 )
 
@@ -190,4 +191,11 @@ func (app *App) mapReset(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("failed to reset repository map: %w", err)
 	}
 	return nil
+}
+
+func lcmExplorerOutputProfile(profile string) explorer.OutputProfile {
+	if strings.EqualFold(strings.TrimSpace(profile), string(explorer.OutputProfileParity)) {
+		return explorer.OutputProfileParity
+	}
+	return explorer.OutputProfileEnhancement
 }

@@ -724,24 +724,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
-		if m.lcmCompacting {
-			var cmd tea.Cmd
-			m.lcmSpinner, cmd = m.lcmSpinner.Update(msg)
-			if cmd != nil {
-				m.renderPills()
-				cmds = append(cmds, cmd)
-			}
+		if cmd := m.updateLCMSpinner(msg); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 
 	case CompactionStartedMsg:
-		m.lcmCompacting = true
-		m.lcmCompactingStart = time.Now()
-		cmds = append(cmds, m.lcmSpinner.Tick)
-		m.renderPills()
+		cmds = append(cmds, m.handleCompactionStarted())
 
 	case CompactionCompletedMsg, CompactionFailedMsg:
-		m.lcmCompacting = false
-		m.renderPills()
+		m.handleCompactionFinished()
 
 	case tea.KeyPressMsg:
 		if cmd := m.handleKeyPressMsg(msg); cmd != nil {
@@ -1428,25 +1419,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if commandID == "" {
 			commandID = content
 		}
-		if strings.HasPrefix(commandID, "project:map-") {
-			if !m.hasSession() {
-				cmds = append(cmds, util.ReportWarn("Start a session before running repo map controls."))
-				m.dialog.CloseFrontDialog()
-				break
+		if handled, cmd := m.handleRepoMapCommand(commandID); handled {
+			if cmd != nil {
+				cmds = append(cmds, cmd)
 			}
-			handled, statusMsg, err := m.com.App.RunRepoMapControl(context.Background(), commandID, m.session.ID)
-			if handled {
-				if err != nil {
-					cmds = append(cmds, util.ReportError(err))
-				} else if statusMsg != "" {
-					cmds = append(cmds, util.ReportInfo(statusMsg))
-				}
-				m.dialog.CloseFrontDialog()
-				break
-			}
-		}
-		if app.IsRepoMapResetCommand(commandID) {
-			cmds = append(cmds, util.ReportWarn("map_reset is command-only and not available for direct model invocation."))
 			m.dialog.CloseFrontDialog()
 			break
 		}

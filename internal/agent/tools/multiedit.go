@@ -403,28 +403,5 @@ func applyEditToContent(content string, edit MultiEditOperation) (string, error)
 		return "", fmt.Errorf("old_string cannot be empty for content replacement")
 	}
 
-	var newContent string
-
-	if edit.ReplaceAll {
-		// For replaceAll, try fuzzy match if exact match fails.
-		replaced, found := replaceAllWithBestMatch(content, edit.OldString, edit.NewString)
-		if !found {
-			return "", fmt.Errorf("old_string not found in content. Make sure it matches exactly, including whitespace and line breaks")
-		}
-		newContent = replaced
-	} else {
-		// Try exact match first, then fuzzy match.
-		matchedString, found, isMultiple := findBestMatch(content, edit.OldString)
-		if !found {
-			return "", fmt.Errorf("old_string not found in content. Make sure it matches exactly, including whitespace and line breaks")
-		}
-		if isMultiple {
-			return "", fmt.Errorf("old_string appears multiple times in the content. Please provide more context to ensure a unique match, or set replace_all to true")
-		}
-
-		before, after, _ := strings.Cut(content, matchedString)
-		newContent = before + edit.NewString + after
-	}
-
-	return newContent, nil
+	return fuzzyReplace(content, edit.OldString, edit.NewString, edit.ReplaceAll)
 }
