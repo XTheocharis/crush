@@ -1,0 +1,50 @@
+{
+  "version": "1",
+  "description": "Versioned B1 scoring protocol for parity and enhancement explorer extraction quality checks.",
+  "generated_at": "2026-02-26T00:00:00Z",
+  "min_language_samples": 2,
+  "visibility_capabilities": {
+    "go": "export-only",
+    "python": "full"
+  },
+  "parity_thresholds": {
+    "micro": {
+      "symbol_recall": 0.93,
+      "symbol_precision": 0.93,
+      "import_category_accuracy": 0.93,
+      "visibility_accuracy": 0.90
+    },
+    "macro": {
+      "symbol_recall": 0.90,
+      "symbol_precision": 0.90,
+      "import_category_accuracy": 0.90,
+      "visibility_accuracy": 0.87
+    },
+    "per_language_floor": {
+      "symbol_recall": 0.85,
+      "symbol_precision": 0.85,
+      "import_category_accuracy": 0.85,
+      "visibility_accuracy": 0.80
+    }
+  },
+  "enhancement_thresholds": {
+    "micro": {
+      "symbol_recall": 0.95,
+      "symbol_precision": 0.95,
+      "import_category_accuracy": 0.95,
+      "visibility_accuracy": 0.95
+    },
+    "macro": {
+      "symbol_recall": 0.93,
+      "symbol_precision": 0.93,
+      "import_category_accuracy": 0.93,
+      "visibility_accuracy": 0.93
+    },
+    "per_language_floor": {
+      "symbol_recall": 0.90,
+      "symbol_precision": 0.90,
+      "import_category_accuracy": 0.90,
+      "visibility_accuracy": 0.90
+    }
+  }
+}

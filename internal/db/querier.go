@@ -9,21 +9,36 @@ import (
 )
 
 type Querier interface {
+	ClearSessionSummaryMessageID(ctx context.Context, id string) error
 	CreateFile(ctx context.Context, arg CreateFileParams) (File, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	DeleteAllLcmContextItems(ctx context.Context, sessionID string) error
 	DeleteFile(ctx context.Context, id string) error
+	DeleteLcmSummary(ctx context.Context, summaryID string) error
+	DeleteLcmSummaryMessages(ctx context.Context, summaryID string) error
+	DeleteLcmSummaryParents(ctx context.Context, summaryID string) error
 	DeleteMessage(ctx context.Context, id string) error
+	DeleteRepoMapFileCache(ctx context.Context, arg DeleteRepoMapFileCacheParams) error
+	DeleteRepoMapTagsByPath(ctx context.Context, arg DeleteRepoMapTagsByPathParams) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteSessionFiles(ctx context.Context, sessionID string) error
 	DeleteSessionMessages(ctx context.Context, sessionID string) error
+	DeleteSessionRankings(ctx context.Context, arg DeleteSessionRankingsParams) error
+	DeleteSessionReadOnlyPaths(ctx context.Context, arg DeleteSessionReadOnlyPathsParams) error
 	GetAverageResponseTime(ctx context.Context) (int64, error)
 	GetFile(ctx context.Context, id string) (File, error)
 	GetFileByPathAndSession(ctx context.Context, arg GetFileByPathAndSessionParams) (File, error)
 	GetFileRead(ctx context.Context, arg GetFileReadParams) (ReadFile, error)
 	GetHourDayHeatmap(ctx context.Context) ([]GetHourDayHeatmapRow, error)
+	GetLcmContextTokenCount(ctx context.Context, sessionID string) (interface{}, error)
+	GetLcmLargeFile(ctx context.Context, fileID string) (LcmLargeFile, error)
+	GetLcmSessionConfig(ctx context.Context, sessionID string) (LcmSessionConfig, error)
+	GetLcmSummary(ctx context.Context, summaryID string) (LcmSummary, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetRecentActivity(ctx context.Context) ([]GetRecentActivityRow, error)
+	GetRepoMapFileCache(ctx context.Context, repoKey string) ([]RepoMapFileCache, error)
+	GetRepoMapFileCacheByPath(ctx context.Context, arg GetRepoMapFileCacheByPathParams) (RepoMapFileCache, error)
 	GetSessionByID(ctx context.Context, id string) (Session, error)
 	GetToolUsage(ctx context.Context) ([]GetToolUsageRow, error)
 	GetTotalStats(ctx context.Context) (GetTotalStatsRow, error)
@@ -31,19 +46,57 @@ type Querier interface {
 	GetUsageByDayOfWeek(ctx context.Context) ([]GetUsageByDayOfWeekRow, error)
 	GetUsageByHour(ctx context.Context) ([]GetUsageByHourRow, error)
 	GetUsageByModel(ctx context.Context) ([]GetUsageByModelRow, error)
+	// LCM Context Items
+	InsertLcmContextItem(ctx context.Context, arg InsertLcmContextItemParams) error
+	// LCM Large Files
+	InsertLcmLargeFile(ctx context.Context, arg InsertLcmLargeFileParams) error
+	// LCM Map Items
+	InsertLcmMapItem(ctx context.Context, arg InsertLcmMapItemParams) error
+	// LCM Map Runs
+	InsertLcmMapRun(ctx context.Context, arg InsertLcmMapRunParams) error
+	// LCM Summaries
+	InsertLcmSummary(ctx context.Context, arg InsertLcmSummaryParams) error
+	// LCM Summary Messages
+	InsertLcmSummaryMessage(ctx context.Context, arg InsertLcmSummaryMessageParams) error
+	// LCM Summary Parents
+	InsertLcmSummaryParent(ctx context.Context, arg InsertLcmSummaryParentParams) error
+	InsertRepoMapTag(ctx context.Context, arg InsertRepoMapTagParams) error
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
 	ListFilesByPath(ctx context.Context, path string) ([]File, error)
 	ListFilesBySession(ctx context.Context, sessionID string) ([]File, error)
 	ListLatestSessionFiles(ctx context.Context, sessionID string) ([]File, error)
+	ListLcmContextItems(ctx context.Context, sessionID string) ([]LcmContextItem, error)
+	ListLcmLargeFilesBySession(ctx context.Context, sessionID string) ([]LcmLargeFile, error)
+	ListLcmSummariesBySession(ctx context.Context, sessionID string) ([]LcmSummary, error)
+	ListLcmSummaryMessages(ctx context.Context, summaryID string) ([]LcmSummaryMessage, error)
+	ListLcmSummaryParents(ctx context.Context, summaryID string) ([]LcmSummaryParent, error)
 	ListMessagesBySession(ctx context.Context, sessionID string) ([]Message, error)
+	ListMessagesBySessionSeq(ctx context.Context, sessionID string) ([]Message, error)
+	ListMessagesInSeqRange(ctx context.Context, arg ListMessagesInSeqRangeParams) ([]Message, error)
 	ListNewFiles(ctx context.Context) ([]File, error)
+	ListRecentSessionReadFiles(ctx context.Context, arg ListRecentSessionReadFilesParams) ([]ReadFile, error)
+	ListRepoMapDefsByName(ctx context.Context, arg ListRepoMapDefsByNameParams) ([]ListRepoMapDefsByNameRow, error)
+	ListRepoMapTags(ctx context.Context, repoKey string) ([]ListRepoMapTagsRow, error)
+	ListSessionRankings(ctx context.Context, arg ListSessionRankingsParams) ([]RepoMapSessionRanking, error)
 	ListSessionReadFiles(ctx context.Context, sessionID string) ([]ReadFile, error)
+	ListSessionReadOnlyPaths(ctx context.Context, arg ListSessionReadOnlyPathsParams) ([]string, error)
 	ListSessions(ctx context.Context) ([]Session, error)
 	ListUserMessagesBySession(ctx context.Context, sessionID string) ([]Message, error)
 	RecordFileRead(ctx context.Context, arg RecordFileReadParams) error
+	SearchLcmSummaries(ctx context.Context, arg SearchLcmSummariesParams) ([]SearchLcmSummariesRow, error)
+	UpdateLcmLargeFileExploration(ctx context.Context, arg UpdateLcmLargeFileExplorationParams) error
+	UpdateLcmMapItem(ctx context.Context, arg UpdateLcmMapItemParams) error
+	UpdateLcmMapRunStatus(ctx context.Context, arg UpdateLcmMapRunStatusParams) error
+	UpdateLcmSessionConfig(ctx context.Context, arg UpdateLcmSessionConfigParams) error
 	UpdateMessage(ctx context.Context, arg UpdateMessageParams) error
+	UpdateMessageTokenCount(ctx context.Context, arg UpdateMessageTokenCountParams) error
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
 	UpdateSessionTitleAndUsage(ctx context.Context, arg UpdateSessionTitleAndUsageParams) error
+	// LCM Session Config
+	UpsertLcmSessionConfig(ctx context.Context, arg UpsertLcmSessionConfigParams) error
+	UpsertRepoMapFileCache(ctx context.Context, arg UpsertRepoMapFileCacheParams) error
+	UpsertSessionRanking(ctx context.Context, arg UpsertSessionRankingParams) error
+	UpsertSessionReadOnlyPath(ctx context.Context, arg UpsertSessionReadOnlyPathParams) error
 }
 
 var _ Querier = (*Queries)(nil)

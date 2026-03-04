@@ -1,0 +1,30 @@
+## LaTeX file: paper.tex
+
+### Section structure
+- \paragraph: 1
+- \section: 7
+- \subsection: 6
+- \subsubsection: 1
+
+### Environments
+- algorithm: 1
+- equation: 1
+- figure: 1
+- itemize: 1
+- table: 1
+
+### - \bibliography
+- Citations: 5
+- Style: plainnat
+- additional
+- references
+
+### Packages
+- algorithm
+- algorithm2e
+- amsmath
+- amssymb
+- graphicx
+- hyperref
+- inputenc
+- natbib

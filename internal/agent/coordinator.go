@@ -1,13 +1,10 @@
 package agent
 
 import (
-	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -23,11 +20,13 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/history"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/oauth/copilot"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"golang.org/x/sync/errgroup"
 
@@ -40,7 +39,6 @@ import (
 	"charm.land/fantasy/providers/openrouter"
 	"charm.land/fantasy/providers/vercel"
 	openaisdk "github.com/openai/openai-go/v2/option"
-	"github.com/qjebbs/go-jsons"
 )
 
 type Coordinator interface {
@@ -55,6 +53,7 @@ type Coordinator interface {
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
 	Summarize(context.Context, string) error
+	RecoverSession(ctx context.Context, sessionID string) error
 	Model() Model
 	UpdateModels(ctx context.Context) error
 }
@@ -68,10 +67,18 @@ type coordinator struct {
 	filetracker filetracker.Service
 	lspManager  *lsp.Manager
 
+	lcm                  lcm.Manager
+	extraTools           []fantasy.AgentTool
+	repoMapSvc           RepoMapService
+	tokenCounterProvider repomap.TokenCounterProvider
+
 	currentAgent SessionAgent
 	agents       map[string]SessionAgent
 
 	readyWg errgroup.Group
+
+	systemPromptTokens int64
+	postUpdateModels   func(ctx context.Context, large Model, tools []fantasy.AgentTool)
 }
 
 func NewCoordinator(
@@ -83,6 +90,8 @@ func NewCoordinator(
 	history history.Service,
 	filetracker filetracker.Service,
 	lspManager *lsp.Manager,
+	lcm lcm.Manager,
+	opts ...CoordinatorOption,
 ) (Coordinator, error) {
 	c := &coordinator{
 		cfg:         cfg,
@@ -92,7 +101,13 @@ func NewCoordinator(
 		history:     history,
 		filetracker: filetracker,
 		lspManager:  lspManager,
+		lcm:         lcm,
 		agents:      make(map[string]SessionAgent),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(c)
+		}
 	}
 
 	agentCfg, ok := cfg.Agents[config.AgentCoder]
@@ -101,7 +116,11 @@ func NewCoordinator(
 	}
 
 	// TODO: make this dynamic when we support multiple agents
-	prompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	promptOpts := []prompt.Option{prompt.WithWorkingDir(c.cfg.WorkingDir())}
+	if lcm != nil {
+		promptOpts = append(promptOpts, prompt.WithExtraContextFiles(lcmContextFiles(lcm)))
+	}
+	prompt, err := coderPrompt(promptOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +131,11 @@ func NewCoordinator(
 	}
 	c.currentAgent = agent
 	c.agents[config.AgentCoder] = agent
+
+	if c.lcm != nil {
+		c.lcm.SetDefaultContextWindow(agent.Model().CatwalkCfg.ContextWindow)
+		c.lcm.SetModelOutputLimit(agent.Model().CatwalkCfg.DefaultMaxTokens)
+	}
 	return c, nil
 }
 
@@ -157,6 +181,7 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 		}
 	}
 
+	lcm.CompactIfOverHardLimit(ctx, c.lcm, sessionID)
 	run := func() (*fantasy.AgentResult, error) {
 		return c.currentAgent.Run(ctx, SessionAgentCall{
 			SessionID:        sessionID,
@@ -198,49 +223,16 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.ProviderOptions {
 	options := fantasy.ProviderOptions{}
 
-	cfgOpts := []byte("{}")
-	providerCfgOpts := []byte("{}")
-	catwalkOpts := []byte("{}")
-
-	if model.ModelCfg.ProviderOptions != nil {
-		data, err := json.Marshal(model.ModelCfg.ProviderOptions)
-		if err == nil {
-			cfgOpts = data
-		}
-	}
-
-	if providerCfg.ProviderOptions != nil {
-		data, err := json.Marshal(providerCfg.ProviderOptions)
-		if err == nil {
-			providerCfgOpts = data
-		}
-	}
-
-	if model.CatwalkCfg.Options.ProviderOptions != nil {
-		data, err := json.Marshal(model.CatwalkCfg.Options.ProviderOptions)
-		if err == nil {
-			catwalkOpts = data
-		}
-	}
-
-	readers := []io.Reader{
-		bytes.NewReader(catwalkOpts),
-		bytes.NewReader(providerCfgOpts),
-		bytes.NewReader(cfgOpts),
-	}
-
-	got, err := jsons.Merge(readers)
-	if err != nil {
-		slog.Error("Could not merge call config", "err", err)
-		return options
-	}
-
+	// Merge provider options: catwalk (base) -> provider config -> model config (highest priority)
 	mergedOptions := make(map[string]any)
-
-	err = json.Unmarshal([]byte(got), &mergedOptions)
-	if err != nil {
-		slog.Error("Could not create config for call", "err", err)
-		return options
+	if model.CatwalkCfg.Options.ProviderOptions != nil {
+		maps.Copy(mergedOptions, model.CatwalkCfg.Options.ProviderOptions)
+	}
+	if providerCfg.ProviderOptions != nil {
+		maps.Copy(mergedOptions, providerCfg.ProviderOptions)
+	}
+	if model.ModelCfg.ProviderOptions != nil {
+		maps.Copy(mergedOptions, model.ModelCfg.ProviderOptions)
 	}
 
 	providerType := providerCfg.Type
@@ -368,17 +360,23 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 
 	largeProviderCfg, _ := c.cfg.Providers.Get(large.ModelCfg.Provider)
 	result := NewSessionAgent(SessionAgentOptions{
-		large,
-		small,
-		largeProviderCfg.SystemPromptPrefix,
-		"",
-		isSubAgent,
-		c.cfg.Options.DisableAutoSummarize,
-		c.permissions.SkipRequests(),
-		c.sessions,
-		c.messages,
-		nil,
+		LargeModel:           large,
+		SmallModel:           small,
+		SystemPromptPrefix:   largeProviderCfg.SystemPromptPrefix,
+		SystemPrompt:         "",
+		LCMManager:           c.lcm,
+		IsSubAgent:           isSubAgent,
+		DisableAutoSummarize: c.cfg.Options.DisableAutoSummarize || c.lcm != nil,
+		IsYolo:               c.permissions.SkipRequests(),
+		Sessions:             c.sessions,
+		Messages:             c.messages,
+		Tools:                nil,
 	})
+	if !isSubAgent {
+		if hook := c.buildRepoMapHook(); hook != nil {
+			result.SetPrepareStepHooks([]PrepareStepHook{hook})
+		}
+	}
 
 	c.readyWg.Go(func() error {
 		systemPrompt, err := prompt.Build(ctx, large.Model.Provider(), large.Model.Model(), *c.cfg)
@@ -386,6 +384,7 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 			return err
 		}
 		result.SetSystemPrompt(systemPrompt)
+		c.systemPromptTokens = lcm.EstimateTokens(systemPrompt)
 		return nil
 	})
 
@@ -427,6 +426,8 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		}
 	}
 
+	mapRefreshSync, mapRefreshAsync := buildMapRefreshFns(c.repoMapSvc, c.repoMapProfile())
+
 	allTools = append(allTools,
 		tools.NewBashTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Options.Attribution, modelName),
 		tools.NewJobOutputTool(),
@@ -442,7 +443,11 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		tools.NewTodosTool(c.sessions),
 		tools.NewViewTool(c.lspManager, c.permissions, c.filetracker, c.cfg.WorkingDir(), c.cfg.Options.SkillsPaths...),
 		tools.NewWriteTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
+		tools.NewMapRefreshTool(mapRefreshSync, mapRefreshAsync),
 	)
+
+	// Append extra tools (e.g., LCM tools).
+	allTools = append(allTools, c.extraTools...)
 
 	// Add LSP tools if user has configured LSPs or auto_lsp is enabled (nil or true).
 	if len(c.cfg.LSP) > 0 || c.cfg.Options.AutoLSP == nil || *c.cfg.Options.AutoLSP {
@@ -890,6 +895,18 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 		return err
 	}
 	c.currentAgent.SetTools(tools)
+
+	// Invoke fork hook for overhead tracking.
+	if c.postUpdateModels != nil {
+		c.postUpdateModels(ctx, large, tools)
+	}
+
+	if c.lcm != nil {
+		c.lcm.SetModelOutputLimit(large.CatwalkCfg.DefaultMaxTokens)
+		if err := c.lcm.UpdateContextWindow(ctx, large.CatwalkCfg.ContextWindow); err != nil {
+			return fmt.Errorf("updating LCM context window: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -902,6 +919,11 @@ func (c *coordinator) QueuedPromptsList(sessionID string) []string {
 }
 
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
+	// Delegate to LCM if available.
+	if c.lcm != nil {
+		return c.lcm.Compact(ctx, sessionID)
+	}
+
 	providerCfg, ok := c.cfg.Providers.Get(c.currentAgent.Model().ModelCfg.Provider)
 	if !ok {
 		return errors.New("model provider not configured")

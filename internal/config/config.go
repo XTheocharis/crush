@@ -261,6 +261,9 @@ type Options struct {
 	InitializeAs              string       `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=CRUSH.md,example=CLAUDE.md,example=docs/LLMs.md"`
 	AutoLSP                   *bool        `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
 	Progress                  *bool        `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
+
+	LCM     *LCMOptions     `json:"lcm,omitempty" jsonschema:"description=Lossless Context Management options"`
+	RepoMap *RepoMapOptions `json:"repo_map,omitempty" jsonschema:"description=Repository map configuration"`
 }
 
 type MCPs map[string]MCPConfig
@@ -352,6 +355,8 @@ type Agent struct {
 type Tools struct {
 	Ls   ToolLs   `json:"ls,omitzero"`
 	Grep ToolGrep `json:"grep,omitzero"`
+
+	RepoMap RepoMapOptions `json:"repo_map" jsonschema:"description=Repository map generation options"`
 }
 
 type ToolLs struct {
@@ -723,6 +728,12 @@ func allToolNames() []string {
 		"write",
 		"list_mcp_resources",
 		"read_mcp_resource",
+		"lcm_grep",
+		"lcm_describe",
+		"lcm_expand",
+		"agentic_map",
+		"llm_map",
+		"map_refresh",
 	}
 }
 
@@ -735,7 +746,7 @@ func resolveAllowedTools(allTools []string, disabledTools []string) []string {
 }
 
 func resolveReadOnlyTools(tools []string) []string {
-	readOnlyTools := []string{"glob", "grep", "ls", "sourcegraph", "view"}
+	readOnlyTools := []string{"glob", "grep", "ls", "sourcegraph", "view", "lcm_grep", "lcm_describe", "lcm_expand"}
 	// filter to only include tools that are in allowedtools (include mode)
 	return filterSlice(tools, readOnlyTools, true)
 }

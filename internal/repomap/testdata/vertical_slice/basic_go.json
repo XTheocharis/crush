@@ -1,0 +1,76 @@
+{
+  "name": "basic_go",
+  "repository": {
+    "root": "fixture/basic_go",
+    "files": [
+      "README.md",
+      "cmd/main.go",
+      "internal/core/service.go",
+      "internal/core/model.go",
+      "internal/util/strings.go",
+      "go.mod",
+      "docs/notes.txt"
+    ]
+  },
+  "pipeline": {
+    "stage0_special_files": [
+      "README.md"
+    ],
+    "stage1_ranked_defs": [
+      {
+        "file": "cmd/main.go",
+        "ident": "main",
+        "rank": 0.88
+      },
+      {
+        "file": "internal/core/service.go",
+        "ident": "Run",
+        "rank": 0.81
+      }
+    ],
+    "stage2_graph_nodes": [
+      "internal/core/model.go"
+    ],
+    "stage3_repo_files": [
+      "internal/util/strings.go",
+      "go.mod",
+      "docs/notes.txt"
+    ]
+  },
+  "profiles": [
+    {
+      "name": "parity_mode_true",
+      "parity_mode": true,
+      "token_budget": 35,
+      "repeat_runs": 10,
+      "deterministic_mode": true,
+      "enhancement_tiers_enabled": "none",
+      "token_counter_mode": "tokenizer_backed",
+      "fixed_seed": 1337,
+      "expected_raw_hash": "",
+      "expected_normalized_hash": ""
+    },
+    {
+      "name": "parity_mode_false",
+      "parity_mode": false,
+      "token_budget": 40,
+      "repeat_runs": 10,
+      "expected_raw_hash": "",
+      "expected_normalized_hash": ""
+    },
+    {
+      "name": "parity_mode_false_tight_budget",
+      "parity_mode": false,
+      "token_budget": 20,
+      "repeat_runs": 10,
+      "expected_raw_hash": "",
+      "expected_normalized_hash": ""
+    }
+  ],
+  "assertions": {
+    "require_non_empty_map": true,
+    "require_rendered_entries": true,
+    "require_stage_invariants": true,
+    "require_trim_order": [3, 2, 1]
+  }
+}

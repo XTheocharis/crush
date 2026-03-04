@@ -43,11 +43,6 @@ type EditResponseMetadata struct {
 
 const EditToolName = "edit"
 
-var (
-	oldStringNotFoundErr        = fantasy.NewTextErrorResponse("old_string not found in file. Make sure it matches exactly, including whitespace and line breaks.")
-	oldStringMultipleMatchesErr = fantasy.NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true")
-)
-
 //go:embed edit.md
 var editDescription []byte
 
@@ -225,25 +220,9 @@ func deleteContent(edit editContext, filePath, oldString string, replaceAll bool
 
 	oldContent, isCrlf := fsext.ToUnixLineEndings(string(content))
 
-	var newContent string
-
-	if replaceAll {
-		newContent = strings.ReplaceAll(oldContent, oldString, "")
-		if newContent == oldContent {
-			return oldStringNotFoundErr, nil
-		}
-	} else {
-		index := strings.Index(oldContent, oldString)
-		if index == -1 {
-			return oldStringNotFoundErr, nil
-		}
-
-		lastIndex := strings.LastIndex(oldContent, oldString)
-		if index != lastIndex {
-			return fantasy.NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true"), nil
-		}
-
-		newContent = oldContent[:index] + oldContent[index+len(oldString):]
+	newContent, fuzzyErr := fuzzyReplace(oldContent, oldString, "", replaceAll)
+	if fuzzyErr != nil {
+		return fantasy.NewTextErrorResponse(fuzzyErr.Error()), nil
 	}
 
 	_, additions, removals := diff.GenerateDiff(
@@ -356,22 +335,9 @@ func replaceContent(edit editContext, filePath, oldString, newString string, rep
 
 	oldContent, isCrlf := fsext.ToUnixLineEndings(string(content))
 
-	var newContent string
-
-	if replaceAll {
-		newContent = strings.ReplaceAll(oldContent, oldString, newString)
-	} else {
-		index := strings.Index(oldContent, oldString)
-		if index == -1 {
-			return oldStringNotFoundErr, nil
-		}
-
-		lastIndex := strings.LastIndex(oldContent, oldString)
-		if index != lastIndex {
-			return oldStringMultipleMatchesErr, nil
-		}
-
-		newContent = oldContent[:index] + newString + oldContent[index+len(oldString):]
+	newContent, fuzzyErr := fuzzyReplace(oldContent, oldString, newString, replaceAll)
+	if fuzzyErr != nil {
+		return fantasy.NewTextErrorResponse(fuzzyErr.Error()), nil
 	}
 
 	if oldContent == newContent {

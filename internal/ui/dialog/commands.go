@@ -359,6 +359,7 @@ func (c *Commands) setCommandItems(commandType CommandType) {
 	case UserCommands:
 		for _, cmd := range c.customCommands {
 			action := ActionRunCustomCommand{
+				CommandID: cmd.ID,
 				Content:   cmd.Content,
 				Arguments: cmd.Arguments,
 			}
@@ -394,7 +395,11 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 	// Only show compact command if there's an active session
 	if c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}))
+		commands = append(commands,
+			NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}),
+			NewCommandItem(c.com.Styles, "repo_map_refresh", "Refresh Repository Map", "", ActionRunCustomCommand{CommandID: "project:map-refresh", Content: "project:map-refresh"}),
+			NewCommandItem(c.com.Styles, "repo_map_reset", "Reset Repository Map", "", ActionRunCustomCommand{CommandID: "project:map-reset", Content: "project:map-reset"}),
+		)
 	}
 
 	// Add reasoning toggle for models that support it

@@ -24,7 +24,6 @@ import (
 	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/log"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
-	"github.com/qjebbs/go-jsons"
 )
 
 const defaultCatwalkURL = "https://catwalk.charm.sh"
@@ -375,10 +374,12 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Apply defaults to LSP configurations
 	c.applyLSPDefaults()
 
-	// Add the default context paths if they are not already present
-	c.Options.ContextPaths = append(defaultContextPaths, c.Options.ContextPaths...)
-	slices.Sort(c.Options.ContextPaths)
-	c.Options.ContextPaths = slices.Compact(c.Options.ContextPaths)
+	// Add the default context paths if they are not already present.
+	// Copy defaults first to avoid mutating shared backing arrays.
+	contextPaths := append([]string(nil), defaultContextPaths...)
+	contextPaths = append(contextPaths, c.Options.ContextPaths...)
+	slices.Sort(contextPaths)
+	c.Options.ContextPaths = slices.Compact(contextPaths)
 
 	// Add the default skills directories if not already present.
 	for _, dir := range GlobalSkillsDirs() {
@@ -411,6 +412,10 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		} else {
 			c.Options.Attribution.TrailerStyle = TrailerStyleAssistedBy
 		}
+	}
+	if c.Options.RepoMap == nil {
+		v := DefaultRepoMapOptions()
+		c.Options.RepoMap = &v
 	}
 	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
 }
@@ -670,15 +675,15 @@ func loadFromBytes(configs [][]byte) (*Config, error) {
 		return &Config{}, nil
 	}
 
-	data, err := jsons.Merge(configs)
-	if err != nil {
-		return nil, err
+	result := newConfig()
+	for _, bts := range configs {
+		config := newConfig()
+		if err := json.Unmarshal(bts, &config); err != nil {
+			return nil, err
+		}
+		*result = result.merge(*config)
 	}
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
+	return result, nil
 }
 
 func hasAWSCredentials(env env.Env) bool {

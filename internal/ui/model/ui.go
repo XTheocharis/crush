@@ -33,6 +33,7 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -225,6 +226,11 @@ type UI struct {
 	todoSpinner    spinner.Model
 	todoIsSpinning bool
 
+	// LCM compaction state
+	lcmCompacting      bool
+	lcmCompactingStart time.Time
+	lcmSpinner         spinner.Model
+
 	// mouse highlighting related state
 	lastClickTime time.Time
 
@@ -262,6 +268,11 @@ func New(com *common.Common) *UI {
 		spinner.WithStyle(com.Styles.Pills.TodoSpinner),
 	)
 
+	lcmSpinner := spinner.New(
+		spinner.WithSpinner(spinner.MiniDot),
+		spinner.WithStyle(com.Styles.Pills.TodoSpinner),
+	)
+
 	// Attachments component
 	attachments := attachments.New(
 		attachments.NewRenderer(
@@ -289,6 +300,7 @@ func New(com *common.Common) *UI {
 		completions: comp,
 		attachments: attachments,
 		todoSpinner: todoSpinner,
+		lcmSpinner:  lcmSpinner,
 		lspStates:   make(map[string]app.LSPClientInfo),
 		mcpStates:   make(map[string]mcp.ClientInfo),
 	}
@@ -544,6 +556,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pubsub.Event[permission.PermissionNotification]:
 		m.handlePermissionNotification(msg.Payload)
+	case pubsub.Event[lcm.CompactionEvent]:
+		cmds = append(cmds, func() tea.Msg {
+			return CompactionEventToMsg(msg.Payload)
+		})
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
 	case tea.TerminalVersionMsg:
@@ -722,6 +738,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+		if cmd := m.updateLCMSpinner(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+	case CompactionStartedMsg:
+		cmds = append(cmds, m.handleCompactionStarted())
+
+	case CompactionCompletedMsg, CompactionFailedMsg:
+		m.handleCompactionFinished()
 
 	case tea.KeyPressMsg:
 		if cmd := m.handleKeyPressMsg(msg); cmd != nil {
@@ -1404,6 +1429,18 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if msg.Args != nil {
 			content = substituteArgs(content, msg.Args)
 		}
+		content = strings.TrimSpace(content)
+		commandID := strings.TrimSpace(msg.CommandID)
+		if commandID == "" {
+			commandID = content
+		}
+		if handled, cmd := m.handleRepoMapCommand(commandID); handled {
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			m.dialog.CloseFrontDialog()
+			break
+		}
 		cmds = append(cmds, m.sendMessage(content))
 		m.dialog.CloseFrontDialog()
 	case dialog.ActionRunMCPPrompt:
@@ -1948,8 +1985,8 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 		if m.textarea.Focused() {
 			cur := m.textarea.Cursor()
-			cur.X++                            // Adjust for app margins
-			cur.Y += m.layout.editor.Min.Y + 1 // Offset for attachments row
+			cur.X++ // Adjust for app margins
+			cur.Y += m.layout.editor.Min.Y
 			return cur
 		}
 	}
@@ -2576,9 +2613,7 @@ func (m *UI) insertFileCompletion(path string) tea.Cmd {
 // insertMCPResourceCompletion inserts the selected resource into the textarea,
 // replacing the @query, and adds the resource as an attachment.
 func (m *UI) insertMCPResourceCompletion(item completions.ResourceCompletionValue) tea.Cmd {
-	displayText := cmp.Or(item.Title, item.URI)
-
-	if !m.insertCompletionText(displayText) {
+	if !m.insertCompletionText(item.URI) {
 		return nil
 	}
 
@@ -2618,7 +2653,7 @@ func (m *UI) insertMCPResourceCompletion(item completions.ResourceCompletionValu
 
 		return message.Attachment{
 			FilePath: item.URI,
-			FileName: displayText,
+			FileName: item.URI,
 			MimeType: mimeType,
 			Content:  data,
 		}
@@ -2699,8 +2734,8 @@ func (m *UI) renderEditorView(width int) string {
 		attachmentsView = m.attachments.Render(width)
 	}
 	return strings.Join([]string{
-		attachmentsView,
 		m.textarea.View(),
+		attachmentsView,
 		"", // margin at bottom of editor
 	}, "\n")
 }

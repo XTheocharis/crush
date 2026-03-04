@@ -1,0 +1,50 @@
+{
+  "data_format": "json",
+  "description": "JSON fixture for parity testing with nested structures",
+  "provenance": {
+    "source": "volt_parity_test_corpuses",
+    "version": "1.0.0"
+  },
+  "content": {
+    "project": {
+      "name": "example-project",
+      "version": "1.2.3",
+      "description": "A sample project for parity testing",
+      "metadata": {
+        "author": "Volt Parity Tests",
+        "license": "MIT"
+      }
+    },
+    "dependencies": {
+      "express": "^4.18.0",
+      "lodash": "^4.17.21",
+      "debug": "^4.3.0"
+    },
+    "devDependencies": {
+      "jest": "^29.0.0",
+      "typescript": "^5.0.0",
+      "eslint": "^8.0.0"
+    },
+    "scripts": {
+      "start": "node dist/index.js",
+      "build": "tsc",
+      "test": "jest --coverage",
+      "lint": "eslint . --ext .ts"
+    },
+    "configuration": {
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "8080"
+      },
+      "features": {
+        "auth_enabled": true,
+        "caching_enabled": true,
+        "rate_limiting": {
+          "enabled": true,
+          "max_requests": 1000,
+          "window_ms": 60000
+        }
+      }
+    }
+  }
+}

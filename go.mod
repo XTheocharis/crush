@@ -14,6 +14,7 @@ require (
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
 	github.com/MakeNowJust/heredoc v1.0.0
 	github.com/PuerkitoBio/goquery v1.11.0
+	github.com/UserNobody14/tree-sitter-dart v0.0.0-20251004150700-d4d8f3e337d8
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/atotto/clipboard v0.1.4
 	github.com/aymanbagabas/go-nativeclipboard v0.1.3
@@ -40,9 +41,11 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-git/go-git/v5 v5.17.0
 	github.com/google/uuid v1.6.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/invopop/jsonschema v0.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/jordanella/go-ansi-paintbrush v0.0.0-20240728195301-b7ad996ecf3d
+	github.com/klauspost/compress v1.18.4
 	github.com/lucasb-eyer/go-colorful v1.3.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/modelcontextprotocol/go-sdk v1.4.0
@@ -50,9 +53,9 @@ require (
 	github.com/nxadm/tail v1.4.11
 	github.com/openai/openai-go/v2 v2.7.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
+	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/posthog/posthog-go v1.10.0
 	github.com/pressly/goose/v3 v3.27.0
-	github.com/qjebbs/go-jsons v1.0.0-alpha.4
 	github.com/rivo/uniseg v0.4.7
 	github.com/sahilm/fuzzy v0.1.1
 	github.com/sourcegraph/jsonrpc2 v0.2.1
@@ -60,6 +63,27 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
+	github.com/tree-sitter-grammars/tree-sitter-arduino v0.24.1-0.20250907061412-53eb391da4c6
+	github.com/tree-sitter-grammars/tree-sitter-chatito v0.5.1-0.20250817084729-c0ed82c665b7
+	github.com/tree-sitter-grammars/tree-sitter-hcl v1.2.0
+	github.com/tree-sitter-grammars/tree-sitter-lua v0.3.1-0.20250516173203-4fbec840c341
+	github.com/tree-sitter-grammars/tree-sitter-properties v0.3.0
+	github.com/tree-sitter/go-tree-sitter v0.25.0
+	github.com/tree-sitter/tree-sitter-c v0.24.2-0.20250915034600-ae19b676b13b
+	github.com/tree-sitter/tree-sitter-c-sharp v0.23.1
+	github.com/tree-sitter/tree-sitter-cpp v0.23.5-0.20250927134553-12bd6f7e9608
+	github.com/tree-sitter/tree-sitter-go v0.25.1-0.20250915233352-2346a3ab1bb3
+	github.com/tree-sitter/tree-sitter-haskell v0.23.1
+	github.com/tree-sitter/tree-sitter-java v0.23.6-0.20250915034552-e10607b45ff7
+	github.com/tree-sitter/tree-sitter-javascript v0.25.1-0.20250915034224-58404d8cf191
+	github.com/tree-sitter/tree-sitter-julia v0.25.0
+	github.com/tree-sitter/tree-sitter-ocaml v0.24.2
+	github.com/tree-sitter/tree-sitter-php v0.24.2
+	github.com/tree-sitter/tree-sitter-python v0.25.1-0.20250915213335-26855eabccb1
+	github.com/tree-sitter/tree-sitter-ruby v0.23.1
+	github.com/tree-sitter/tree-sitter-rust v0.24.0
+	github.com/tree-sitter/tree-sitter-scala v0.24.0
+	github.com/tree-sitter/tree-sitter-typescript v0.23.2
 	github.com/zeebo/xxh3 v1.1.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/net v0.51.0
@@ -125,17 +149,16 @@ require (
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kaptinlin/go-i18n v0.2.11 // indirect
 	github.com/kaptinlin/jsonpointer v0.4.16 // indirect
 	github.com/kaptinlin/jsonschema v0.7.3 // indirect
 	github.com/kaptinlin/messageformat-go v0.4.18 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.20 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect

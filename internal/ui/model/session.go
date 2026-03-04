@@ -71,6 +71,13 @@ func (m *UI) loadSession(sessionID string) tea.Cmd {
 			return util.ReportError(err)
 		}
 
+		// Recover any incomplete messages from interrupted sessions.
+		if m.com.App.AgentCoordinator != nil {
+			if recoverErr := m.com.App.AgentCoordinator.RecoverSession(context.Background(), session.ID); recoverErr != nil {
+				slog.Error("Failed to recover session", "session_id", session.ID, "error", recoverErr)
+			}
+		}
+
 		sessionFiles, err := m.loadSessionFiles(sessionID)
 		if err != nil {
 			return util.ReportError(err)
