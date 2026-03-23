@@ -28,8 +28,9 @@ import (
 
 const defaultCatwalkURL = "https://catwalk.charm.sh"
 
-// Load loads the configuration from the default paths.
-func Load(workingDir, dataDir string, debug bool) (*Config, error) {
+// Load loads the configuration from the default paths and returns a
+// ConfigStore that owns both the pure-data Config and all runtime state.
+func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	configPaths := lookupConfigs(workingDir)
 
 	cfg, err := loadFromConfigPaths(configPaths)
@@ -37,9 +38,14 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 		return nil, fmt.Errorf("failed to load config from paths %v: %w", configPaths, err)
 	}
 
-	cfg.dataConfigDir = GlobalConfigData()
-
 	cfg.setDefaults(workingDir, dataDir)
+
+	store := &ConfigStore{
+		config:         cfg,
+		workingDir:     workingDir,
+		globalDataPath: GlobalConfigData(),
+		workspacePath:  filepath.Join(cfg.Options.DataDirectory, fmt.Sprintf("%s.json", appName)),
+	}
 
 	if debug {
 		cfg.Options.Debug = true
@@ -50,6 +56,18 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 		filepath.Join(cfg.Options.DataDirectory, "logs", fmt.Sprintf("%s.log", appName)),
 		cfg.Options.Debug,
 	)
+
+	// Load workspace config last so it has highest priority.
+	if wsData, err := os.ReadFile(store.workspacePath); err == nil && len(wsData) > 0 {
+		merged, mergeErr := loadFromBytes(append([][]byte{mustMarshalConfig(cfg)}, wsData))
+		if mergeErr == nil {
+			// Preserve defaults that setDefaults already applied.
+			dataDir := cfg.Options.DataDirectory
+			*cfg = *merged
+			cfg.setDefaults(workingDir, dataDir)
+			store.config = cfg
+		}
+	}
 
 	if !isInsideWorktree() {
 		const depth = 2
@@ -71,26 +89,36 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.knownProviders = providers
+	store.knownProviders = providers
 
 	env := env.New()
 	// Configure providers
 	valueResolver := NewShellVariableResolver(env)
-	cfg.resolver = valueResolver
-	if err := cfg.configureProviders(env, valueResolver, cfg.knownProviders); err != nil {
+	store.resolver = valueResolver
+	if err := cfg.configureProviders(store, env, valueResolver, store.knownProviders); err != nil {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}
 
 	if !cfg.IsConfigured() {
 		slog.Warn("No providers configured")
-		return cfg, nil
+		return store, nil
 	}
 
-	if err := cfg.configureSelectedModels(cfg.knownProviders); err != nil {
+	if err := configureSelectedModels(store, store.knownProviders); err != nil {
 		return nil, fmt.Errorf("failed to configure selected models: %w", err)
 	}
-	cfg.SetupAgents()
-	return cfg, nil
+	store.SetupAgents()
+	return store, nil
+}
+
+// mustMarshalConfig marshals the config to JSON bytes, returning empty JSON on
+// error.
+func mustMarshalConfig(cfg *Config) []byte {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return []byte("{}")
+	}
+	return data
 }
 
 func PushPopCrushEnv() func() {
@@ -121,7 +149,7 @@ func PushPopCrushEnv() func() {
 	return restore
 }
 
-func (c *Config) configureProviders(env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
+func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
 	knownProviderNames := make(map[string]bool)
 	restore := PushPopCrushEnv()
 	defer restore()
@@ -208,7 +236,7 @@ func (c *Config) configureProviders(env env.Env, resolver VariableResolver, know
 		switch {
 		case p.ID == catwalk.InferenceProviderAnthropic && config.OAuthToken != nil:
 			// Claude Code subscription is not supported anymore. Remove to show onboarding.
-			c.RemoveConfigField("providers.anthropic")
+			store.RemoveConfigField(ScopeGlobal, "providers.anthropic")
 			c.Providers.Del(string(p.ID))
 			continue
 		case p.ID == catwalk.InferenceProviderCopilot && config.OAuthToken != nil:
@@ -339,7 +367,6 @@ func (c *Config) configureProviders(env env.Env, resolver VariableResolver, know
 }
 
 func (c *Config) setDefaults(workingDir, dataDir string) {
-	c.workingDir = workingDir
 	if c.Options == nil {
 		c.Options = &Options{}
 	}
@@ -529,7 +556,8 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 	return largeModel, smallModel, err
 }
 
-func (c *Config) configureSelectedModels(knownProviders []catwalk.Provider) error {
+func configureSelectedModels(store *ConfigStore, knownProviders []catwalk.Provider) error {
+	c := store.config
 	defaultLarge, defaultSmall, err := c.defaultModelSelection(knownProviders)
 	if err != nil {
 		return fmt.Errorf("failed to select default models: %w", err)
@@ -548,7 +576,7 @@ func (c *Config) configureSelectedModels(knownProviders []catwalk.Provider) erro
 		if model == nil {
 			large = defaultLarge
 			// override the model type to large
-			err := c.UpdatePreferredModel(SelectedModelTypeLarge, large)
+			err := store.UpdatePreferredModel(ScopeGlobal, SelectedModelTypeLarge, large)
 			if err != nil {
 				return fmt.Errorf("failed to update preferred large model: %w", err)
 			}
@@ -592,7 +620,7 @@ func (c *Config) configureSelectedModels(knownProviders []catwalk.Provider) erro
 		if model == nil {
 			small = defaultSmall
 			// override the model type to small
-			err := c.UpdatePreferredModel(SelectedModelTypeSmall, small)
+			err := store.UpdatePreferredModel(ScopeGlobal, SelectedModelTypeSmall, small)
 			if err != nil {
 				return fmt.Errorf("failed to update preferred small model: %w", err)
 			}

@@ -21,11 +21,11 @@ import (
 // RepoMapController handles explicit repo-map refresh/reset control paths.
 type RepoMapController struct {
 	svc         *repomap.Service
-	cfg         *config.Config
+	cfg         *config.ConfigStore
 	filetracker filetracker.Service
 }
 
-func newRepoMapController(svc *repomap.Service, cfg *config.Config, ft filetracker.Service) *RepoMapController {
+func newRepoMapController(svc *repomap.Service, cfg *config.ConfigStore, ft filetracker.Service) *RepoMapController {
 	if svc == nil || cfg == nil {
 		return nil
 	}
@@ -74,23 +74,24 @@ func (c *RepoMapController) buildGenerateOpts(ctx context.Context, sessionID str
 	if c == nil || c.cfg == nil {
 		return opts
 	}
-	if model := c.cfg.GetModelByType(config.SelectedModelTypeLarge); model != nil {
+	cfg := c.cfg.Config()
+	if model := cfg.GetModelByType(config.SelectedModelTypeLarge); model != nil {
 		ctxWindow := int(model.ContextWindow)
 		var tok int
-		if c.cfg.Options != nil && c.cfg.Options.LCM != nil {
+		if cfg.Options != nil && cfg.Options.LCM != nil {
 			tok = config.DefaultRepoMapMaxTokensLCM(ctxWindow)
 		} else {
 			tok = config.DefaultRepoMapMaxTokens(ctxWindow)
 		}
-		if repoCfg := c.cfg.Options.RepoMap; repoCfg != nil && repoCfg.MaxTokens > 0 {
+		if repoCfg := cfg.Options.RepoMap; repoCfg != nil && repoCfg.MaxTokens > 0 {
 			tok = repoCfg.MaxTokens
 		}
 		opts.TokenBudget = tok
 		opts.MaxContextWindow = ctxWindow
 		opts.Model = model.ID
 	}
-	if c.cfg.Options != nil && c.cfg.Options.LCM != nil {
-		opts.ParityMode = strings.EqualFold(strings.TrimSpace(c.cfg.Options.LCM.ExplorerOutputProfile), "parity")
+	if cfg.Options != nil && cfg.Options.LCM != nil {
+		opts.ParityMode = strings.EqualFold(strings.TrimSpace(cfg.Options.LCM.ExplorerOutputProfile), "parity")
 	}
 	if opts.ParityMode {
 		opts.PromptCachingEnabled = true
@@ -141,13 +142,13 @@ func (app *App) RunRepoMapControl(ctx context.Context, commandID, sessionID stri
 }
 
 func (app *App) initRepoMap(ctx context.Context, conn *sql.DB) []agent.CoordinatorOption {
-	if app == nil || app.config == nil || app.config.Options == nil || app.config.Options.RepoMap == nil || app.config.Options.RepoMap.Disabled {
+	if app == nil || app.config == nil || app.config.Config().Options == nil || app.config.Config().Options.RepoMap == nil || app.config.Config().Options.RepoMap.Disabled {
 		return nil
 	}
 
 	// Validate ExcludeGlobs patterns at init time so users get early
 	// feedback about malformed patterns.
-	for _, pattern := range app.config.Options.RepoMap.ExcludeGlobs {
+	for _, pattern := range app.config.Config().Options.RepoMap.ExcludeGlobs {
 		if _, err := doublestar.Match(pattern, ""); err != nil {
 			slog.Warn("Malformed ExcludeGlobs pattern in repo map config",
 				"pattern", pattern, "error", err)
@@ -155,7 +156,7 @@ func (app *App) initRepoMap(ctx context.Context, conn *sql.DB) []agent.Coordinat
 	}
 
 	q := db.New(conn)
-	svc := repomap.NewService(app.config, q, conn, app.config.WorkingDir(), ctx)
+	svc := repomap.NewService(app.config.Config(), q, conn, app.config.WorkingDir(), ctx)
 	app.repoMapSvc = svc
 	app.repoMapCtl = newRepoMapController(svc, app.config, app.FileTracker)
 	go svc.PreIndex()

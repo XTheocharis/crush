@@ -34,7 +34,7 @@ func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
 	require.NoError(t, err)
 	// Disable both map_refresh (for the test) and agent (requires model
 	// selection which is not available without full provider setup).
-	cfgDisabled.Options.DisabledTools = []string{"map_refresh", "agent"}
+	cfgDisabled.Config().Options.DisabledTools = []string{"map_refresh", "agent"}
 	cfgDisabled.SetupAgents()
 
 	cDisabled := &coordinator{
@@ -46,13 +46,13 @@ func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
 		filetracker: *env.filetracker,
 	}
 
-	coderTools, err := cDisabled.buildTools(t.Context(), cfgDisabled.Agents[config.AgentCoder])
+	coderTools, err := cDisabled.buildTools(t.Context(), cfgDisabled.Config().Agents[config.AgentCoder])
 	require.NoError(t, err)
 	require.NotContains(t, toolNames(coderTools), tools.MapRefreshToolName)
 
 	cfgEnabled, err := config.Init(env.workingDir, "", false)
 	require.NoError(t, err)
-	cfgEnabled.Options.DisabledTools = []string{"agent"}
+	cfgEnabled.Config().Options.DisabledTools = []string{"agent"}
 	cfgEnabled.SetupAgents()
 
 	cEnabled := &coordinator{
@@ -64,11 +64,11 @@ func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
 		filetracker: *env.filetracker,
 	}
 
-	coderTools, err = cEnabled.buildTools(t.Context(), cfgEnabled.Agents[config.AgentCoder])
+	coderTools, err = cEnabled.buildTools(t.Context(), cfgEnabled.Config().Agents[config.AgentCoder])
 	require.NoError(t, err)
 	require.Contains(t, toolNames(coderTools), tools.MapRefreshToolName)
 
-	taskTools, err := cEnabled.buildTools(t.Context(), cfgEnabled.Agents[config.AgentTask])
+	taskTools, err := cEnabled.buildTools(t.Context(), cfgEnabled.Config().Agents[config.AgentTask])
 	require.NoError(t, err)
 	require.NotContains(t, toolNames(taskTools), tools.MapRefreshToolName)
 	require.NotContains(t, toolNames(taskTools), "map_reset")

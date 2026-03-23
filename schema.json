@@ -474,6 +474,11 @@
         "repo_map": {
           "$ref": "#/$defs/RepoMapOptions",
           "description": "Repository map configuration"
+        },
+        "disable_notifications": {
+          "type": "boolean",
+          "description": "Disable desktop notifications",
+          "default": false
         }
       },
       "additionalProperties": false,

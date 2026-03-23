@@ -85,7 +85,7 @@ func (c *coordinator) computeAndSetOverhead(_ context.Context, large Model, tool
 
 	// Account for SystemPromptPrefix injected as a separate system
 	// message in agent.go:313-315.
-	largeProviderCfg, _ := c.cfg.Providers.Get(large.ModelCfg.Provider)
+	largeProviderCfg, _ := c.cfg.Config().Providers.Get(large.ModelCfg.Provider)
 	if largeProviderCfg.SystemPromptPrefix != "" {
 		spTokens += lcm.EstimateTokens(largeProviderCfg.SystemPromptPrefix)
 	}
@@ -409,7 +409,8 @@ func (c *coordinator) repoMapProfile() repoMapProfileOptions {
 	if c == nil || c.cfg == nil {
 		return profile
 	}
-	if model := c.cfg.GetModelByType(config.SelectedModelTypeLarge); model != nil {
+	cfg := c.cfg.Config()
+	if model := cfg.GetModelByType(config.SelectedModelTypeLarge); model != nil {
 		ctxWindow := int(model.ContextWindow)
 		profile.MaxContextWindow = ctxWindow
 		if c.lcm != nil {
@@ -418,12 +419,12 @@ func (c *coordinator) repoMapProfile() repoMapProfileOptions {
 			profile.TokenBudget = config.DefaultRepoMapMaxTokens(ctxWindow)
 		}
 		profile.Model = model.ID
-		if c.cfg.Options != nil && c.cfg.Options.RepoMap != nil && c.cfg.Options.RepoMap.MaxTokens > 0 {
-			profile.TokenBudget = c.cfg.Options.RepoMap.MaxTokens
+		if cfg.Options != nil && cfg.Options.RepoMap != nil && cfg.Options.RepoMap.MaxTokens > 0 {
+			profile.TokenBudget = cfg.Options.RepoMap.MaxTokens
 		}
 	}
-	if c.cfg.Options != nil && c.cfg.Options.LCM != nil {
-		profile.ParityMode = strings.EqualFold(strings.TrimSpace(c.cfg.Options.LCM.ExplorerOutputProfile), "parity")
+	if cfg.Options != nil && cfg.Options.LCM != nil {
+		profile.ParityMode = strings.EqualFold(strings.TrimSpace(cfg.Options.LCM.ExplorerOutputProfile), "parity")
 	}
 	if profile.ParityMode {
 		profile.PromptCachingEnabled = true

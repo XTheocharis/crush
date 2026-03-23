@@ -55,6 +55,8 @@
   - "/gemini/i"
 "provider: google vertex":
   - "/vertex/i"
+"provider: hyper":
+  - "/hyper/i"
 "provider: kimi":
   - "/kimi/i"
 "provider: minimax":
@@ -67,6 +69,8 @@
   - "/openrouter/i"
 "provider: qwen":
   - "/qwen/i"
+"provider: vercel":
+  - "/vercel/i"
 "provider: xai grok":
   - "/(xai|x\\.ai|grok)/i"
 "security":

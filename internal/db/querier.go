@@ -31,6 +31,7 @@ type Querier interface {
 	GetFileByPathAndSession(ctx context.Context, arg GetFileByPathAndSessionParams) (File, error)
 	GetFileRead(ctx context.Context, arg GetFileReadParams) (ReadFile, error)
 	GetHourDayHeatmap(ctx context.Context) ([]GetHourDayHeatmapRow, error)
+	GetLastSession(ctx context.Context) (Session, error)
 	GetLcmContextTokenCount(ctx context.Context, sessionID string) (interface{}, error)
 	GetLcmLargeFile(ctx context.Context, fileID string) (LcmLargeFile, error)
 	GetLcmSessionConfig(ctx context.Context, sessionID string) (LcmSessionConfig, error)
@@ -83,6 +84,7 @@ type Querier interface {
 	ListSessions(ctx context.Context) ([]Session, error)
 	ListUserMessagesBySession(ctx context.Context, sessionID string) ([]Message, error)
 	RecordFileRead(ctx context.Context, arg RecordFileReadParams) error
+	RenameSession(ctx context.Context, arg RenameSessionParams) error
 	SearchLcmSummaries(ctx context.Context, arg SearchLcmSummariesParams) ([]SearchLcmSummariesRow, error)
 	UpdateLcmLargeFileExploration(ctx context.Context, arg UpdateLcmLargeFileExplorationParams) error
 	UpdateLcmMapItem(ctx context.Context, arg UpdateLcmMapItemParams) error

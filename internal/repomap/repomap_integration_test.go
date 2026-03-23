@@ -38,7 +38,7 @@ func TestIntegration_Generate_AgainstCrushRepo(t *testing.T) {
 
 	cfg, err := config.Init(repoRoot, "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{
 		RefreshMode: "always",
 		ExcludeGlobs: []string{
 			"vendor/**",
@@ -51,7 +51,7 @@ func TestIntegration_Generate_AgainstCrushRepo(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	q := db.New(conn)
-	svc := NewService(cfg, q, conn, repoRoot, ctx)
+	svc := NewService(cfg.Config(), q, conn, repoRoot, ctx)
 	t.Cleanup(func() { svc.Close() })
 
 	// Create a session.
@@ -88,14 +88,14 @@ func TestIntegration_Generate_WithChatFiles(t *testing.T) {
 
 	cfg, err := config.Init(repoRoot, "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always"}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always"}
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	q := db.New(conn)
-	svc := NewService(cfg, q, conn, repoRoot, ctx)
+	svc := NewService(cfg.Config(), q, conn, repoRoot, ctx)
 	t.Cleanup(func() { svc.Close() })
 
 	sessSvc := session.NewService(q, conn)

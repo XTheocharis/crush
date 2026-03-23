@@ -20,23 +20,23 @@ func testRepoMapController(t *testing.T, refreshMode string) (*RepoMapController
 	t.Helper()
 	cfg, err := config.Init(t.TempDir(), "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: refreshMode}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: refreshMode}
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	q := db.New(conn)
-	svc := repomap.NewService(cfg, q, conn, cfg.WorkingDir(), context.Background())
+	svc := repomap.NewService(cfg.Config(), q, conn, cfg.WorkingDir(), context.Background())
 	ft := filetracker.NewService(q, cfg.WorkingDir())
 	ctl := newRepoMapController(svc, cfg, ft)
 
 	return ctl, svc
 }
 
-func ensureSession(t *testing.T, svc *repomap.Service, cfg *config.Config) string {
+func ensureSession(t *testing.T, svc *repomap.Service, cfg *config.ConfigStore) string {
 	t.Helper()
-	conn, err := db.Connect(t.Context(), cfg.Options.DataDirectory)
+	conn, err := db.Connect(t.Context(), cfg.Config().Options.DataDirectory)
 	require.NoError(t, err)
 	defer conn.Close()
 	q := db.New(conn)
@@ -50,7 +50,7 @@ func ensureSession(t *testing.T, svc *repomap.Service, cfg *config.Config) strin
 func TestRunRepoMapControlProjectRefreshAndReset(t *testing.T) {
 	cfg, err := config.Init(t.TempDir(), "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual"}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual"}
 	cfg.SetupAgents()
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
@@ -100,7 +100,7 @@ func TestRunRepoMapControlReportsUnavailableWhenNoService(t *testing.T) {
 func TestMapRefreshSyncAndAsyncRequireSession(t *testing.T) {
 	cfg, err := config.Init(t.TempDir(), "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual"}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual"}
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestMapRefreshSyncAndAsyncRequireSession(t *testing.T) {
 func TestMapResetClearsInjectedRunState(t *testing.T) {
 	cfg, err := config.Init(t.TempDir(), "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual"}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual"}
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)
@@ -148,7 +148,7 @@ func TestRunRepoMapControlRefreshResetObservableMapChanges(t *testing.T) {
 
 	cfg, err := config.Init(repoRoot, "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual", MaxTokens: 4096}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "manual", MaxTokens: 4096}
 	cfg.SetupAgents()
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
@@ -208,7 +208,7 @@ func TestMapRefreshAsyncSchedulesAndUpdatesObservableMap(t *testing.T) {
 
 	cfg, err := config.Init(repoRoot, "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)

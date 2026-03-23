@@ -48,7 +48,8 @@ func SkipIfNoIntegration(t *testing.T) {
 func NewLLMClient(t *testing.T) LLMClient {
 	t.Helper()
 
-	cfg := LoadDevConfig(t)
+	store := LoadDevConfig(t)
+	cfg := store.Config()
 
 	smallModel, ok := cfg.Models[config.SelectedModelTypeSmall]
 	if !ok {
@@ -77,7 +78,7 @@ func NewLLMClient(t *testing.T) LLMClient {
 }
 
 // LoadDevConfig loads the developer config from CRUSH_GLOBAL_CONFIG.
-func LoadDevConfig(t *testing.T) *config.Config {
+func LoadDevConfig(t *testing.T) *config.ConfigStore {
 	t.Helper()
 
 	globalConfig := os.Getenv("CRUSH_GLOBAL_CONFIG")

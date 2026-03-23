@@ -190,7 +190,7 @@ func TestBuildToolsMapRefreshWiresRepoMapService(t *testing.T) {
 	require.NoError(t, err)
 	// Disable the agent tool — it requires model selection which is not
 	// available in unit tests without a full provider setup.
-	cfg.Options.DisabledTools = append(cfg.Options.DisabledTools, "agent")
+	cfg.Config().Options.DisabledTools = append(cfg.Config().Options.DisabledTools, "agent")
 	cfg.SetupAgents()
 
 	svc := &fakeRepoMapService{available: true}
@@ -204,7 +204,7 @@ func TestBuildToolsMapRefreshWiresRepoMapService(t *testing.T) {
 		repoMapSvc:  svc,
 	}
 
-	coderTools, err := c.buildTools(t.Context(), cfg.Agents[config.AgentCoder])
+	coderTools, err := c.buildTools(t.Context(), cfg.Config().Agents[config.AgentCoder])
 	require.NoError(t, err)
 
 	var mapRefresh fantasy.AgentTool
@@ -254,13 +254,13 @@ func TestBuildRepoMapHookSingleInjectionGuardIntegration(t *testing.T) {
 
 	cfg, err := config.Init(repoRoot, "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	svc := repomap.NewService(cfg, db.New(conn), conn, cfg.WorkingDir(), context.Background())
+	svc := repomap.NewService(cfg.Config(), db.New(conn), conn, cfg.WorkingDir(), context.Background())
 	t.Cleanup(func() { _ = svc.Close() })
 
 	c := &coordinator{repoMapSvc: svc}
@@ -299,14 +299,14 @@ func TestBuildRepoMapHookUpdatesLCMFromGeneratedTokenCount(t *testing.T) {
 
 	cfg, err := config.Init(repoRoot, "", false)
 	require.NoError(t, err)
-	cfg.Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
+	cfg.Config().Options.RepoMap = &config.RepoMapOptions{RefreshMode: "always", MaxTokens: 4096}
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	q := db.New(conn)
 
-	svc := repomap.NewService(cfg, q, conn, cfg.WorkingDir(), context.Background())
+	svc := repomap.NewService(cfg.Config(), q, conn, cfg.WorkingDir(), context.Background())
 	t.Cleanup(func() { _ = svc.Close() })
 	mgr := lcm.NewManager(q, conn)
 

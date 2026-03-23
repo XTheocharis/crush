@@ -1,13 +1,17 @@
 # Crush Development Guide
 
-## Project Snapshot
+## Project Overview
 
-Crush is a terminal-based AI coding assistant built in Go on the Charm stack.
-The main runtime path is:
+Crush is a terminal-based AI coding assistant built in Go by
+[Charm](https://charm.land). It connects to LLMs and gives them tools to read,
+write, and execute code. It supports multiple providers (Anthropic, OpenAI,
+Gemini, Bedrock, Copilot, Hyper, MiniMax, Vercel, and more), integrates with
+LSPs for code intelligence, and supports extensibility via MCP servers and
+agent skills.
 
-`CLI -> App -> Coordinator -> SessionAgent -> Fantasy LLM -> Tools/Permissions`
+The module path is `github.com/charmbracelet/crush`.
 
-This fork branch adds a large squashed delta centered on:
+This fork branch also carries a large squashed delta centered on:
 
 - **`internal/lcm/`**: lossless context management, summaries, large-output
   storage, and extra LCM tools.
@@ -26,6 +30,67 @@ This fork branch adds a large squashed delta centered on:
 Keep this file focused on stable workflow and architecture notes. Track open
 branch issues in `TODO.md`.
 
+## Architecture
+
+```
+main.go                            CLI entry point (cobra via internal/cmd)
+internal/
+  app/app.go                       Top-level wiring: DB, config, agents, LSP, MCP, events
+  cmd/                             CLI commands (root, run, login, models, stats, sessions)
+  config/
+    config.go                      Config struct, context file paths, agent definitions
+    load.go                        crush.json loading and validation
+    store.go                       ConfigStore runtime wrapper and persistence
+  agent/
+    agent.go                       SessionAgent: runs LLM conversations per session
+    coordinator.go                 Coordinator: manages named agents ("coder", "task")
+    coordinator_opts.go            Fork hook plumbing for repo-map and LCM
+    prompts.go                     Loads Go-template system prompts
+    templates/                     System prompt templates
+    tools/                         Built-in tools and MCP integration
+  session/session.go               Session CRUD backed by SQLite
+  message/                         Message model and content types
+  db/                              SQLite via sqlc, with migrations
+    sql/                           Raw SQL queries (consumed by sqlc)
+    migrations/                    Schema migrations
+  lsp/                             LSP client manager, auto-discovery, on-demand startup
+  ui/                              Bubble Tea v2 TUI (see internal/ui/AGENTS.md)
+  permission/                      Tool permission checking and allow-lists
+  skills/                          Skill file discovery and loading
+  shell/                           Bash command execution with background job support
+  event/                           Telemetry (PostHog)
+  pubsub/                          Internal pub/sub for cross-component messaging
+  filetracker/                     Tracks files touched per session
+  history/                         Prompt history
+```
+
+### Key Dependency Roles
+
+- **`charm.land/fantasy`**: LLM provider abstraction layer. Handles protocol
+  differences between Anthropic, OpenAI, Gemini, etc. Used in `internal/app`
+  and `internal/agent`.
+- **`charm.land/bubbletea/v2`**: TUI framework powering the interactive UI.
+- **`charm.land/lipgloss/v2`**: Terminal styling.
+- **`charm.land/glamour/v2`**: Markdown rendering in the terminal.
+- **`charm.land/catwalk`**: Snapshot/golden-file testing for TUI components.
+- **`sqlc`**: Generates Go code from SQL queries in `internal/db/sql/`.
+
+### Key Patterns
+
+- **Config is accessed through `ConfigStore`**: the store owns the pure-data
+  config, runtime state, and config persistence.
+- **Tools are self-documenting**: each tool has a `.go` implementation and a
+  `.md` description file in `internal/agent/tools/`.
+- **System prompts are Go templates**: `internal/agent/templates/*.md.tpl`
+  with runtime data injected.
+- **Context files**: Crush reads AGENTS.md, CRUSH.md, CLAUDE.md, GEMINI.md
+  (and `.local` variants) from the working directory for project-specific
+  instructions.
+- **Persistence**: SQLite + sqlc. All queries live in `internal/db/sql/`,
+  generated code in `internal/db/`. Migrations in `internal/db/migrations/`.
+- **Pub/sub**: `internal/pubsub` for decoupled communication between agent,
+  UI, and services.
+
 ## Build/Test/Lint Commands
 
 - **Build**: `go build .` or `go run .`
@@ -35,7 +100,8 @@ branch issues in `TODO.md`.
   `go test ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
 - **Race suite for fork additions**:
   `go test -race ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
-- **Update Golden Files**: `go test ./... -update`
+- **Update Golden Files**: `go test ./... -update` (regenerates `.golden`
+  files when test output changes)
   - Update specific package:
     `go test ./internal/tui/components/core -update`
 - **Lint**: `task lint:fix`
@@ -60,29 +126,34 @@ branch issues in `TODO.md`.
 
 ## Code Style Guidelines
 
-- **Imports**: Use `goimports` formatting, grouped as stdlib, external,
-  internal.
-- **Formatting**: Use gofumpt.
-- **Naming**: Standard Go conventions. PascalCase for exported symbols,
-  camelCase for unexported ones.
+- **Imports**: Use `goimports` formatting, group stdlib, external, internal
+  packages.
+- **Formatting**: Use gofumpt (stricter than gofmt), enabled in
+  golangci-lint.
+- **Naming**: Standard Go conventions. PascalCase for exported, camelCase for
+  unexported.
 - **Types**: Prefer explicit types and small, clear aliases where they help.
 - **Error handling**: Return errors explicitly and wrap with `fmt.Errorf`.
-- **Context**: Pass `context.Context` as the first parameter for operations.
-- **Interfaces**: Define interfaces in consuming packages and keep them small.
-- **Structs**: Use composition/embedding where it improves clarity.
-- **Constants**: Use typed constants and `iota` for enums.
-- **Testing**: Use `testify/require`, `t.Parallel()`, `t.SetEnv()`, and
-  `t.TempDir()`.
-- **JSON tags**: Use snake_case.
-- **File permissions**: Use octal notation like `0o755` and `0o644`.
-- **Log messages**: Start with a capital letter. `task lint:log` enforces
-  this.
-- **Comments**: End comments in periods unless the comment is at end of line.
+- **Context**: Always pass `context.Context` as first parameter for operations.
+- **Interfaces**: Define interfaces in consuming packages, keep them small and
+  focused.
+- **Structs**: Use struct embedding for composition, group related fields.
+- **Constants**: Use typed constants with iota for enums, group in const
+  blocks.
+- **Testing**: Use testify's `require` package, `t.Parallel()`, `t.SetEnv()`,
+  and `t.TempDir()`.
+- **JSON tags**: Use snake_case for JSON field names.
+- **File permissions**: Use octal notation (0o755, 0o644) for file
+  permissions.
+- **Log messages**: Log messages must start with a capital letter.
+  `task lint:log` enforces this.
+- **Comments**: End comments in periods unless comments are at the end of the
+  line.
 
 ## Testing with Mock Providers
 
-When tests depend on provider configs, use the mock providers to avoid API
-calls:
+When writing tests that involve provider configurations, use the mock
+providers to avoid API calls:
 
 ```go
 func TestYourFunction(t *testing.T) {
@@ -103,7 +174,7 @@ func TestYourFunction(t *testing.T) {
 ## Formatting
 
 - ALWAYS format any Go code you write.
-  - First try `gofumpt -w .`.
+  - First, try `gofumpt -w .`.
   - If `gofumpt` is unavailable, use `goimports`.
   - If `goimports` is unavailable, use `gofmt`.
 
@@ -114,14 +185,14 @@ func TestYourFunction(t *testing.T) {
 
 ## Committing
 
-- ALWAYS use semantic commits such as `fix:`, `feat:`, `chore:`, `refactor:`,
-  `docs:`, or `sec:`.
-- Keep commits to one line unless extra context is genuinely necessary.
+- ALWAYS use semantic commits (`fix:`, `feat:`, `chore:`, `refactor:`,
+  `docs:`, `sec:`, etc).
+- Try to keep commits to one line unless extra context is genuinely necessary.
 
 ## Working on Configuration
 
-Read `internal/config/AGENTS.md` before changing config loading, merge rules, or
-schema-backed options.
+Read `internal/config/AGENTS.md` before changing config loading, merge rules,
+or schema-backed options.
 
 ## Working on the TUI (UI)
 
