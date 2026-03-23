@@ -1,43 +1,91 @@
 # Crush Development Guide
 
+## Project Snapshot
+
+Crush is a terminal-based AI coding assistant built in Go on the Charm stack.
+The main runtime path is:
+
+`CLI -> App -> Coordinator -> SessionAgent -> Fantasy LLM -> Tools/Permissions`
+
+This fork branch adds a large squashed delta centered on:
+
+- **`internal/lcm/`**: lossless context management, summaries, large-output
+  storage, and extra LCM tools.
+- **`internal/repomap/`**: repository indexing, ranking, rendering, caching,
+  and refresh/reset control paths.
+- **`internal/treesitter/`**: parser pool, grammar/query loading, and shared
+  code analysis used by repo-map and LCM exploration.
+- **`internal/app/`**: app wiring for LCM and repo-map initialization.
+- **`internal/agent/`**: coordinator hooks, prepare-step injection, and tool
+  wiring for repo-map/LCM behavior.
+- **`internal/db/`**: goose migrations and sqlc queries for LCM and repo-map
+  persistence.
+- **`internal/filetracker/`**: session read-path tracking used by repo-map
+  ranking and exclusion logic.
+
+Keep this file focused on stable workflow and architecture notes. Track open
+branch issues in `TODO.md`.
+
 ## Build/Test/Lint Commands
 
 - **Build**: `go build .` or `go run .`
-- **Test**: `task test` or `go test ./...` (run single test: `go test ./internal/llm/prompt -run TestGetContextFromPaths`)
-- **Update Golden Files**: `go test ./... -update` (regenerates .golden files when test output changes)
-  - Update specific package: `go test ./internal/tui/components/core -update` (in this case, we're updating "core")
+- **Test**: `task test` or `go test ./...`
+  - Run single test: `go test ./internal/config -run TestConfigMerging`
+- **Focused fork packages**:
+  `go test ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
+- **Race suite for fork additions**:
+  `go test -race ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
+- **Update Golden Files**: `go test ./... -update`
+  - Update specific package:
+    `go test ./internal/tui/components/core -update`
 - **Lint**: `task lint:fix`
 - **Format**: `task fmt` (`gofumpt -w .`)
-- **Modernize**: `task modernize` (runs `modernize` which make code simplifications)
-- **Dev**: `task dev` (runs with profiling enabled)
+- **Modernize**: `task modernize`
+- **Dev**: `task dev`
+- **Additional fork-only tasks**: see `Taskfile.xrush.yaml`
+
+## Branch-Specific Wiring
+
+- **LCM activation**: `cfg.Options.LCM != nil` enables LCM. The app wraps the
+  message service in `internal/app/app_lcm.go`.
+- **Repo-map activation**: `cfg.Options.RepoMap` enables repo-map setup in
+  `internal/app/repomap.go`.
+- **Repo-map injection**: the coordinator injects repo-map context via
+  prepare-step hooks in `internal/agent/coordinator_opts.go`.
+- **Filetracker matters**: repo-map uses tracked read paths as ranking and
+  exclusion hints; changes in `internal/filetracker/` affect prompt context.
+- **DB work spans four layers**: migration in `internal/db/migrations/`, SQL in
+  `internal/db/sql/`, generated sqlc files in `internal/db/*.sql.go`, and
+  tests covering both read and write paths.
 
 ## Code Style Guidelines
 
-- **Imports**: Use `goimports` formatting, group stdlib, external, internal packages
-- **Formatting**: Use gofumpt (stricter than gofmt), enabled in golangci-lint
-- **Naming**: Standard Go conventions - PascalCase for exported, camelCase for unexported
-- **Types**: Prefer explicit types, use type aliases for clarity (e.g., `type AgentName string`)
-- **Error handling**: Return errors explicitly, use `fmt.Errorf` for wrapping
-- **Context**: Always pass `context.Context` as first parameter for operations
-- **Interfaces**: Define interfaces in consuming packages, keep them small and focused
-- **Structs**: Use struct embedding for composition, group related fields
-- **Constants**: Use typed constants with iota for enums, group in const blocks
-- **Testing**: Use testify's `require` package, parallel tests with `t.Parallel()`,
-  `t.SetEnv()` to set environment variables. Always use `t.Tempdir()` when in
-  need of a temporary directory. This directory does not need to be removed.
-- **JSON tags**: Use snake_case for JSON field names
-- **File permissions**: Use octal notation (0o755, 0o644) for file permissions
-- **Log messages**: Log messages must start with a capital letter (e.g., "Failed to save session" not "failed to save session")
-  - This is enforced by `task lint:log` which runs as part of `task lint`
-- **Comments**: End comments in periods unless comments are at the end of the line.
+- **Imports**: Use `goimports` formatting, grouped as stdlib, external,
+  internal.
+- **Formatting**: Use gofumpt.
+- **Naming**: Standard Go conventions. PascalCase for exported symbols,
+  camelCase for unexported ones.
+- **Types**: Prefer explicit types and small, clear aliases where they help.
+- **Error handling**: Return errors explicitly and wrap with `fmt.Errorf`.
+- **Context**: Pass `context.Context` as the first parameter for operations.
+- **Interfaces**: Define interfaces in consuming packages and keep them small.
+- **Structs**: Use composition/embedding where it improves clarity.
+- **Constants**: Use typed constants and `iota` for enums.
+- **Testing**: Use `testify/require`, `t.Parallel()`, `t.SetEnv()`, and
+  `t.TempDir()`.
+- **JSON tags**: Use snake_case.
+- **File permissions**: Use octal notation like `0o755` and `0o644`.
+- **Log messages**: Start with a capital letter. `task lint:log` enforces
+  this.
+- **Comments**: End comments in periods unless the comment is at end of line.
 
 ## Testing with Mock Providers
 
-When writing tests that involve provider configurations, use the mock providers to avoid API calls:
+When tests depend on provider configs, use the mock providers to avoid API
+calls:
 
 ```go
 func TestYourFunction(t *testing.T) {
-    // Enable mock providers for testing
     originalUseMock := config.UseMockProviders
     config.UseMockProviders = true
     defer func() {
@@ -45,37 +93,49 @@ func TestYourFunction(t *testing.T) {
         config.ResetProviders()
     }()
 
-    // Reset providers to ensure fresh mock data
     config.ResetProviders()
 
-    // Your test code here - providers will now return mock data
     providers := config.Providers()
-    // ... test logic
+    _ = providers
 }
 ```
 
 ## Formatting
 
 - ALWAYS format any Go code you write.
-  - First, try `gofumpt -w .`.
-  - If `gofumpt` is not available, use `goimports`.
-  - If `goimports` is not available, use `gofmt`.
-  - You can also use `task fmt` to run `gofumpt -w .` on the entire project,
-    as long as `gofumpt` is on the `PATH`.
+  - First try `gofumpt -w .`.
+  - If `gofumpt` is unavailable, use `goimports`.
+  - If `goimports` is unavailable, use `gofmt`.
 
 ## Comments
 
-- Comments that live on their own lines should start with capital letters and
-  end with periods. Wrap comments at 78 columns.
+- Own-line comments should start with capital letters and end with periods.
+- Wrap comments at 78 columns.
 
 ## Committing
 
-- ALWAYS use semantic commits (`fix:`, `feat:`, `chore:`, `refactor:`, `docs:`, `sec:`, etc).
-- Try to keep commits to one line, not including your attribution. Only use
-  multi-line commits when additional context is truly necessary.
+- ALWAYS use semantic commits such as `fix:`, `feat:`, `chore:`, `refactor:`,
+  `docs:`, or `sec:`.
+- Keep commits to one line unless extra context is genuinely necessary.
 
 ## Working on Configuration
-Anytime you need to work on the config before starting work read the internal/config/AGENTS.md file.
+
+Read `internal/config/AGENTS.md` before changing config loading, merge rules, or
+schema-backed options.
 
 ## Working on the TUI (UI)
-Anytime you need to work on the tui before starting work read the internal/ui/AGENTS.md file.
+
+Read `internal/ui/AGENTS.md` before changing Bubble Tea models, components, or
+styles.
+
+## Working on LCM, Repo Map, or Tree-Sitter
+
+Start with these files:
+
+- `internal/app/app_lcm.go`
+- `internal/app/repomap.go`
+- `internal/agent/coordinator.go`
+- `internal/agent/coordinator_opts.go`
+- `internal/lcm/`
+- `internal/repomap/`
+- `internal/treesitter/`
