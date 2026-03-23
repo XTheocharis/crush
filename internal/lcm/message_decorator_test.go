@@ -594,3 +594,51 @@ func main() {}
 	require.NotEmpty(t, files[0].FileID)
 	require.NotZero(t, files[0].TokenCount)
 }
+
+func TestMessageDecorator_List_BootstrappedLegacySessionPreservesBoundary(t *testing.T) {
+	t.Parallel()
+
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+	sessionID := "sess-msgdecorator-legacy-boundary"
+	createTestSession(t, queries, sessionID)
+
+	createTestMessage(t, queries, sessionID, "msg-hidden-1", "user", "hidden 1")
+	createTestMessage(t, queries, sessionID, "msg-hidden-2", "assistant", "hidden 2")
+	summaryID := createTestSummaryMessage(t, queries, sessionID, "msg-summary", "legacy summary")
+	createTestMessage(t, queries, sessionID, "msg-visible-1", "user", "visible 1")
+	createTestMessage(t, queries, sessionID, "msg-visible-2", "assistant", "visible 2")
+	setSessionSummaryMessageID(t, queries, sessionID, summaryID)
+
+	inner := message.NewService(queries)
+	mgr := NewManager(queries, sqlDB)
+	require.NoError(t, mgr.InitSession(ctx, sessionID))
+
+	svc := NewMessageDecorator(inner, mgr, queries, sqlDB, MessageDecoratorConfig{})
+
+	msgs, err := svc.List(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 3)
+	require.Equal(t, []string{"msg-summary", "msg-visible-1", "msg-visible-2"}, []string{
+		msgs[0].ID,
+		msgs[1].ID,
+		msgs[2].ID,
+	})
+	require.Equal(t, message.User, msgs[0].Role)
+
+	newMsg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
+		Role:  message.User,
+		Parts: []message.ContentPart{message.TextContent{Text: "new tail"}},
+	})
+	require.NoError(t, err)
+
+	msgs, err = svc.List(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 4)
+	require.Equal(t, []string{"msg-summary", "msg-visible-1", "msg-visible-2", newMsg.ID}, []string{
+		msgs[0].ID,
+		msgs[1].ID,
+		msgs[2].ID,
+		msgs[3].ID,
+	})
+}

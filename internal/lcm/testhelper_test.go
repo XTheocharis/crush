@@ -78,6 +78,39 @@ func createTestMessage(t *testing.T, queries *db.Queries, sessionID, msgID, role
 	require.NoError(t, err)
 }
 
+func createTestSummaryMessage(t *testing.T, queries *db.Queries, sessionID, msgID, textContent string) string {
+	t.Helper()
+	ctx := context.Background()
+	parts := fmt.Sprintf(`[{"type":"text","data":{"text":%q}}]`, textContent)
+	msg, err := queries.CreateMessage(ctx, db.CreateMessageParams{
+		ID:               msgID,
+		SessionID:        sessionID,
+		Role:             "assistant",
+		Parts:            parts,
+		IsSummaryMessage: 1,
+	})
+	require.NoError(t, err)
+	return msg.ID
+}
+
+func setSessionSummaryMessageID(t *testing.T, queries *db.Queries, sessionID, summaryMessageID string) {
+	t.Helper()
+	ctx := context.Background()
+	sessionRow, err := queries.GetSessionByID(ctx, sessionID)
+	require.NoError(t, err)
+
+	_, err = queries.UpdateSession(ctx, db.UpdateSessionParams{
+		Title:            sessionRow.Title,
+		PromptTokens:     sessionRow.PromptTokens,
+		CompletionTokens: sessionRow.CompletionTokens,
+		SummaryMessageID: sql.NullString{String: summaryMessageID, Valid: summaryMessageID != ""},
+		Cost:             sessionRow.Cost,
+		Todos:            sessionRow.Todos,
+		ID:               sessionRow.ID,
+	})
+	require.NoError(t, err)
+}
+
 // mockLLMClient is a mock LLM client for testing.
 type mockLLMClient struct {
 	response  string

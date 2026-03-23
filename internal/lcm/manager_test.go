@@ -32,6 +32,47 @@ func TestManager_InitSession(t *testing.T) {
 	require.LessOrEqual(t, budget.SoftThreshold, budget.HardLimit)
 }
 
+func TestManager_InitSession_BootstrapsLegacyVisibleMessages(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-init-legacy"
+	createTestSession(t, queries, sessionID)
+
+	createTestMessage(t, queries, sessionID, "msg-hidden-1", "user", "hidden 1")
+	createTestMessage(t, queries, sessionID, "msg-hidden-2", "assistant", "hidden 2")
+	summaryID := createTestSummaryMessage(t, queries, sessionID, "msg-summary", "legacy summary")
+	createTestMessage(t, queries, sessionID, "msg-visible-1", "user", "visible 1")
+	createTestMessage(t, queries, sessionID, "msg-visible-2", "assistant", "visible 2")
+	setSessionSummaryMessageID(t, queries, sessionID, summaryID)
+
+	err := mgr.InitSession(ctx, sessionID)
+	require.NoError(t, err)
+
+	sessionRow, err := queries.GetSessionByID(ctx, sessionID)
+	require.NoError(t, err)
+	require.False(t, sessionRow.SummaryMessageID.Valid)
+
+	items, err := queries.ListLcmContextItems(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, items, 3)
+
+	var gotIDs []string
+	for i, item := range items {
+		require.Equal(t, int64(i), item.Position)
+		require.True(t, item.MessageID.Valid)
+		gotIDs = append(gotIDs, item.MessageID.String)
+	}
+
+	require.Equal(t, []string{
+		"msg-summary",
+		"msg-visible-1",
+		"msg-visible-2",
+	}, gotIDs)
+}
+
 func TestManager_GetBudget_DefaultWhenNoConfig(t *testing.T) {
 	t.Parallel()
 	queries, sqlDB := setupTestDB(t)

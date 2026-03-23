@@ -218,19 +218,12 @@ func (s *messageDecorator) List(ctx context.Context, sessionID string) ([]messag
 			"session_id", sessionID,
 			"error", err,
 		)
-		return s.Service.List(ctx, sessionID)
+		return s.listWithLegacyFallback(ctx, sessionID)
 	}
 
-	// If there are no summaries, fall through to the inner service.
-	hasSummary := false
-	for _, entry := range entries {
-		if entry.ItemType == "summary" {
-			hasSummary = true
-			break
-		}
-	}
-	if !hasSummary {
-		return s.Service.List(ctx, sessionID)
+	stableEntries, tailEntries := splitStableAndTailContextEntries(entries)
+	if len(stableEntries) == 0 {
+		return s.listWithLegacyFallback(ctx, sessionID)
 	}
 
 	// Fetch all messages from the inner service so we can look up by ID.
@@ -243,19 +236,21 @@ func (s *messageDecorator) List(ctx context.Context, sessionID string) ([]messag
 		msgByID[m.ID] = m
 	}
 
-	// Build the set of message IDs that appear in context entries so we can
-	// include them in order.
-	contextMsgIDs := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
+	coveredStableMsgIDs, err := s.coveredMessageIDsForStableEntries(ctx, stableEntries)
+	if err != nil {
+		return nil, err
+	}
+
+	tailMsgIDs := make(map[string]struct{}, len(tailEntries))
+	for _, entry := range tailEntries {
 		if entry.ItemType == "message" && entry.MessageID != "" {
-			contextMsgIDs[entry.MessageID] = struct{}{}
+			tailMsgIDs[entry.MessageID] = struct{}{}
 		}
 	}
 
-	// Rebuild the list following the context-entry ordering. Summaries become
-	// synthetic messages; message entries are looked up from the real set.
-	result := make([]message.Message, 0, len(entries))
-	for _, entry := range entries {
+	// Rebuild the stable prefix following the context-entry ordering.
+	result := make([]message.Message, 0, len(stableEntries)+len(tailEntries))
+	for _, entry := range stableEntries {
 		switch entry.ItemType {
 		case "summary":
 			content := formatSummaryContent(entry)
@@ -269,21 +264,114 @@ func (s *messageDecorator) List(ctx context.Context, sessionID string) ([]messag
 			result = append(result, synthetic)
 		case "message":
 			if m, ok := msgByID[entry.MessageID]; ok {
+				if len(result) == 0 && m.IsSummaryMessage {
+					m.Role = message.User
+				}
 				result = append(result, m)
 			}
 		}
 	}
 
-	// Append any messages that are not yet tracked by context entries (e.g.
-	// very recent messages added after the last compaction). This ensures the
-	// tail of the conversation is always visible.
-	for _, m := range allMessages {
-		if _, tracked := contextMsgIDs[m.ID]; !tracked {
-			result = append(result, m)
+	lastStableIndex := lastCoveredMessageIndex(allMessages, coveredStableMsgIDs)
+	appendedTailMsgIDs := make(map[string]struct{}, len(tailMsgIDs))
+
+	// Append the unstable append-only tail in chronological order, followed by
+	// any truly untracked messages after the stable prefix.
+	for i, m := range allMessages {
+		if i <= lastStableIndex {
+			continue
 		}
+		if _, isTail := tailMsgIDs[m.ID]; isTail {
+			if _, appended := appendedTailMsgIDs[m.ID]; !appended {
+				result = append(result, m)
+				appendedTailMsgIDs[m.ID] = struct{}{}
+			}
+			continue
+		}
+		if _, covered := coveredStableMsgIDs[m.ID]; covered {
+			continue
+		}
+		result = append(result, m)
 	}
 
 	return result, nil
+}
+
+func (s *messageDecorator) listWithLegacyFallback(ctx context.Context, sessionID string) ([]message.Message, error) {
+	msgs, err := s.Service.List(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return trimMessagesFromLegacySummary(msgs, s.legacySummaryMessageID(ctx, sessionID)), nil
+}
+
+func (s *messageDecorator) legacySummaryMessageID(ctx context.Context, sessionID string) string {
+	sessionRow, err := s.querier.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			slog.Warn("Failed to read session summary boundary", "session_id", sessionID, "error", err)
+		}
+		return ""
+	}
+	return sessionRow.SummaryMessageID.String
+}
+
+func (s *messageDecorator) coveredMessageIDsForStableEntries(ctx context.Context, entries []ContextEntry) (map[string]struct{}, error) {
+	covered := make(map[string]struct{})
+	for _, entry := range entries {
+		switch entry.ItemType {
+		case "message":
+			if entry.MessageID != "" {
+				covered[entry.MessageID] = struct{}{}
+			}
+		case "summary":
+			expanded, err := s.store.ExpandSummary(ctx, entry.SummaryID)
+			if err != nil {
+				return nil, fmt.Errorf("expanding summary %s: %w", entry.SummaryID, err)
+			}
+			for _, msg := range expanded {
+				covered[msg.ID] = struct{}{}
+			}
+		}
+	}
+	return covered, nil
+}
+
+func splitStableAndTailContextEntries(entries []ContextEntry) (stable []ContextEntry, tail []ContextEntry) {
+	for _, entry := range entries {
+		if entry.Position >= 0 {
+			stable = append(stable, entry)
+			continue
+		}
+		tail = append(tail, entry)
+	}
+	return stable, tail
+}
+
+func lastCoveredMessageIndex(msgs []message.Message, covered map[string]struct{}) int {
+	last := -1
+	for i, msg := range msgs {
+		if _, ok := covered[msg.ID]; ok {
+			last = i
+		}
+	}
+	return last
+}
+
+func trimMessagesFromLegacySummary(msgs []message.Message, summaryMessageID string) []message.Message {
+	if summaryMessageID == "" {
+		return msgs
+	}
+	for i, msg := range msgs {
+		if msg.ID == summaryMessageID {
+			msgs = msgs[i:]
+			if len(msgs) > 0 {
+				msgs[0].Role = message.User
+			}
+			return msgs
+		}
+	}
+	return msgs
 }
 
 // extractPartsText extracts all plain-text content from a slice of

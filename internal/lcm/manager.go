@@ -149,7 +149,15 @@ func (m *compactionManager) InitSession(ctx context.Context, sessionID string) e
 		ToolTokens:         m.defaultToolTokens,
 	})
 
-	err := m.querier.UpsertLcmSessionConfig(ctx, db.UpsertLcmSessionConfigParams{
+	tx, err := m.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning init transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	qtx := m.queries.WithTx(tx)
+
+	err = qtx.UpsertLcmSessionConfig(ctx, db.UpsertLcmSessionConfigParams{
 		SessionID:           sessionID,
 		ModelName:           "",
 		ModelCtxMaxTokens:   m.defaultContextWindow,
@@ -161,15 +169,93 @@ func (m *compactionManager) InitSession(ctx context.Context, sessionID string) e
 		return fmt.Errorf("upserting session config: %w", err)
 	}
 
-	// Clear stale summary_message_id from a previous session lifecycle so that
-	// getSessionMessages does not truncate LCM's compacted context at the old
-	// summary position.
-	if err := m.querier.ClearSessionSummaryMessageID(ctx, sessionID); err != nil {
-		slog.Warn("Failed to clear stale summary message ID", "session_id", sessionID, "error", err)
+	if err := m.bootstrapLegacyContext(ctx, qtx, sessionID); err != nil {
+		return fmt.Errorf("bootstrapping legacy context: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing init transaction: %w", err)
 	}
 
 	m.budgetCache.Store(sessionID, budget)
 	return nil
+}
+
+func (m *compactionManager) bootstrapLegacyContext(ctx context.Context, q db.Querier, sessionID string) error {
+	sessionRow, err := q.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("getting session: %w", err)
+	}
+
+	items, err := q.ListLcmContextItems(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("listing context items: %w", err)
+	}
+
+	// Legacy summary boundaries are only safe to clear once LCM owns a stable
+	// ordered context prefix for the session.
+	if len(items) > 0 {
+		if sessionRow.SummaryMessageID.Valid && hasStableContextItems(items) {
+			if err := q.ClearSessionSummaryMessageID(ctx, sessionID); err != nil {
+				return fmt.Errorf("clearing migrated summary boundary: %w", err)
+			}
+		}
+		return nil
+	}
+
+	dbMsgs, err := q.ListMessagesBySessionSeq(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("listing messages by seq: %w", err)
+	}
+
+	visibleMsgs := legacyVisibleMessages(dbMsgs, sessionRow.SummaryMessageID.String)
+	for i, msg := range visibleMsgs {
+		if err := q.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+			SessionID:  sessionID,
+			Position:   int64(i),
+			ItemType:   "message",
+			MessageID:  sql.NullString{String: msg.ID, Valid: true},
+			TokenCount: legacyMessageTokenCount(msg),
+		}); err != nil {
+			return fmt.Errorf("inserting bootstrap context item for message %s: %w", msg.ID, err)
+		}
+	}
+
+	if sessionRow.SummaryMessageID.Valid {
+		if err := q.ClearSessionSummaryMessageID(ctx, sessionID); err != nil {
+			return fmt.Errorf("clearing legacy summary boundary: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func legacyVisibleMessages(msgs []db.Message, summaryMessageID string) []db.Message {
+	if summaryMessageID == "" {
+		return msgs
+	}
+	for i, msg := range msgs {
+		if msg.ID == summaryMessageID {
+			return msgs[i:]
+		}
+	}
+	return msgs
+}
+
+func legacyMessageTokenCount(msg db.Message) int64 {
+	if msg.TokenCount > 0 {
+		return msg.TokenCount
+	}
+	return EstimateTokens(extractTextFromParts(msg.Parts))
+}
+
+func hasStableContextItems(items []db.LcmContextItem) bool {
+	for _, item := range items {
+		if item.Position >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // SetDefaultContextWindow sets the context window for new sessions.
