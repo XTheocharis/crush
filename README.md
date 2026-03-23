@@ -166,6 +166,9 @@ Or just install it with Go:
 go install github.com/charmbracelet/crush@latest
 ```
 
+Source builds on this branch require `CGO_ENABLED=1` and a working C compiler
+because tree-sitter support is built in.
+
 > [!WARNING]
 > Productivity may increase when using Crush and you may find yourself nerd
 > sniped when first using the application. If the symptoms persist, join the

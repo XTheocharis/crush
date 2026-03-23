@@ -1,4 +1,5 @@
 # Fork-only tasks for LCM, repo-map, tree-sitter, and extended profiling.
+# This branch requires CGO for source builds because tree-sitter is mandatory.
 # Included via flatten in Taskfile.yaml so task names are unchanged.
 
 version: "3"
@@ -10,20 +11,6 @@ tasks:
       LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     env:
       CGO_ENABLED: 1
-    cmds:
-      - "go build -v {{.LDFLAGS}} ."
-    sources:
-      - ./**/*.go
-      - go.mod
-    generates:
-      - crush{{exeExt}}
-
-  build:nocgo:
-    desc: Build without CGO (non-signoff compatibility check)
-    vars:
-      LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
-    env:
-      CGO_ENABLED: 0
     cmds:
       - "go build -v {{.LDFLAGS}} ."
     sources:
@@ -46,13 +33,6 @@ tasks:
       CGO_ENABLED: 1
     cmds:
       - go test -race -failfast ./... {{.CLI_ARGS}}
-
-  test:nocgo:
-    desc: Run tests without CGO (non-signoff compatibility check)
-    env:
-      CGO_ENABLED: 0
-    cmds:
-      - go test -failfast ./... {{.CLI_ARGS}}
 
   test:parity:
     desc: Run parity mode tests (parity_mode=true, requires CGO)
@@ -113,20 +93,6 @@ tasks:
       - task: profile:start
       - task: profile:capture
       - task: profile:stop
-
-  sqlc:
-    desc: Regenerate sqlc database layer
-    cmds:
-      - sqlc generate
-    sources:
-      - ./internal/db/sql/*.sql
-      - ./internal/db/migrations/*.sql
-      - ./sqlc.yaml
-    generates:
-      - ./internal/db/db.go
-      - ./internal/db/models.go
-      - ./internal/db/querier.go
-      - ./internal/db/*.sql.go
 
   tsaudit:
     desc: Run treesitter dependency check

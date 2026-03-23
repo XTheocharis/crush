@@ -9,7 +9,7 @@ Crush is a terminal-based AI coding assistant built in Go on the Charm ecosystem
 ## Build Commands
 
 ```bash
-task build          # Compile binary (CGO_ENABLED=0, GOEXPERIMENT=greenteagc)
+task build          # Compile binary (CGO_ENABLED=1, GOEXPERIMENT=greenteagc)
 task test           # Run tests with race detector (CGO_ENABLED=1)
 task lint           # Run golangci-lint + log capitalization check
 task lint:fix       # Run linters with auto-fix
@@ -18,6 +18,9 @@ task dev            # Run with pprof profiling on :6060
 task install        # Install binary
 task modernize      # Run go modernize pass
 ```
+
+Source builds on this branch require `CGO_ENABLED=1` and a working C compiler
+because tree-sitter support is mandatory.
 
 Single test: `go test ./internal/config -run TestConfigMerging`
 Update golden files: `go test ./internal/tui/components/core -update`

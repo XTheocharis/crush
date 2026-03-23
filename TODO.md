@@ -6,6 +6,9 @@ This file tracks open branch issues and review follow-ups. There were no
 explicit outstanding work items in `AGENTS.md` or `CLAUDE.md`; this file now
 holds the current branch-specific issues instead.
 
+On 2026-03-22, the branch moved explicitly to CGO-required source builds.
+Non-CGO compatibility is no longer a tracked work item.
+
 As of 2026-03-22:
 
 - Current branch: `fork/xrush`
@@ -23,43 +26,7 @@ Validation run during review:
 
 ## Open Issues
 
-### 1. Restore or remove the broken non-CGO build path
-
-Status: Open.
-
-Context:
-
-- `CLAUDE.md` still says `task build` compiles with `CGO_ENABLED=0`.
-- `Taskfile.xrush.yaml` adds a `build:nocgo` compatibility check.
-- The fork imports tree-sitter Go bindings unconditionally in
-  `internal/treesitter/parser.go`.
-- `internal/treesitter/cgo_check_nocgo.go` also panics in `!cgo` builds.
-
-Observed behavior:
-
-- `CGO_ENABLED=0 go build .` fails with build-constraint errors from the
-  tree-sitter bindings.
-
-Impact:
-
-- The fork currently breaks nocgo packaging/build assumptions.
-- The `build:nocgo` task is not usable as written.
-- `CLAUDE.md` build guidance is stale relative to current branch behavior.
-
-Relevant files:
-
-- `Taskfile.xrush.yaml`
-- `CLAUDE.md`
-- `internal/treesitter/parser.go`
-- `internal/treesitter/cgo_check_nocgo.go`
-
-Possible directions:
-
-- Split tree-sitter-backed implementations behind build tags and provide a
-  nocgo fallback, or
-- make CGO a hard requirement and remove/update stale nocgo tasks and docs.
-
-### 2. Wire LCM compaction to a real LLM summarizer
+### 1. Wire LCM compaction to a real LLM summarizer
 
 Status: Open.
 
@@ -96,7 +63,7 @@ Possible directions:
 - explicitly scope LCM to deterministic-only compaction and document that
   behavior.
 
-### 3. Preserve legacy summarized sessions when LCM is enabled for the first time
+### 2. Preserve legacy summarized sessions when LCM is enabled for the first time
 
 Status: Open.
 

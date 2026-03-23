@@ -46,7 +46,7 @@ tasks:
       GOEXPERIMENT: null
 
   build:
-    desc: Run build
+    desc: Run build (requires CGO)
     vars:
       LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     cmds:
@@ -58,7 +58,7 @@ tasks:
       - crush{{exeExt}}
 
   run:
-    desc: Run build
+    desc: Build and run (requires CGO)
     cmds:
       - task: build
       - "./crush{{exeExt}} {{.CLI_ARGS}} {{if .RACE}}2>race.log{{end}}"
@@ -82,7 +82,7 @@ tasks:
       - ./crush{exeExt} {{.CLI_ARGS}}
 
   test:
-    desc: Run tests
+    desc: Run tests (requires CGO)
     env:
       CGO_ENABLED: 1
     cmds:
@@ -111,14 +111,14 @@ tasks:
       - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix -test ./...
 
   dev:
-    desc: Run with profiling enabled
+    desc: Run with profiling enabled (requires CGO)
     env:
       CRUSH_PROFILE: true
     cmds:
       - go run .
 
   install:
-    desc: Install the application
+    desc: Install the application (requires CGO)
     vars:
       LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     cmds:
@@ -201,3 +201,12 @@ tasks:
     desc: Generate code using SQLC
     cmds:
       - sqlc generate
+    sources:
+      - ./internal/db/sql/*.sql
+      - ./internal/db/migrations/*.sql
+      - ./sqlc.yaml
+    generates:
+      - ./internal/db/db.go
+      - ./internal/db/models.go
+      - ./internal/db/querier.go
+      - ./internal/db/*.sql.go

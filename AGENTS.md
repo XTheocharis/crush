@@ -94,6 +94,8 @@ internal/
 ## Build/Test/Lint Commands
 
 - **Build**: `go build .` or `go run .`
+- **Source build requirement**: This branch requires `CGO_ENABLED=1` and a
+  working C compiler because tree-sitter support is mandatory.
 - **Test**: `task test` or `go test ./...`
   - Run single test: `go test ./internal/config -run TestConfigMerging`
 - **Focused fork packages**:
