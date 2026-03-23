@@ -150,6 +150,7 @@ Config files are loaded and merged in order: `~/.config/crush/crush.json` → `c
     },
     "lcm": {
       "ctx_cutoff_threshold": 0.6,               // Soft compact trigger (fraction of context window)
+      "summarizer_model": { "provider": "id", "model": "id" }, // Optional dedicated LCM summarizer model; otherwise uses large
       "large_tool_output_token_threshold": 10000, // Store outputs above this in SQLite
       "explorer_output_profile": "enhancement|parity"
     },

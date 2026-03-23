@@ -102,11 +102,18 @@
         "ctx_cutoff_threshold": {
           "type": "number"
         },
+        "summarizer_model": {
+          "$ref": "#/$defs/SelectedModel",
+          "description": "Optional dedicated model configuration for LCM summarization; defaults to the configured large model"
+        },
         "disable_large_tool_output": {
           "type": "boolean"
         },
         "large_tool_output_token_threshold": {
           "type": "integer"
+        },
+        "explorer_output_profile": {
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -608,6 +615,10 @@
         "map_mul_no_files": {
           "type": "number",
           "description": "Budget multiplier when no files are in chat (default 2.0)"
+        },
+        "parser_pool_size": {
+          "type": "integer",
+          "description": "Tree-sitter parser pool size (0 = runtime default)"
         }
       },
       "additionalProperties": false,
@@ -796,7 +807,8 @@
       "type": "object",
       "required": [
         "ls",
-        "grep"
+        "grep",
+        "repo_map"
       ]
     }
   }

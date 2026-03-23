@@ -7,6 +7,12 @@ type LCMOptions struct {
 	// soft compaction is triggered (default: 0.6 = 60%).
 	CtxCutoffThreshold float64 `json:"ctx_cutoff_threshold,omitempty"`
 
+	// SummarizerModel optionally overrides the model used for LCM summary and
+	// condensation calls. When nil, Crush uses the configured large model. If a
+	// custom summarizer model has a smaller context window than the large model,
+	// Crush ignores it and keeps using the large model.
+	SummarizerModel *SelectedModel `json:"summarizer_model,omitempty" jsonschema:"description=Optional dedicated model configuration for LCM summarization; defaults to the configured large model, and is ignored when its context window is smaller than the large model"`
+
 	// DisableLargeToolOutput disables automatic storage of large tool outputs
 	// in LCM when true (default: false).
 	DisableLargeToolOutput bool `json:"disable_large_tool_output,omitempty"`

@@ -156,6 +156,31 @@ func TestSummarizer_Condense_WithLLM(t *testing.T) {
 	require.Greater(t, tokens, int64(0))
 }
 
+func TestSummarizer_SetLLM(t *testing.T) {
+	t.Parallel()
+	s := NewSummarizer(nil)
+	ctx := context.Background()
+
+	input := SummaryInput{
+		SessionID: "sess-set-llm",
+		Messages: []MessageForSummary{
+			{ID: "m1", Role: "user", Content: "Hello world"},
+		},
+	}
+
+	text, _, err := s.Summarize(ctx, input)
+	require.NoError(t, err)
+	require.Contains(t, text, "Hello world")
+
+	mock := &mockLLMClient{response: "Configured summary"}
+	s.SetLLM(mock)
+
+	text, _, err = s.Summarize(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, "Configured summary", text)
+	require.Equal(t, 1, mock.callCount)
+}
+
 // escalatingMockLLM returns different responses for successive calls.
 type escalatingMockLLM struct {
 	responses []string

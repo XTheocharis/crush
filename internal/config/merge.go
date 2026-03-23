@@ -98,6 +98,10 @@ func (o Options) merge(t Options) Options {
 			o.LCM = &LCMOptions{}
 		}
 		o.LCM.CtxCutoffThreshold = cmp.Or(t.LCM.CtxCutoffThreshold, o.LCM.CtxCutoffThreshold)
+		if t.LCM.SummarizerModel != nil {
+			model := *t.LCM.SummarizerModel
+			o.LCM.SummarizerModel = &model
+		}
 		o.LCM.DisableLargeToolOutput = o.LCM.DisableLargeToolOutput || t.LCM.DisableLargeToolOutput
 		o.LCM.LargeToolOutputTokenThreshold = cmp.Or(t.LCM.LargeToolOutputTokenThreshold, o.LCM.LargeToolOutputTokenThreshold)
 		o.LCM.ExplorerOutputProfile = cmp.Or(t.LCM.ExplorerOutputProfile, o.LCM.ExplorerOutputProfile)

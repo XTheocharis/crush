@@ -156,6 +156,9 @@ func NewCoordinator(
 	if c.lcm != nil {
 		c.lcm.SetDefaultContextWindow(agent.Model().CatwalkCfg.ContextWindow)
 		c.lcm.SetModelOutputLimit(agent.Model().CatwalkCfg.DefaultMaxTokens)
+		if err := c.syncLCMSummarizerClient(ctx); err != nil {
+			return nil, err
+		}
 	}
 	return c, nil
 }
@@ -551,6 +554,118 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 	return filteredTools, nil
 }
 
+func (c *coordinator) buildResolvedModel(
+	ctx context.Context,
+	modelCfg config.SelectedModel,
+	providerCfg config.ProviderConfig,
+	catwalkModel catwalk.Model,
+	isSubAgent bool,
+) (Model, error) {
+	provider, err := c.buildProvider(providerCfg, modelCfg, isSubAgent)
+	if err != nil {
+		return Model{}, err
+	}
+
+	modelID := modelCfg.Model
+	if modelCfg.Provider == openrouter.Name && isExactoSupported(modelID) {
+		modelID += ":exacto"
+	}
+
+	languageModel, err := provider.LanguageModel(ctx, modelID)
+	if err != nil {
+		return Model{}, err
+	}
+
+	return Model{
+		Model:      languageModel,
+		CatwalkCfg: catwalkModel,
+		ModelCfg:   modelCfg,
+	}, nil
+}
+
+func (c *coordinator) lcmSummarizerSelection() (config.SelectedModel, config.ProviderConfig, catwalk.Model, error) {
+	cfg := c.cfg.Config()
+	largeModelCfg, ok := cfg.Models[config.SelectedModelTypeLarge]
+	if !ok {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, errLargeModelNotSelected
+	}
+
+	if largeModelCfg.Provider == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("large model provider not configured")
+	}
+	if largeModelCfg.Model == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("large model not configured")
+	}
+
+	largeProviderCfg, ok := cfg.Providers.Get(largeModelCfg.Provider)
+	if !ok {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, errLargeModelProviderNotConfigured
+	}
+
+	largeCatwalkModel := cfg.GetModel(largeModelCfg.Provider, largeModelCfg.Model)
+	if largeCatwalkModel == nil {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, errLargeModelNotFound
+	}
+
+	selectedModelCfg := largeModelCfg
+	selectedProviderCfg := largeProviderCfg
+	selectedCatwalkModel := *largeCatwalkModel
+
+	if cfg.Options == nil || cfg.Options.LCM == nil || cfg.Options.LCM.SummarizerModel == nil {
+		return selectedModelCfg, selectedProviderCfg, selectedCatwalkModel, nil
+	}
+
+	summarizerModelCfg := *cfg.Options.LCM.SummarizerModel
+	if summarizerModelCfg.Provider == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model provider not configured")
+	}
+	if summarizerModelCfg.Model == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model not configured")
+	}
+
+	summarizerProviderCfg, ok := cfg.Providers.Get(summarizerModelCfg.Provider)
+	if !ok {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model provider %q not configured", summarizerModelCfg.Provider)
+	}
+
+	summarizerCatwalkModel := cfg.GetModel(summarizerModelCfg.Provider, summarizerModelCfg.Model)
+	if summarizerCatwalkModel == nil {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model %q not found in provider %q config", summarizerModelCfg.Model, summarizerModelCfg.Provider)
+	}
+
+	if summarizerCatwalkModel.ContextWindow < largeCatwalkModel.ContextWindow {
+		slog.Warn(
+			"Ignoring LCM summarizer model with insufficient context window",
+			"provider", summarizerModelCfg.Provider,
+			"model", summarizerModelCfg.Model,
+			"summarizer_context_window", summarizerCatwalkModel.ContextWindow,
+			"large_context_window", largeCatwalkModel.ContextWindow,
+		)
+		return selectedModelCfg, selectedProviderCfg, selectedCatwalkModel, nil
+	}
+
+	return summarizerModelCfg, summarizerProviderCfg, *summarizerCatwalkModel, nil
+}
+
+func (c *coordinator) syncLCMSummarizerClient(ctx context.Context) error {
+	if c.lcm == nil {
+		return nil
+	}
+
+	modelCfg, providerCfg, catwalkModel, err := c.lcmSummarizerSelection()
+	if err != nil {
+		return err
+	}
+
+	model, err := c.buildResolvedModel(ctx, modelCfg, providerCfg, catwalkModel, true)
+	if err != nil {
+		return fmt.Errorf("building lcm summarizer model: %w", err)
+	}
+
+	c.lcm.SetLLMClient(newLCMLLMClient(model, providerCfg))
+	return nil
+}
+
 // TODO: when we support multiple agents we need to change this so that we pass in the agent specific model config
 func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Model, Model, error) {
 	largeModelCfg, ok := c.cfg.Config().Models[config.SelectedModelTypeLarge]
@@ -567,19 +682,9 @@ func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Mo
 		return Model{}, Model{}, errLargeModelProviderNotConfigured
 	}
 
-	largeProvider, err := c.buildProvider(largeProviderCfg, largeModelCfg, isSubAgent)
-	if err != nil {
-		return Model{}, Model{}, err
-	}
-
 	smallProviderCfg, ok := c.cfg.Config().Providers.Get(smallModelCfg.Provider)
 	if !ok {
 		return Model{}, Model{}, errSmallModelProviderNotConfigured
-	}
-
-	smallProvider, err := c.buildProvider(smallProviderCfg, smallModelCfg, true)
-	if err != nil {
-		return Model{}, Model{}, err
 	}
 
 	var largeCatwalkModel *catwalk.Model
@@ -604,35 +709,16 @@ func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Mo
 		return Model{}, Model{}, errSmallModelNotFound
 	}
 
-	largeModelID := largeModelCfg.Model
-	smallModelID := smallModelCfg.Model
-
-	if largeModelCfg.Provider == openrouter.Name && isExactoSupported(largeModelID) {
-		largeModelID += ":exacto"
-	}
-
-	if smallModelCfg.Provider == openrouter.Name && isExactoSupported(smallModelID) {
-		smallModelID += ":exacto"
-	}
-
-	largeModel, err := largeProvider.LanguageModel(ctx, largeModelID)
+	largeModel, err := c.buildResolvedModel(ctx, largeModelCfg, largeProviderCfg, *largeCatwalkModel, isSubAgent)
 	if err != nil {
 		return Model{}, Model{}, err
 	}
-	smallModel, err := smallProvider.LanguageModel(ctx, smallModelID)
+	smallModel, err := c.buildResolvedModel(ctx, smallModelCfg, smallProviderCfg, *smallCatwalkModel, true)
 	if err != nil {
 		return Model{}, Model{}, err
 	}
 
-	return Model{
-			Model:      largeModel,
-			CatwalkCfg: *largeCatwalkModel,
-			ModelCfg:   largeModelCfg,
-		}, Model{
-			Model:      smallModel,
-			CatwalkCfg: *smallCatwalkModel,
-			ModelCfg:   smallModelCfg,
-		}, nil
+	return largeModel, smallModel, nil
 }
 
 func (c *coordinator) buildAnthropicProvider(baseURL, apiKey string, headers map[string]string, providerID string) (fantasy.Provider, error) {
@@ -948,6 +1034,9 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 	}
 
 	if c.lcm != nil {
+		if err := c.syncLCMSummarizerClient(ctx); err != nil {
+			return err
+		}
 		c.lcm.SetModelOutputLimit(large.CatwalkCfg.DefaultMaxTokens)
 		if err := c.lcm.UpdateContextWindow(ctx, large.CatwalkCfg.ContextWindow); err != nil {
 			return fmt.Errorf("updating LCM context window: %w", err)

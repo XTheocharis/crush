@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // LLMClient is the interface for calling an LLM.
@@ -13,6 +14,7 @@ type LLMClient interface {
 
 // Summarizer handles LLM-based summarization and condensation.
 type Summarizer struct {
+	mu  sync.RWMutex
 	llm LLMClient
 }
 
@@ -21,17 +23,31 @@ func NewSummarizer(llm LLMClient) *Summarizer {
 	return &Summarizer{llm: llm}
 }
 
+// SetLLM updates the LLM client used for summarization and condensation.
+func (s *Summarizer) SetLLM(llm LLMClient) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.llm = llm
+}
+
+func (s *Summarizer) llmClient() LLMClient {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.llm
+}
+
 // Summarize generates a summary of a set of messages.
 // Returns the summary text and estimated token count.
 func (s *Summarizer) Summarize(ctx context.Context, input SummaryInput) (string, int64, error) {
-	if s.llm == nil {
+	llm := s.llmClient()
+	if llm == nil {
 		fb := s.fallbackSummarize(input)
 		return fb, EstimateTokens(fb), nil
 	}
 
 	// Level 1: Normal summarization.
 	userPrompt := formatMessagesForSummary(input.Messages)
-	result, err := s.llm.Complete(ctx, normalSummarizeSystemPrompt, userPrompt)
+	result, err := llm.Complete(ctx, normalSummarizeSystemPrompt, userPrompt)
 	if err != nil {
 		return "", 0, fmt.Errorf("normal summarization: %w", err)
 	}
@@ -40,7 +56,7 @@ func (s *Summarizer) Summarize(ctx context.Context, input SummaryInput) (string,
 
 	// Level 2: Aggressive summarization if result too large.
 	if tokens >= inputTokens {
-		result, err = s.llm.Complete(ctx, aggressiveSummarizeSystemPrompt, userPrompt)
+		result, err = llm.Complete(ctx, aggressiveSummarizeSystemPrompt, userPrompt)
 		if err != nil {
 			return "", 0, fmt.Errorf("aggressive summarization: %w", err)
 		}
@@ -62,13 +78,14 @@ func (s *Summarizer) Summarize(ctx context.Context, input SummaryInput) (string,
 func (s *Summarizer) Condense(ctx context.Context, summaries []ContextEntry) (string, int64, error) {
 	userPrompt := formatSummariesForCondensation(summaries)
 
-	if s.llm == nil {
+	llm := s.llmClient()
+	if llm == nil {
 		fb := truncateToMaxChars(userPrompt)
 		return fb, EstimateTokens(fb), nil
 	}
 
 	// Level 1: Normal condensation.
-	result, err := s.llm.Complete(ctx, normalCondenseSystemPrompt, userPrompt)
+	result, err := llm.Complete(ctx, normalCondenseSystemPrompt, userPrompt)
 	if err != nil {
 		return "", 0, fmt.Errorf("normal condensation: %w", err)
 	}
@@ -77,7 +94,7 @@ func (s *Summarizer) Condense(ctx context.Context, summaries []ContextEntry) (st
 
 	// Level 2: Aggressive condensation.
 	if tokens >= inputTokens {
-		result, err = s.llm.Complete(ctx, aggressiveCondenseSystemPrompt, userPrompt)
+		result, err = llm.Complete(ctx, aggressiveCondenseSystemPrompt, userPrompt)
 		if err != nil {
 			return "", 0, fmt.Errorf("aggressive condensation: %w", err)
 		}

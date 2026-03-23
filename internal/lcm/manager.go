@@ -73,6 +73,9 @@ type Manager interface {
 	// SetOverheadTokens sets system prompt and tool token overhead for budget computation.
 	SetOverheadTokens(systemPromptTokens, toolTokens int64)
 
+	// SetLLMClient updates the LLM client used for LCM summary generation.
+	SetLLMClient(llm LLMClient)
+
 	// GetSummaryMentionedPaths extracts file paths mentioned in LCM
 	// summaries for a session. Used as weak ranking hints for the repo map.
 	GetSummaryMentionedPaths(ctx context.Context, sessionID string) ([]string, error)
@@ -272,6 +275,11 @@ func (m *compactionManager) SetModelOutputLimit(limit int64) {
 func (m *compactionManager) SetOverheadTokens(systemPromptTokens, toolTokens int64) {
 	m.defaultSystemPromptTokens = systemPromptTokens
 	m.defaultToolTokens = toolTokens
+}
+
+// SetLLMClient updates the LLM client used for LCM summary generation.
+func (m *compactionManager) SetLLMClient(llm LLMClient) {
+	m.summarizer.SetLLM(llm)
 }
 
 var filePathPattern = regexp.MustCompile(

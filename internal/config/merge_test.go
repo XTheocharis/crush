@@ -175,6 +175,13 @@ func TestConfigMerging(t *testing.T) {
 					TrailerStyle:  TrailerStyleNone,
 					GeneratedWith: false,
 				},
+				LCM: &LCMOptions{
+					CtxCutoffThreshold: 0.6,
+					SummarizerModel: &SelectedModel{
+						Provider: "anthropic",
+						Model:    "claude-3-5-haiku",
+					},
+				},
 				TUI: &TUIOptions{},
 			},
 		}, Config{
@@ -190,6 +197,13 @@ func TestConfigMerging(t *testing.T) {
 					TrailerStyle:  TrailerStyleCoAuthoredBy,
 					GeneratedWith: true,
 				},
+				LCM: &LCMOptions{
+					CtxCutoffThreshold: 0.75,
+					SummarizerModel: &SelectedModel{
+						Provider: "openai",
+						Model:    "gpt-4.1-mini",
+					},
+				},
 				TUI: &TUIOptions{},
 			},
 		})
@@ -204,6 +218,11 @@ func TestConfigMerging(t *testing.T) {
 		require.Equal(t, []string{"bash", "edit"}, c.Options.DisabledTools)
 		require.Equal(t, TrailerStyleCoAuthoredBy, c.Options.Attribution.TrailerStyle)
 		require.True(t, c.Options.Attribution.GeneratedWith)
+		require.Equal(t, 0.75, c.Options.LCM.CtxCutoffThreshold)
+		require.Equal(t, &SelectedModel{
+			Provider: "openai",
+			Model:    "gpt-4.1-mini",
+		}, c.Options.LCM.SummarizerModel)
 	})
 
 	t.Run("tools", func(t *testing.T) {
