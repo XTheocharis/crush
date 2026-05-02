@@ -56,5 +56,6 @@ profiles/
 # Local assistant state
 .claude/
 .serena/
+.opencode/
 tasks_backup.jsonl
 docs/
