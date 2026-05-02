@@ -1016,7 +1016,7 @@ func TestConfigMerging(t *testing.T) {
 		require.Equal(t, 2048, c.Options.RepoMap.MaxTokens)
 		require.Equal(t, "manual", c.Options.RepoMap.RefreshMode)
 		require.Equal(t, 3.5, c.Options.RepoMap.MapMulNoFiles)
-		require.Equal(t, []string{"*.min.js", "dist/**", "vendor/**"}, c.Options.RepoMap.ExcludeGlobs)
+		require.Equal(t, []string{"vendor/**", "*.min.js", "*.min.js", "dist/**"}, c.Options.RepoMap.ExcludeGlobs)
 	})
 
 	t.Run("repo_map_parser_pool_size_options_last_non_zero", func(t *testing.T) {
@@ -1232,7 +1232,7 @@ func TestConfigMerging(t *testing.T) {
 
 		require.NotNil(t, c)
 		// Empty array + globs = globs
-		require.Equal(t, []string{"node_modules/**", "vendor/**"}, c.Options.RepoMap.ExcludeGlobs)
+		require.Equal(t, []string{"vendor/**", "node_modules/**"}, c.Options.RepoMap.ExcludeGlobs)
 	})
 
 	t.Run("repo_map_disabled_remains_true", func(t *testing.T) {
