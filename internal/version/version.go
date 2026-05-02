@@ -5,7 +5,7 @@ import "runtime/debug"
 // Build-time parameters set via -ldflags.
 
 var (
-	Version = "devel"
+	Version = "v0.65.2-xrush"
 	Commit  = "unknown"
 )
 
