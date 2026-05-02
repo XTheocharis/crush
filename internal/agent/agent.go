@@ -42,6 +42,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/stringext"
 	"github.com/charmbracelet/crush/internal/version"
@@ -175,6 +176,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		return nil, ErrSessionMissing
 	}
 
+	queueGeneration := a.currentQueueGeneration(call.SessionID)
+
 	// Queue the message if busy
 	if a.IsSessionBusy(call.SessionID) {
 		existing, ok := a.messageQueue.Get(call.SessionID)
@@ -241,12 +244,18 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	defer wg.Wait()
 
 	// Add the user message to the session.
-	_, err = a.createUserMessage(ctx, call)
+	rootUserMessage, err := a.createUserMessage(ctx, call)
 	if err != nil {
 		return nil, err
 	}
 
-	// Add the session to the context.
+	runKey := repomap.RunInjectionKey{
+		RootUserMessageID: rootUserMessage.ID,
+		QueueGeneration:   queueGeneration,
+	}
+
+	// Add run/session metadata to the context.
+	ctx = repomap.WithRunInjectionKey(ctx, runKey)
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, call.SessionID)
 
 	genCtx, cancel := context.WithCancel(ctx)
@@ -284,6 +293,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				prepared.Messages[i].ProviderOptions = nil
 			}
 
+			callContext, prepared, err = applyPrepareStepHooks(
+				callContext,
+				options,
+				prepared,
+				a.prepareStepHooks.Copy(),
+			)
+			if err != nil {
+				return callContext, prepared, err
+			}
+
 			// Use latest tools (updated by SetTools when MCP tools change).
 			prepared.Tools = a.tools.Copy()
 
@@ -318,6 +337,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			if promptPrefix != "" {
 				prepared.Messages = append([]fantasy.Message{fantasy.NewSystemMessage(promptPrefix)}, prepared.Messages...)
 			}
+
+			lcm.CompactIfOverHardLimit(callContext, a.lcmManager, call.SessionID)
 
 			var assistantMsg message.Message
 			assistantMsg, err = a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{
@@ -628,6 +649,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	// There are queued messages restart the loop.
 	firstQueuedMessage := queuedMessages[0]
 	a.messageQueue.Set(call.SessionID, queuedMessages[1:])
+	a.incrementQueueGeneration(call.SessionID)
 	return a.Run(ctx, firstQueuedMessage)
 }
 
@@ -712,6 +734,13 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 			// User cancelled summarize we need to remove the summary message.
 			deleteErr := a.messages.Delete(ctx, summaryMessage.ID)
 			return deleteErr
+		}
+		// Summarization failed. Mark the message as finished with an error
+		// so the UI doesn't get stuck in a "Summarizing" state forever.
+		summaryMessage.FinishThinking()
+		summaryMessage.AddFinish(message.FinishReasonError, "Summarization failed", err.Error())
+		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+			return updateErr
 		}
 		return err
 	}
