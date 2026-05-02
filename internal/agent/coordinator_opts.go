@@ -178,6 +178,9 @@ func (c *coordinator) buildRepoMapHook() PrepareStepHook {
 				repoMapText = mapText
 				slog.Debug("Repo map: parity attempt 1 (full) succeeded")
 			} else {
+				if err := callCtx.Err(); err != nil {
+					return callCtx, prepared, err
+				}
 				// Attempt 2 — disjoint (no chat files, expanded budget).
 				slog.Debug("Repo map: parity attempt 1 failed, trying attempt 2 (disjoint)")
 				opts2 := opts
@@ -189,6 +192,9 @@ func (c *coordinator) buildRepoMapHook() PrepareStepHook {
 					repoMapText = mapText
 					slog.Debug("Repo map: parity attempt 2 (disjoint) succeeded")
 				} else {
+					if err := callCtx.Err(); err != nil {
+						return callCtx, prepared, err
+					}
 					// Attempt 3 — unhinted (no files, no mentions).
 					slog.Debug("Repo map: parity attempt 2 failed, trying attempt 3 (unhinted)")
 					opts3 := opts

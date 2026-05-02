@@ -678,8 +678,8 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 	aiMsgs, _ := a.preparePrompt(msgs)
 
 	genCtx, cancel := context.WithCancel(ctx)
-	a.activeRequests.Set(sessionID, cancel)
-	defer a.activeRequests.Del(sessionID)
+	a.activeRequests.Set(sessionID+"-summarize", cancel)
+	defer a.activeRequests.Del(sessionID + "-summarize")
 	defer cancel()
 
 	agent := fantasy.NewAgent(largeModel.Model,

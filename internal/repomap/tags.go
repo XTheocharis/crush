@@ -252,17 +252,20 @@ func (s *Service) extractTags(ctx context.Context, rootDir string, fileUniverse 
 
 	for i, relPath := range normalizedFiles {
 		g.Go(func() error {
+			// Check context before starting work. When the parent
+			// context is cancelled (user pressed ESC), this prevents
+			// dispatching new parse goroutines.
+			if err := gCtx.Err(); err != nil {
+				return err
+			}
 			results[i] = s.parseFile(gCtx, parser, rootDir, relPath, forceRefresh, cache)
 			return nil
 		})
 	}
 
-	// errgroup goroutines never return errors (they store them in
-	// results), so Wait always returns nil. Call it for cleanup.
-	_ = g.Wait()
-
-	// Check context cancellation after the parse phase.
-	if err := ctx.Err(); err != nil {
+	// Wait for all goroutines. WithContext will cancel remaining
+	// goroutines if one returns an error (e.g. context cancellation).
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 

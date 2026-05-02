@@ -348,6 +348,10 @@ func (p *parser) Analyze(ctx context.Context, path string, content []byte) (*Fil
 		return nil, fmt.Errorf("set parser language %q: %w", lang, err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	cacheKey := treeCacheKey(path, content)
 	tree, ok := p.treeCache.Get(cacheKey)
 	if !ok {
@@ -408,6 +412,10 @@ func (p *parser) ParseTree(ctx context.Context, path string, content []byte) (*t
 	}
 	if err := lp.parser.SetLanguage(tsLang); err != nil {
 		return nil, fmt.Errorf("set parser language %q: %w", lang, err)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	cacheKey := treeCacheKey(path, content)
