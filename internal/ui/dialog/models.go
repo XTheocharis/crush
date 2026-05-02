@@ -236,13 +236,13 @@ func (m *Models) Cursor() *tea.Cursor {
 // modelTypeRadioView returns the radio view for model type selection.
 func (m *Models) modelTypeRadioView() string {
 	t := m.com.Styles
-	textStyle := t.HalfMuted
-	largeRadioStyle := t.RadioOff
-	smallRadioStyle := t.RadioOff
+	textStyle := t.Radio.Label
+	largeRadioStyle := t.Radio.Off
+	smallRadioStyle := t.Radio.Off
 	if m.modelType == ModelTypeLarge {
-		largeRadioStyle = t.RadioOn
+		largeRadioStyle = t.Radio.On
 	} else {
-		smallRadioStyle = t.RadioOn
+		smallRadioStyle = t.Radio.On
 	}
 
 	largeRadio := largeRadioStyle.Padding(0, 1).Render()
@@ -292,13 +292,8 @@ func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		rc.TitleInfo = ""
 		rc.IsOnboarding = true
 		view := rc.Render()
+		cur = adjustOnboardingInputCursor(t, cur)
 		DrawOnboardingCursor(scr, area, view, cur)
-
-		// FIXME(@andreynering): Figure it out how to properly fix this
-		if cur != nil {
-			cur.Y -= 1
-			cur.X -= 1
-		}
 	} else {
 		view := rc.Render()
 		DrawCenterCursor(scr, area, view, cur)
@@ -490,7 +485,7 @@ func (m *Models) setProviderItems() error {
 
 		if len(validRecentItems) != len(recentItems) {
 			// FIXME: Does this need to be here? Is it mutating the config during a read?
-			if err := m.com.Store().SetConfigField(config.ScopeGlobal, fmt.Sprintf("recent_models.%s", selectedType), validRecentItems); err != nil {
+			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, fmt.Sprintf("recent_models.%s", selectedType), validRecentItems); err != nil {
 				return fmt.Errorf("failed to update recent models: %w", err)
 			}
 		}

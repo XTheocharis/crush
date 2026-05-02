@@ -38,6 +38,24 @@ func InputCursor(t *styles.Styles, cur *tea.Cursor) *tea.Cursor {
 	return cur
 }
 
+// adjustOnboardingInputCursor removes the dialog view frame offset from an
+// input cursor. Onboarding dialogs render without Dialog.View frame, while
+// InputCursor includes that frame offset for regular dialogs.
+func adjustOnboardingInputCursor(t *styles.Styles, cur *tea.Cursor) *tea.Cursor {
+	if cur == nil {
+		return nil
+	}
+
+	dialogStyle := t.Dialog.View
+	cur.X -= dialogStyle.GetBorderLeftSize() +
+		dialogStyle.GetPaddingLeft() +
+		dialogStyle.GetMarginLeft()
+	cur.Y -= dialogStyle.GetBorderTopSize() +
+		dialogStyle.GetPaddingTop() +
+		dialogStyle.GetMarginTop()
+	return cur
+}
+
 // RenderContext is a dialog rendering context that can be used to render
 // common dialog layouts.
 type RenderContext struct {
@@ -47,9 +65,11 @@ type RenderContext struct {
 	TitleStyle lipgloss.Style
 	// ViewStyle is the style of the dialog title by default it uses Styles.Dialog.View
 	ViewStyle lipgloss.Style
-	// TitleGradientFromColor is the color the title gradient starts by defaults its Style.Primary
+	// TitleGradientFromColor is the color the title gradient starts by default
+	// its Styles.Dialog.TitleGradFromColor
 	TitleGradientFromColor color.Color
-	// TitleGradientToColor is the color the title gradient starts by defaults its Style.Secondary
+	// TitleGradientToColor is the color the title gradient ends by default its
+	// Styles.Dialog.TitleGradToColor
 	TitleGradientToColor color.Color
 	// Width is the total width of the dialog including any margins, borders,
 	// and paddings.
@@ -80,8 +100,8 @@ func NewRenderContext(t *styles.Styles, width int) *RenderContext {
 		Styles:                 t,
 		TitleStyle:             t.Dialog.Title,
 		ViewStyle:              t.Dialog.View,
-		TitleGradientFromColor: t.Primary,
-		TitleGradientToColor:   t.Secondary,
+		TitleGradientFromColor: t.Dialog.TitleGradFromColor,
+		TitleGradientToColor:   t.Dialog.TitleGradToColor,
 		Width:                  width,
 		Parts:                  []string{},
 	}

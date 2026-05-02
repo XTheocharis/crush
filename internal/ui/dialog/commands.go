@@ -252,9 +252,9 @@ func commandsRadioView(sty *styles.Styles, selected CommandType, hasUserCmds boo
 
 	selectedFn := func(t CommandType) string {
 		if t == selected {
-			return sty.RadioOn.Padding(0, 1).Render() + sty.HalfMuted.Render(t.String())
+			return sty.Radio.On.Padding(0, 1).Render() + sty.Radio.Label.Render(t.String())
 		}
-		return sty.RadioOff.Padding(0, 1).Render() + sty.HalfMuted.Render(t.String())
+		return sty.Radio.Off.Padding(0, 1).Render() + sty.Radio.Label.Render(t.String())
 	}
 
 	parts := []string{
@@ -391,7 +391,6 @@ func (c *Commands) setCommandItems(commandType CommandType) {
 	case UserCommands:
 		for _, cmd := range c.customCommands {
 			action := ActionRunCustomCommand{
-				CommandID: cmd.ID,
 				Content:   cmd.Content,
 				Arguments: cmd.Arguments,
 			}
@@ -427,11 +426,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 	// Only show compact command if there's an active session
 	if c.hasSession {
-		commands = append(commands,
-			NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}),
-			NewCommandItem(c.com.Styles, "repo_map_refresh", "Refresh Repository Map", "", ActionRunCustomCommand{CommandID: "project:map-refresh", Content: "project:map-refresh"}),
-			NewCommandItem(c.com.Styles, "repo_map_reset", "Reset Repository Map", "", ActionRunCustomCommand{CommandID: "project:map-reset", Content: "project:map-reset"}),
-		)
+		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}))
 	}
 
 	// Add reasoning toggle for models that support it
@@ -469,7 +464,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		model := cfgPrime.GetModelByType(agentCfg.Model)
 		if model != nil && model.SupportsImages {
 			commands = append(commands, NewCommandItem(c.com.Styles, "file_picker", "Open File Picker", "ctrl+f", ActionOpenDialog{
-				// TODO: Pass in the file picker dialog id
+				DialogID: FilePickerID,
 			}))
 		}
 	}

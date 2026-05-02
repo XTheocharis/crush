@@ -89,35 +89,42 @@
         "tools": {
           "$ref": "#/$defs/Tools",
           "description": "Tool configurations"
+        },
+        "hooks": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/HookConfig"
+            },
+            "type": "array"
+          },
+          "type": "object",
+          "description": "User-defined shell commands that fire on hook events (e.g. PreToolUse)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "HookConfig": {
+      "properties": {
+        "matcher": {
+          "type": "string",
+          "description": "Regex pattern tested against the tool name. Empty means match all tools."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute when the hook fires"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds for the hook command",
+          "default": 30
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "tools"
+        "command"
       ]
-    },
-    "LCMOptions": {
-      "properties": {
-        "ctx_cutoff_threshold": {
-          "type": "number"
-        },
-        "summarizer_model": {
-          "$ref": "#/$defs/SelectedModel",
-          "description": "Optional dedicated model configuration for LCM summarization; defaults to the configured large model"
-        },
-        "disable_large_tool_output": {
-          "type": "boolean"
-        },
-        "large_tool_output_token_threshold": {
-          "type": "integer"
-        },
-        "explorer_output_profile": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
     },
     "LSPConfig": {
       "properties": {
@@ -344,8 +351,7 @@
         "context_window",
         "default_max_tokens",
         "can_reason",
-        "supports_attachments",
-        "options"
+        "supports_attachments"
       ]
     },
     "ModelOptions": {
@@ -474,18 +480,20 @@
           "description": "Show indeterminate progress updates during long operations",
           "default": true
         },
-        "lcm": {
-          "$ref": "#/$defs/LCMOptions",
-          "description": "Lossless Context Management options"
-        },
-        "repo_map": {
-          "$ref": "#/$defs/RepoMapOptions",
-          "description": "Repository map configuration"
-        },
         "disable_notifications": {
           "type": "boolean",
           "description": "Disable desktop notifications",
           "default": false
+        },
+        "disabled_skills": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "crush-config"
+            ]
+          },
+          "type": "array",
+          "description": "List of skill names to disable and hide from the agent"
         }
       },
       "additionalProperties": false,
@@ -586,39 +594,6 @@
           },
           "type": "array",
           "description": "List of models available from this provider"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
-    "RepoMapOptions": {
-      "properties": {
-        "disabled": {
-          "type": "boolean",
-          "description": "Disable repo map generation entirely"
-        },
-        "max_tokens": {
-          "type": "integer",
-          "description": "Override max token budget for rendered map (0 = dynamic)"
-        },
-        "exclude_globs": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Additional glob patterns to exclude from repo map scanning"
-        },
-        "refresh_mode": {
-          "type": "string",
-          "description": "When to regenerate the repo map: auto files manual or always"
-        },
-        "map_mul_no_files": {
-          "type": "number",
-          "description": "Budget multiplier when no files are in chat (default 2.0)"
-        },
-        "parser_pool_size": {
-          "type": "integer",
-          "description": "Tree-sitter parser pool size (0 = runtime default)"
         }
       },
       "additionalProperties": false,
@@ -729,10 +704,7 @@
         }
       },
       "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "completions"
-      ]
+      "type": "object"
     },
     "Token": {
       "properties": {
@@ -797,19 +769,10 @@
         },
         "grep": {
           "$ref": "#/$defs/ToolGrep"
-        },
-        "repo_map": {
-          "$ref": "#/$defs/RepoMapOptions",
-          "description": "Repository map generation options"
         }
       },
       "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "ls",
-        "grep",
-        "repo_map"
-      ]
+      "type": "object"
     }
   }
 }

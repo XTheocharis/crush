@@ -27,16 +27,14 @@ import (
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/format"
 	"github.com/charmbracelet/crush/internal/history"
-	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
-	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/shell"
-
+	"github.com/charmbracelet/crush/internal/skills"
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/update"
@@ -61,19 +59,14 @@ type App struct {
 	FileTracker filetracker.Service
 
 	AgentCoordinator agent.Coordinator
-	repoMapOpts      []agent.CoordinatorOption
-	repoMapSvc       *repomap.Service
-	repoMapCtl       *RepoMapController
 
 	LSPManager *lsp.Manager
 
 	config *config.ConfigStore
 
-	lcmManager lcm.Manager
-
 	serviceEventsWG *sync.WaitGroup
 	eventsCtx       context.Context
-	events          chan tea.Msg
+	events          *pubsub.Broker[tea.Msg]
 	tuiWG           *sync.WaitGroup
 
 	// global context and cleanup functions
@@ -87,10 +80,9 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore) (*App, er
 	q := db.New(conn)
 	sessions := session.NewService(q, conn)
 	messages := message.NewService(q)
-	cfg := store.Config()
-	messages, lcmMgr := initLCM(cfg, q, conn, messages)
 	files := history.NewService(q, conn)
-	skipPermissionsRequests := cfg.Permissions != nil && cfg.Permissions.SkipRequests
+	cfg := store.Config()
+	skipPermissionsRequests := store.Overrides().SkipPermissionRequests
 	var allowedTools []string
 	if cfg.Permissions != nil && cfg.Permissions.AllowedTools != nil {
 		allowedTools = cfg.Permissions.AllowedTools
@@ -101,21 +93,19 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore) (*App, er
 		Messages:    messages,
 		History:     files,
 		Permissions: permission.NewPermissionService(store.WorkingDir(), skipPermissionsRequests, allowedTools),
-		FileTracker: filetracker.NewService(q, store.WorkingDir()),
+		FileTracker: filetracker.NewService(q),
 		LSPManager:  lsp.NewManager(store),
 
 		globalCtx: ctx,
 
 		config: store,
 
-		lcmManager:         lcmMgr,
-		events:             make(chan tea.Msg, 100),
+		events:             pubsub.NewBroker[tea.Msg](),
 		serviceEventsWG:    &sync.WaitGroup{},
 		tuiWG:              &sync.WaitGroup{},
 		agentNotifications: pubsub.NewBroker[notify.Notification](),
 	}
 
-	app.repoMapOpts = app.initRepoMap(ctx, conn)
 	app.setupEvents()
 
 	// Check for updates in the background.
@@ -161,6 +151,17 @@ func (app *App) Config() *config.Config {
 // Store returns the config store.
 func (app *App) Store() *config.ConfigStore {
 	return app.config
+}
+
+// Events returns a per-caller subscription channel for application events.
+// Each caller receives its own channel; all callers receive every event.
+func (app *App) Events(ctx context.Context) <-chan pubsub.Event[tea.Msg] {
+	return app.events.Subscribe(ctx)
+}
+
+// SendEvent publishes a message to all event subscribers.
+func (app *App) SendEvent(msg tea.Msg) {
+	app.events.Publish(pubsub.UpdatedEvent, msg)
 }
 
 // AgentNotifications returns the broker for agent notification events.
@@ -229,7 +230,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	progress = app.config.Config().Options.Progress == nil || *app.config.Config().Options.Progress
 
 	if !hideSpinner && stderrTTY {
-		t := styles.DefaultStyles()
+		t := styles.ThemeForProvider(app.config.Config().Models[config.SelectedModelTypeLarge].Provider)
 
 		// Detect background color to set the appropriate color for the
 		// spinner's 'Generating...' text. Without this, that text would be
@@ -238,14 +239,14 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 		if f, ok := output.(*os.File); ok && stdinTTY && stdoutTTY {
 			hasDarkBG = lipgloss.HasDarkBackground(os.Stdin, f)
 		}
-		defaultFG := lipgloss.LightDark(hasDarkBG)(charmtone.Pepper, t.FgBase)
+		defaultFG := lipgloss.LightDark(hasDarkBG)(charmtone.Pepper, t.WorkingLabelColor)
 
 		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
 			Size:        10,
 			Label:       "Generating",
 			LabelColor:  defaultFG,
-			GradColorA:  t.Primary,
-			GradColorB:  t.Secondary,
+			GradColorA:  t.WorkingGradFromColor,
+			GradColorB:  t.WorkingGradToColor,
 			CycleColors: true,
 		})
 		spinner.Start()
@@ -478,32 +479,25 @@ func (app *App) setupEvents() {
 	setupSubscriber(ctx, app.serviceEventsWG, "agent-notifications", app.agentNotifications.Subscribe, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "mcp", mcp.SubscribeEvents, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "lsp", SubscribeLSPEvents, app.events)
-	if app.lcmManager != nil {
-		setupSubscriber(ctx, app.serviceEventsWG, "lcm", app.lcmManager.Subscribe, app.events)
-	}
+	setupSubscriber(ctx, app.serviceEventsWG, "skills", skills.SubscribeEvents, app.events)
 	cleanupFunc := func(context.Context) error {
 		cancel()
 		app.serviceEventsWG.Wait()
+		app.events.Shutdown()
 		return nil
 	}
 	app.cleanupFuncs = append(app.cleanupFuncs, cleanupFunc)
 }
-
-const subscriberSendTimeout = 2 * time.Second
 
 func setupSubscriber[T any](
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	name string,
 	subscriber func(context.Context) <-chan pubsub.Event[T],
-	outputCh chan<- tea.Msg,
+	broker *pubsub.Broker[tea.Msg],
 ) {
 	wg.Go(func() {
 		subCh := subscriber(ctx)
-		sendTimer := time.NewTimer(0)
-		<-sendTimer.C
-		defer sendTimer.Stop()
-
 		for {
 			select {
 			case event, ok := <-subCh:
@@ -511,23 +505,7 @@ func setupSubscriber[T any](
 					slog.Debug("Subscription channel closed", "name", name)
 					return
 				}
-				var msg tea.Msg = event
-				if !sendTimer.Stop() {
-					select {
-					case <-sendTimer.C:
-					default:
-					}
-				}
-				sendTimer.Reset(subscriberSendTimeout)
-
-				select {
-				case outputCh <- msg:
-				case <-sendTimer.C:
-					slog.Debug("Message dropped due to slow consumer", "name", name)
-				case <-ctx.Done():
-					slog.Debug("Subscription cancelled", "name", name)
-					return
-				}
+				broker.Publish(pubsub.UpdatedEvent, tea.Msg(event))
 			case <-ctx.Done():
 				slog.Debug("Subscription cancelled", "name", name)
 				return
@@ -542,13 +520,6 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		return fmt.Errorf("coder agent configuration is missing")
 	}
 	var err error
-	coordinatorOpts := []agent.CoordinatorOption{
-		agent.WithExtraTools(lcm.ExtraAgentTools(app.lcmManager)),
-		agent.WithLCMOverheadTracking(),
-	}
-	if len(app.repoMapOpts) > 0 {
-		coordinatorOpts = append(coordinatorOpts, app.repoMapOpts...)
-	}
 	app.AgentCoordinator, err = agent.NewCoordinator(
 		ctx,
 		app.config,
@@ -558,9 +529,7 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		app.History,
 		app.FileTracker,
 		app.LSPManager,
-		app.lcmManager,
 		app.agentNotifications,
-		coordinatorOpts...,
 	)
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)
@@ -586,17 +555,18 @@ func (app *App) Subscribe(program *tea.Program) {
 	})
 	defer app.tuiWG.Done()
 
+	events := app.events.Subscribe(tuiCtx)
 	for {
 		select {
 		case <-tuiCtx.Done():
 			slog.Debug("TUI message handler shutting down")
 			return
-		case msg, ok := <-app.events:
+		case ev, ok := <-events:
 			if !ok {
 				slog.Debug("TUI message channel closed")
 				return
 			}
-			program.Send(msg)
+			program.Send(ev.Payload)
 		}
 	}
 }
@@ -611,17 +581,12 @@ func (app *App) Shutdown() {
 	if app.AgentCoordinator != nil {
 		app.AgentCoordinator.CancelAll()
 	}
-	if app.repoMapSvc != nil {
-		if err := app.repoMapSvc.Close(); err != nil {
-			slog.Error("Failed to close repo map service", "error", err)
-		}
-	}
 
 	// Now run remaining cleanup tasks in parallel.
 	var wg sync.WaitGroup
 
 	// Shared shutdown context for all timeout-bounded cleanup.
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(app.globalCtx), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Send exit event
@@ -661,9 +626,9 @@ func (app *App) checkForUpdates(ctx context.Context) {
 	if err != nil || !info.Available() {
 		return
 	}
-	app.events <- UpdateAvailableMsg{
+	app.events.Publish(pubsub.UpdatedEvent, UpdateAvailableMsg{
 		CurrentVersion: info.Current,
 		LatestVersion:  info.Latest,
 		IsDevelopment:  info.IsDevelopment(),
-	}
+	})
 }

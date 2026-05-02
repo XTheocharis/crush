@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/event"
@@ -99,18 +101,22 @@ func init() {
 type sessionServices struct {
 	sessions session.Service
 	messages message.Service
+	cfg      *config.ConfigStore
 }
 
 func sessionSetup(cmd *cobra.Command) (context.Context, *sessionServices, func(), error) {
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	ctx := cmd.Context()
 
+	cfg, err := config.Init("", dataDir, false)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to initialize config: %w", err)
+	}
 	if dataDir == "" {
-		cfg, err := config.Init("", "", false)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to initialize config: %w", err)
-		}
 		dataDir = cfg.Config().Options.DataDirectory
+	}
+	if shouldEnableMetrics(cfg.Config()) {
+		event.Init()
 	}
 
 	conn, err := db.Connect(ctx, dataDir)
@@ -122,19 +128,21 @@ func sessionSetup(cmd *cobra.Command) (context.Context, *sessionServices, func()
 	svc := &sessionServices{
 		sessions: session.NewService(queries, conn),
 		messages: message.NewService(queries),
+		cfg:      cfg,
 	}
 	return ctx, svc, func() { conn.Close() }, nil
 }
 
 func runSessionList(cmd *cobra.Command, _ []string) error {
 	event.SetNonInteractive(true)
-	event.SessionListed(sessionListJSON)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	event.SessionListed(sessionListJSON)
 
 	list, err := svc.sessions.List(ctx)
 	if err != nil {
@@ -169,10 +177,7 @@ func runSessionList(cmd *cobra.Command, _ []string) error {
 		width = tw
 	}
 	// 7 (hash) + 1 (space) + 25 (RFC3339 date) + 1 (space) = 34 chars prefix.
-	titleWidth := width - 34
-	if titleWidth < 10 {
-		titleWidth = 10
-	}
+	titleWidth := max(width-34, 10)
 
 	var writeErr error
 	for _, s := range list {
@@ -254,13 +259,14 @@ func resolveSessionID(ctx context.Context, svc session.Service, id string) (sess
 
 func runSessionShow(cmd *cobra.Command, args []string) error {
 	event.SetNonInteractive(true)
-	event.SessionShown(sessionShowJSON)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	event.SessionShown(sessionShowJSON)
 
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
@@ -276,18 +282,19 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 	if sessionShowJSON {
 		return outputSessionJSON(cmd.OutOrStdout(), sess, msgPtrs)
 	}
-	return outputSessionHuman(ctx, sess, msgPtrs)
+	return outputSessionHuman(ctx, svc.cfg, sess, msgPtrs)
 }
 
 func runSessionDelete(cmd *cobra.Command, args []string) error {
 	event.SetNonInteractive(true)
-	event.SessionDeletedCommand(sessionDeleteJSON)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	event.SessionDeletedCommand(sessionDeleteJSON)
 
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
@@ -316,13 +323,14 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 
 func runSessionRename(cmd *cobra.Command, args []string) error {
 	event.SetNonInteractive(true)
-	event.SessionRenamed(sessionRenameJSON)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	event.SessionRenamed(sessionRenameJSON)
 
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
@@ -352,13 +360,14 @@ func runSessionRename(cmd *cobra.Command, args []string) error {
 
 func runSessionLast(cmd *cobra.Command, _ []string) error {
 	event.SetNonInteractive(true)
-	event.SessionLastShown(sessionLastJSON)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	event.SessionLastShown(sessionLastJSON)
 
 	list, err := svc.sessions.List(ctx)
 	if err != nil {
@@ -380,7 +389,7 @@ func runSessionLast(cmd *cobra.Command, _ []string) error {
 	if sessionLastJSON {
 		return outputSessionJSON(cmd.OutOrStdout(), sess, msgPtrs)
 	}
-	return outputSessionHuman(ctx, sess, msgPtrs)
+	return outputSessionHuman(ctx, svc.cfg, sess, msgPtrs)
 }
 
 const (
@@ -397,6 +406,7 @@ func messagePtrs(msgs []message.Message) []*message.Message {
 }
 
 func outputSessionJSON(w io.Writer, sess session.Session, msgs []*message.Message) error {
+	skills := extractSkillsFromMessages(msgs)
 	output := sessionShowOutput{
 		Meta: sessionShowMeta{
 			ID:               session.HashID(sess.ID),
@@ -408,6 +418,7 @@ func outputSessionJSON(w io.Writer, sess session.Session, msgs []*message.Messag
 			PromptTokens:     sess.PromptTokens,
 			CompletionTokens: sess.CompletionTokens,
 			TotalTokens:      sess.PromptTokens + sess.CompletionTokens,
+			Skills:           skills,
 		},
 		Messages: make([]sessionShowMessage, len(msgs)),
 	}
@@ -428,8 +439,12 @@ func outputSessionJSON(w io.Writer, sess session.Session, msgs []*message.Messag
 	return enc.Encode(output)
 }
 
-func outputSessionHuman(ctx context.Context, sess session.Session, msgs []*message.Message) error {
-	sty := styles.DefaultStyles()
+func outputSessionHuman(ctx context.Context, cfg *config.ConfigStore, sess session.Session, msgs []*message.Message) error {
+	var providerID string
+	if cfg != nil {
+		providerID = cfg.Config().Models[config.SelectedModelTypeLarge].Provider
+	}
+	styles := styles.ThemeForProvider(providerID)
 	toolResults := chat.BuildToolResultMap(msgs)
 
 	width := sessionOutputWidth
@@ -444,6 +459,8 @@ func outputSessionHuman(ctx context.Context, sess session.Session, msgs []*messa
 	hash := session.HashID(sess.ID)[:12]
 	created := time.Unix(sess.CreatedAt, 0).Format("Mon Jan 2 15:04:05 2006 -0700")
 
+	skills := extractSkillsFromMessages(msgs)
+
 	// Render to buffer to determine actual height
 	var buf strings.Builder
 
@@ -451,11 +468,24 @@ func outputSessionHuman(ctx context.Context, sess session.Session, msgs []*messa
 	fmt.Fprintln(&buf, keyStyle.Render("UUID:  ")+valStyle.Render(sess.ID))
 	fmt.Fprintln(&buf, keyStyle.Render("Title: ")+valStyle.Render(sess.Title))
 	fmt.Fprintln(&buf, keyStyle.Render("Date:  ")+valStyle.Render(created))
+	if len(skills) > 0 {
+		skillNames := make([]string, len(skills))
+		for i, s := range skills {
+			timestamp := time.Unix(sess.CreatedAt, 0).Format("15:04:05 -0700")
+			if s.LoadedAt != "" {
+				if t, err := time.Parse(time.RFC3339, s.LoadedAt); err == nil {
+					timestamp = t.Format("15:04:05 -0700")
+				}
+			}
+			skillNames[i] = fmt.Sprintf("%s (%s)", s.Name, timestamp)
+		}
+		fmt.Fprintln(&buf, keyStyle.Render("Skills: ")+valStyle.Render(strings.Join(skillNames, ", ")))
+	}
 	fmt.Fprintln(&buf)
 
 	first := true
 	for _, msg := range msgs {
-		items := chat.ExtractMessageItems(&sty, msg, toolResults)
+		items := chat.ExtractMessageItems(&styles, msg, toolResults)
 		for _, item := range items {
 			if !first {
 				fmt.Fprintln(&buf)
@@ -539,15 +569,22 @@ func sessionWriter(ctx context.Context, contentHeight int) (io.Writer, func(), b
 }
 
 type sessionShowMeta struct {
-	ID               string  `json:"id"`
-	UUID             string  `json:"uuid"`
-	Title            string  `json:"title"`
-	Created          string  `json:"created"`
-	Modified         string  `json:"modified"`
-	Cost             float64 `json:"cost"`
-	PromptTokens     int64   `json:"prompt_tokens"`
-	CompletionTokens int64   `json:"completion_tokens"`
-	TotalTokens      int64   `json:"total_tokens"`
+	ID               string             `json:"id"`
+	UUID             string             `json:"uuid"`
+	Title            string             `json:"title"`
+	Created          string             `json:"created"`
+	Modified         string             `json:"modified"`
+	Cost             float64            `json:"cost"`
+	PromptTokens     int64              `json:"prompt_tokens"`
+	CompletionTokens int64              `json:"completion_tokens"`
+	TotalTokens      int64              `json:"total_tokens"`
+	Skills           []sessionShowSkill `json:"skills,omitempty"`
+}
+
+type sessionShowSkill struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	LoadedAt    string `json:"loaded_at"`
 }
 
 type sessionShowMessage struct {
@@ -590,6 +627,40 @@ type sessionShowPart struct {
 	// Finish
 	Reason string `json:"reason,omitempty"`
 	Time   int64  `json:"time,omitempty"`
+}
+
+func extractSkillsFromMessages(msgs []*message.Message) []sessionShowSkill {
+	var skills []sessionShowSkill
+	seen := make(map[string]bool)
+
+	for _, msg := range msgs {
+		for _, part := range msg.Parts {
+			if tr, ok := part.(message.ToolResult); ok && tr.Metadata != "" {
+				var meta tools.ViewResponseMetadata
+				if err := json.Unmarshal([]byte(tr.Metadata), &meta); err == nil {
+					if meta.ResourceType == tools.ViewResourceSkill && meta.ResourceName != "" {
+						if !seen[meta.ResourceName] {
+							seen[meta.ResourceName] = true
+							skills = append(skills, sessionShowSkill{
+								Name:        meta.ResourceName,
+								Description: meta.ResourceDescription,
+								LoadedAt:    time.Unix(msg.CreatedAt, 0).Format(time.RFC3339),
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	sort.Slice(skills, func(i, j int) bool {
+		if skills[i].LoadedAt == skills[j].LoadedAt {
+			return skills[i].Name < skills[j].Name
+		}
+		return skills[i].LoadedAt < skills[j].LoadedAt
+	})
+
+	return skills
 }
 
 func convertParts(parts []message.ContentPart) []sessionShowPart {

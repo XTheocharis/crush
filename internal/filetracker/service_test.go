@@ -2,7 +2,6 @@ package filetracker
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -15,13 +14,10 @@ type testEnv struct {
 	ctx context.Context
 	q   *db.Queries
 	svc Service
-
-	workingDir string
 }
 
 func setupTest(t *testing.T) *testEnv {
 	t.Helper()
-	workingDir := t.TempDir()
 
 	conn, err := db.Connect(t.Context(), t.TempDir())
 	require.NoError(t, err)
@@ -31,9 +27,7 @@ func setupTest(t *testing.T) *testEnv {
 	return &testEnv{
 		ctx: t.Context(),
 		q:   q,
-		svc: NewService(q, workingDir),
-
-		workingDir: workingDir,
+		svc: NewService(q),
 	}
 }
 
@@ -50,7 +44,7 @@ func TestService_RecordRead(t *testing.T) {
 	env := setupTest(t)
 
 	sessionID := "test-session-1"
-	path := filepath.Join(env.workingDir, "path/to/file.go")
+	path := "/path/to/file.go"
 	env.createSession(t, sessionID)
 
 	env.svc.RecordRead(env.ctx, sessionID, path)
@@ -71,7 +65,7 @@ func TestService_RecordRead_UpdatesTimestamp(t *testing.T) {
 	env := setupTest(t)
 
 	sessionID := "test-session-2"
-	path := filepath.Join(env.workingDir, "path/to/file.go")
+	path := "/path/to/file.go"
 	env.createSession(t, sessionID)
 
 	env.svc.RecordRead(env.ctx, sessionID, path)
@@ -91,7 +85,7 @@ func TestService_RecordRead_UpdatesTimestamp(t *testing.T) {
 func TestService_RecordRead_DifferentSessions(t *testing.T) {
 	env := setupTest(t)
 
-	path := filepath.Join(env.workingDir, "shared/file.go")
+	path := "/shared/file.go"
 	session1, session2 := "session-1", "session-2"
 	env.createSession(t, session1)
 	env.createSession(t, session2)
@@ -109,8 +103,7 @@ func TestService_RecordRead_DifferentPaths(t *testing.T) {
 	env := setupTest(t)
 
 	sessionID := "test-session-3"
-	path1 := filepath.Join(env.workingDir, "path/to/file1.go")
-	path2 := filepath.Join(env.workingDir, "path/to/file2.go")
+	path1, path2 := "/path/to/file1.go", "/path/to/file2.go"
 	env.createSession(t, sessionID)
 
 	env.svc.RecordRead(env.ctx, sessionID, path1)

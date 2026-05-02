@@ -51,11 +51,3 @@ manpages/
 completions/crush.*sh
 .prettierignore
 .task
-profiles/
-
-# Local assistant state
-.claude/
-.serena/
-.opencode/
-tasks_backup.jsonl
-docs/

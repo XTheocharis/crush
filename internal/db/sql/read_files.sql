@@ -18,4 +18,3 @@ WHERE session_id = ? AND path = ? LIMIT 1;
 SELECT * FROM read_files
 WHERE session_id = ?
 ORDER BY read_at DESC;
-

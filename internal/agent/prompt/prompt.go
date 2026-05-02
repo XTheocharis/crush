@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,8 +25,6 @@ type Prompt struct {
 	now        func() time.Time
 	platform   string
 	workingDir string
-
-	extraContextFiles []ContextFile
 }
 
 type PromptDat struct {
@@ -169,14 +168,36 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 
 	// Discover and load skills metadata.
 	var availSkillXML string
+
+	// Start with builtin skills.
+	allSkills := skills.DiscoverBuiltin()
+	builtinNames := make(map[string]bool, len(allSkills))
+	for _, s := range allSkills {
+		builtinNames[s.Name] = true
+	}
+
+	// Discover user skills from configured paths.
 	if len(cfg.Options.SkillsPaths) > 0 {
 		expandedPaths := make([]string, 0, len(cfg.Options.SkillsPaths))
 		for _, pth := range cfg.Options.SkillsPaths {
 			expandedPaths = append(expandedPaths, expandPath(pth, store))
 		}
-		if discoveredSkills := skills.Discover(expandedPaths); len(discoveredSkills) > 0 {
-			availSkillXML = skills.ToPromptXML(discoveredSkills)
+		for _, userSkill := range skills.Discover(expandedPaths) {
+			if builtinNames[userSkill.Name] {
+				slog.Warn("User skill overrides builtin skill", "name", userSkill.Name)
+			}
+			allSkills = append(allSkills, userSkill)
 		}
+	}
+
+	// Deduplicate: user skills override builtins with the same name.
+	allSkills = skills.Deduplicate(allSkills)
+
+	// Filter out disabled skills.
+	allSkills = skills.Filter(allSkills, cfg.Options.DisabledSkills)
+
+	if len(allSkills) > 0 {
+		availSkillXML = skills.ToPromptXML(allSkills)
 	}
 
 	isGit := isGitRepo(store.WorkingDir())
@@ -201,10 +222,6 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 	for _, contextFiles := range files {
 		data.ContextFiles = append(data.ContextFiles, contextFiles...)
 	}
-
-	// Append any extra context files provided via WithExtraContextFiles.
-	data.ContextFiles = append(data.ContextFiles, p.extraContextFiles...)
-
 	return data, nil
 }
 

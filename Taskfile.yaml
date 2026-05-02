@@ -2,11 +2,6 @@
 
 version: "3"
 
-includes:
-  fork:
-    taskfile: ./Taskfile.xrush.yaml
-    flatten: true
-
 vars:
   VERSION:
     sh: git describe --long 2>/dev/null || echo ""
@@ -14,7 +9,7 @@ vars:
     sh: test -f race.log && echo "1" || echo ""
 
 env:
-  CGO_ENABLED: 1
+  CGO_ENABLED: 0
   GOEXPERIMENT: greenteagc
 
 tasks:
@@ -23,7 +18,7 @@ tasks:
     cmds:
       - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
     env:
-      GOTOOLCHAIN: go1.26.0
+      GOTOOLCHAIN: go1.25.0
 
   lint:
     desc: Run base linters
@@ -46,7 +41,7 @@ tasks:
       GOEXPERIMENT: null
 
   build:
-    desc: Run build (requires CGO)
+    desc: Run build
     vars:
       LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     cmds:
@@ -54,11 +49,14 @@ tasks:
     sources:
       - ./**/*.go
       - go.mod
+      - internal/agent/**/*.md
+      - internal/agent/**/*.md.tpl
+      - internal/agent/hyper/provider.json
     generates:
       - crush{{exeExt}}
 
   run:
-    desc: Build and run (requires CGO)
+    desc: Run build
     cmds:
       - task: build
       - "./crush{{exeExt}} {{.CLI_ARGS}} {{if .RACE}}2>race.log{{end}}"
@@ -79,12 +77,10 @@ tasks:
     cmds:
       - task: build
       - rm -rf tmp/onboarding
-      - ./crush{exeExt} {{.CLI_ARGS}}
+      - ./crush{{exeExt}} {{.CLI_ARGS}}
 
   test:
-    desc: Run tests (requires CGO)
-    env:
-      CGO_ENABLED: 1
+    desc: Run tests
     cmds:
       - go test -race -failfast ./... {{.CLI_ARGS}}
 
@@ -111,14 +107,14 @@ tasks:
       - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix -test ./...
 
   dev:
-    desc: Run with profiling enabled (requires CGO)
+    desc: Run with profiling enabled
     env:
       CRUSH_PROFILE: true
     cmds:
       - go run .
 
   install:
-    desc: Install the application (requires CGO)
+    desc: Install the application
     vars:
       LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     cmds:
@@ -127,19 +123,22 @@ tasks:
     sources:
       - ./**/*.go
       - go.mod
+      - internal/agent/**/*.md
+      - internal/agent/**/*.md.tpl
+      - internal/agent/hyper/provider.json
 
   profile:cpu:
-    desc: 10s CPU profile (interactive, requires running dev instance)
+    desc: 10s CPU profile
     cmds:
       - go tool pprof -http :6061 'http://localhost:6060/debug/pprof/profile?seconds=10'
 
   profile:heap:
-    desc: Heap profile (interactive, requires running dev instance)
+    desc: Heap profile
     cmds:
       - go tool pprof -http :6061 'http://localhost:6060/debug/pprof/heap'
 
   profile:allocs:
-    desc: Allocations profile (interactive, requires running dev instance)
+    desc: Allocations profile
     cmds:
       - go tool pprof -http :6061 'http://localhost:6060/debug/pprof/allocs'
 
@@ -197,16 +196,20 @@ tasks:
       - go get charm.land/catwalk@latest
       - go mod tidy
 
+  swag:
+    desc: Generate OpenAPI spec from swag annotations
+    cmds:
+      - go run github.com/swaggo/swag/cmd/swag@v1.16.6 init --generalInfo main.go --dir . --output internal/swagger --packageName swagger --parseDependency --parseInternal --parseDepth 5
+    sources:
+      - internal/server/*.go
+      - internal/proto/*.go
+      - main.go
+    generates:
+      - internal/swagger/docs.go
+      - internal/swagger/swagger.json
+      - internal/swagger/swagger.yaml
+
   sqlc:
     desc: Generate code using SQLC
     cmds:
       - sqlc generate
-    sources:
-      - ./internal/db/sql/*.sql
-      - ./internal/db/migrations/*.sql
-      - ./sqlc.yaml
-    generates:
-      - ./internal/db/db.go
-      - ./internal/db/models.go
-      - ./internal/db/querier.go
-      - ./internal/db/*.sql.go

@@ -17,9 +17,6 @@ var agentToolDescription []byte
 
 type AgentParams struct {
 	Prompt string `json:"prompt" description:"The task for the agent to perform"`
-
-	DelegatedScope string `json:"delegated_scope,omitempty" description:"Description of what work is being delegated to this sub-agent"`
-	KeptWork       string `json:"kept_work,omitempty" description:"Description of what work the calling agent retains"`
 }
 
 const (
@@ -42,7 +39,7 @@ func (c *coordinator) agentTool(ctx context.Context) (fantasy.AgentTool, error) 
 	}
 	return fantasy.NewParallelAgentTool(
 		AgentToolName,
-		string(agentToolDescription),
+		tools.FirstLineDescription(agentToolDescription),
 		func(ctx context.Context, params AgentParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Prompt == "" {
 				return fantasy.NewTextErrorResponse("prompt is required"), nil
@@ -56,10 +53,6 @@ func (c *coordinator) agentTool(ctx context.Context) (fantasy.AgentTool, error) 
 			agentMessageID := tools.GetMessageFromContext(ctx)
 			if agentMessageID == "" {
 				return fantasy.ToolResponse{}, errors.New("agent message id missing from context")
-			}
-
-			if errResp := c.validateLCMSubAgentParams(sessionID, params); errResp != nil {
-				return *errResp, nil
 			}
 
 			return c.runSubAgent(ctx, subAgentParams{

@@ -43,6 +43,11 @@ type EditResponseMetadata struct {
 
 const EditToolName = "edit"
 
+var (
+	oldStringNotFoundErr        = fantasy.NewTextErrorResponse("old_string not found in file. Make sure it matches exactly, including whitespace and line breaks.")
+	oldStringMultipleMatchesErr = fantasy.NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true")
+)
+
 //go:embed edit.md
 var editDescription []byte
 
@@ -63,7 +68,7 @@ func NewEditTool(
 ) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		EditToolName,
-		string(editDescription),
+		FirstLineDescription(editDescription),
 		func(ctx context.Context, params EditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.FilePath == "" {
 				return fantasy.NewTextErrorResponse("file_path is required"), nil
@@ -147,7 +152,7 @@ func createNewFile(edit editContext, filePath, content string, call fantasy.Tool
 		return fantasy.ToolResponse{}, err
 	}
 	if !p {
-		return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+		return NewPermissionDeniedResponse(), nil
 	}
 
 	err = os.WriteFile(filePath, []byte(content), 0o644)
@@ -220,9 +225,25 @@ func deleteContent(edit editContext, filePath, oldString string, replaceAll bool
 
 	oldContent, isCrlf := fsext.ToUnixLineEndings(string(content))
 
-	newContent, fuzzyErr := fuzzyReplace(oldContent, oldString, "", replaceAll)
-	if fuzzyErr != nil {
-		return fantasy.NewTextErrorResponse(fuzzyErr.Error()), nil
+	var newContent string
+
+	if replaceAll {
+		newContent = strings.ReplaceAll(oldContent, oldString, "")
+		if newContent == oldContent {
+			return oldStringNotFoundErr, nil
+		}
+	} else {
+		index := strings.Index(oldContent, oldString)
+		if index == -1 {
+			return oldStringNotFoundErr, nil
+		}
+
+		lastIndex := strings.LastIndex(oldContent, oldString)
+		if index != lastIndex {
+			return fantasy.NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true"), nil
+		}
+
+		newContent = oldContent[:index] + oldContent[index+len(oldString):]
 	}
 
 	_, additions, removals := diff.GenerateDiff(
@@ -250,7 +271,7 @@ func deleteContent(edit editContext, filePath, oldString string, replaceAll bool
 		return fantasy.ToolResponse{}, err
 	}
 	if !p {
-		return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+		return NewPermissionDeniedResponse(), nil
 	}
 
 	if isCrlf {
@@ -335,9 +356,22 @@ func replaceContent(edit editContext, filePath, oldString, newString string, rep
 
 	oldContent, isCrlf := fsext.ToUnixLineEndings(string(content))
 
-	newContent, fuzzyErr := fuzzyReplace(oldContent, oldString, newString, replaceAll)
-	if fuzzyErr != nil {
-		return fantasy.NewTextErrorResponse(fuzzyErr.Error()), nil
+	var newContent string
+
+	if replaceAll {
+		newContent = strings.ReplaceAll(oldContent, oldString, newString)
+	} else {
+		index := strings.Index(oldContent, oldString)
+		if index == -1 {
+			return oldStringNotFoundErr, nil
+		}
+
+		lastIndex := strings.LastIndex(oldContent, oldString)
+		if index != lastIndex {
+			return oldStringMultipleMatchesErr, nil
+		}
+
+		newContent = oldContent[:index] + newString + oldContent[index+len(oldString):]
 	}
 
 	if oldContent == newContent {
@@ -368,7 +402,7 @@ func replaceContent(edit editContext, filePath, oldString, newString string, rep
 		return fantasy.ToolResponse{}, err
 	}
 	if !p {
-		return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+		return NewPermissionDeniedResponse(), nil
 	}
 
 	if isCrlf {

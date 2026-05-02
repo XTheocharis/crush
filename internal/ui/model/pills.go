@@ -56,12 +56,12 @@ func queuePill(queue int, focused, panelFocused bool, t *styles.Styles) string {
 	if queue <= 0 {
 		return ""
 	}
-	triangles := styles.ForegroundGrad(t, "▶▶▶▶▶▶▶▶▶", false, t.RedDark, t.Secondary)
+	triangles := styles.ForegroundGrad(t.Pills.QueueIconBase, "▶▶▶▶▶▶▶▶▶", false, t.Pills.QueueGradFromColor, t.Pills.QueueGradToColor)
 	if queue < len(triangles) {
 		triangles = triangles[:queue]
 	}
 
-	text := t.Base.Render(fmt.Sprintf("%d Queued", queue))
+	text := t.Pills.QueueLabel.Render(fmt.Sprintf("%d Queued", queue))
 	content := fmt.Sprintf("%s %s", strings.Join(triangles, ""), text)
 	return pillStyle(focused, panelFocused, t).Render(content)
 }
@@ -87,8 +87,8 @@ func todoPill(todos []session.Todo, spinnerView string, focused, panelFocused bo
 
 	total := len(todos)
 
-	label := t.Base.Render("To-Do")
-	progress := t.Muted.Render(fmt.Sprintf("%d/%d", completed, total))
+	label := t.Pills.TodoLabel.Render("To-Do")
+	progress := t.Pills.TodoProgress.Render(fmt.Sprintf("%d/%d", completed, total))
 
 	var content string
 	if panelFocused {
@@ -101,7 +101,7 @@ func todoPill(todos []session.Todo, spinnerView string, focused, panelFocused bo
 		if len(taskText) > maxTaskDisplayLength {
 			taskText = taskText[:maxTaskDisplayLength-1] + "…"
 		}
-		task := t.Subtle.Render(taskText)
+		task := t.Pills.TodoCurrentTask.Render(taskText)
 		content = fmt.Sprintf("%s %s %s  %s", spinnerView, label, progress, task)
 	} else {
 		content = fmt.Sprintf("%s %s", label, progress)
@@ -128,7 +128,7 @@ func queueList(queueItems []string, t *styles.Styles) string {
 			text = text[:maxQueueDisplayLength-1] + "…"
 		}
 		prefix := t.Pills.QueueItemPrefix.Render() + " "
-		lines = append(lines, prefix+t.Muted.Render(text))
+		lines = append(lines, prefix+t.Pills.QueueItemText.Render(text))
 	}
 
 	return strings.Join(lines, "\n")
@@ -139,7 +139,7 @@ func (m *UI) togglePillsExpanded() tea.Cmd {
 	if !m.hasSession() {
 		return nil
 	}
-	hasPills := hasIncompleteTodos(m.session.Todos) || m.promptQueue > 0 || m.lcmCompacting
+	hasPills := hasIncompleteTodos(m.session.Todos) || m.promptQueue > 0
 	if !hasPills {
 		return nil
 	}
@@ -189,7 +189,7 @@ func (m *UI) pillsAreaHeight() int {
 	}
 	hasIncomplete := hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
-	hasPills := hasIncomplete || hasQueue || m.lcmCompacting
+	hasPills := hasIncomplete || hasQueue
 	if !hasPills {
 		return 0
 	}
@@ -223,7 +223,7 @@ func (m *UI) renderPills() {
 	hasIncomplete := hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	if !hasIncomplete && !hasQueue && !m.lcmCompacting {
+	if !hasIncomplete && !hasQueue {
 		return
 	}
 
@@ -243,17 +243,14 @@ func (m *UI) renderPills() {
 	if hasQueue {
 		pills = append(pills, queuePill(m.promptQueue, queueFocused, m.pillsExpanded, t))
 	}
-	if m.lcmCompacting {
-		pills = append(pills, m.compactionPill())
-	}
 
 	var expandedList string
 	if m.pillsExpanded {
 		if todosFocused && hasIncomplete {
 			expandedList = todoList(m.session.Todos, inProgressIcon, t, contentWidth)
 		} else if queueFocused && hasQueue {
-			if m.com.App != nil && m.com.App.AgentCoordinator != nil {
-				queueItems := m.com.App.AgentCoordinator.QueuedPromptsList(m.session.ID)
+			if m.com.Workspace.AgentIsReady() {
+				queueItems := m.com.Workspace.AgentQueuedPromptsList(m.session.ID)
 				expandedList = queueList(queueItems, t)
 			}
 		}

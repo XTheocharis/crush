@@ -66,7 +66,7 @@ func NewMultiEditTool(
 ) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		MultiEditToolName,
-		string(multieditDescription),
+		FirstLineDescription(multieditDescription),
 		func(ctx context.Context, params MultiEditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.FilePath == "" {
 				return fantasy.NewTextErrorResponse("file_path is required"), nil
@@ -195,7 +195,7 @@ func processMultiEditWithCreation(edit editContext, params MultiEditParams, call
 		return fantasy.ToolResponse{}, err
 	}
 	if !p {
-		return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+		return NewPermissionDeniedResponse(), nil
 	}
 
 	// Write the file
@@ -337,7 +337,7 @@ func processMultiEditExistingFile(edit editContext, params MultiEditParams, call
 		return fantasy.ToolResponse{}, err
 	}
 	if !p {
-		return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+		return NewPermissionDeniedResponse(), nil
 	}
 
 	if isCrlf {
@@ -403,5 +403,29 @@ func applyEditToContent(content string, edit MultiEditOperation) (string, error)
 		return "", fmt.Errorf("old_string cannot be empty for content replacement")
 	}
 
-	return fuzzyReplace(content, edit.OldString, edit.NewString, edit.ReplaceAll)
+	var newContent string
+	var replacementCount int
+
+	if edit.ReplaceAll {
+		newContent = strings.ReplaceAll(content, edit.OldString, edit.NewString)
+		replacementCount = strings.Count(content, edit.OldString)
+		if replacementCount == 0 {
+			return "", fmt.Errorf("old_string not found in content. Make sure it matches exactly, including whitespace and line breaks")
+		}
+	} else {
+		index := strings.Index(content, edit.OldString)
+		if index == -1 {
+			return "", fmt.Errorf("old_string not found in content. Make sure it matches exactly, including whitespace and line breaks")
+		}
+
+		lastIndex := strings.LastIndex(content, edit.OldString)
+		if index != lastIndex {
+			return "", fmt.Errorf("old_string appears multiple times in the content. Please provide more context to ensure a unique match, or set replace_all to true")
+		}
+
+		newContent = content[:index] + edit.NewString + content[index+len(edit.OldString):]
+		replacementCount = 1
+	}
+
+	return newContent, nil
 }

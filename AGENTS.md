@@ -11,25 +11,6 @@ agent skills.
 
 The module path is `github.com/charmbracelet/crush`.
 
-This fork branch also carries a large squashed delta centered on:
-
-- **`internal/lcm/`**: lossless context management, summaries, large-output
-  storage, and extra LCM tools.
-- **`internal/repomap/`**: repository indexing, ranking, rendering, caching,
-  and refresh/reset control paths.
-- **`internal/treesitter/`**: parser pool, grammar/query loading, and shared
-  code analysis used by repo-map and LCM exploration.
-- **`internal/app/`**: app wiring for LCM and repo-map initialization.
-- **`internal/agent/`**: coordinator hooks, prepare-step injection, and tool
-  wiring for repo-map/LCM behavior.
-- **`internal/db/`**: goose migrations and sqlc queries for LCM and repo-map
-  persistence.
-- **`internal/filetracker/`**: session read-path tracking used by repo-map
-  ranking and exclusion logic.
-
-Keep this file focused on stable workflow and architecture notes. Track open
-branch issues in `TODO.md`.
-
 ## Architecture
 
 ```
@@ -40,14 +21,19 @@ internal/
   config/
     config.go                      Config struct, context file paths, agent definitions
     load.go                        crush.json loading and validation
-    store.go                       ConfigStore runtime wrapper and persistence
+    provider.go                    Provider configuration and model resolution
   agent/
     agent.go                       SessionAgent: runs LLM conversations per session
     coordinator.go                 Coordinator: manages named agents ("coder", "task")
-    coordinator_opts.go            Fork hook plumbing for repo-map and LCM
+    hooked_tool.go                 Decorator that runs PreToolUse hooks before tool execution
     prompts.go                     Loads Go-template system prompts
-    templates/                     System prompt templates
-    tools/                         Built-in tools and MCP integration
+    templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
+    tools/                         All built-in tools (bash, edit, view, grep, glob, etc.)
+      mcp/                         MCP client integration
+  hooks/                           Hook engine: runs user shell commands on hook events
+    hooks.go                       Decision types, aggregation logic, event constants
+    runner.go                      Parallel hook execution, timeout, dedup
+    input.go                       Stdin payload builder, env vars, stdout parsing (Crush + Claude Code compat)
   session/session.go               Session CRUD backed by SQLite
   message/                         Message model and content types
   db/                              SQLite via sqlc, with migrations
@@ -77,8 +63,7 @@ internal/
 
 ### Key Patterns
 
-- **Config is accessed through `ConfigStore`**: the store owns the pure-data
-  config, runtime state, and config persistence.
+- **Config is a Service**: accessed via `config.Service`, not global state.
 - **Tools are self-documenting**: each tool has a `.go` implementation and a
   `.md` description file in `internal/agent/tools/`.
 - **System prompts are Go templates**: `internal/agent/templates/*.md.tpl`
@@ -90,41 +75,30 @@ internal/
   generated code in `internal/db/`. Migrations in `internal/db/migrations/`.
 - **Pub/sub**: `internal/pubsub` for decoupled communication between agent,
   UI, and services.
+- **Hooks**: User-defined shell commands in `crush.json` that fire before
+  tool execution. The engine (`internal/hooks/`) is independent of fantasy
+  and agent — it takes inputs, runs commands, returns decisions. The
+  `hookedTool` decorator in `internal/agent/hooked_tool.go` wraps tools at
+  the coordinator level. Hooks run before permission checks. See
+  `HOOKS.md` for the user-facing protocol.
+- **CGO disabled**: builds with `CGO_ENABLED=0` and
+  `GOEXPERIMENT=greenteagc`.
 
 ## Build/Test/Lint Commands
 
 - **Build**: `go build .` or `go run .`
-- **Source build requirement**: This branch requires `CGO_ENABLED=1` and a
-  working C compiler because tree-sitter support is mandatory.
-- **Test**: `task test` or `go test ./...`
-  - Run single test: `go test ./internal/config -run TestConfigMerging`
-- **Focused fork packages**:
-  `go test ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
-- **Race suite for fork additions**:
-  `go test -race ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
+- **Test**: `task test` or `go test ./...` (run single test:
+  `go test ./internal/llm/prompt -run TestGetContextFromPaths`)
 - **Update Golden Files**: `go test ./... -update` (regenerates `.golden`
   files when test output changes)
   - Update specific package:
-    `go test ./internal/tui/components/core -update`
+    `go test ./internal/tui/components/core -update` (in this case,
+    we're updating "core")
 - **Lint**: `task lint:fix`
 - **Format**: `task fmt` (`gofumpt -w .`)
-- **Modernize**: `task modernize`
-- **Dev**: `task dev`
-- **Additional fork-only tasks**: see `Taskfile.xrush.yaml`
-
-## Branch-Specific Wiring
-
-- **LCM activation**: `cfg.Options.LCM != nil` enables LCM. The app wraps the
-  message service in `internal/app/app_lcm.go`.
-- **Repo-map activation**: `cfg.Options.RepoMap` enables repo-map setup in
-  `internal/app/repomap.go`.
-- **Repo-map injection**: the coordinator injects repo-map context via
-  prepare-step hooks in `internal/agent/coordinator_opts.go`.
-- **Filetracker matters**: repo-map uses tracked read paths as ranking and
-  exclusion hints; changes in `internal/filetracker/` affect prompt context.
-- **DB work spans four layers**: migration in `internal/db/migrations/`, SQL in
-  `internal/db/sql/`, generated sqlc files in `internal/db/*.sql.go`, and
-  tests covering both read and write paths.
+- **Modernize**: `task modernize` (runs `modernize` which makes code
+  simplifications)
+- **Dev**: `task dev` (runs with profiling enabled)
 
 ## Code Style Guidelines
 
@@ -132,23 +106,29 @@ internal/
   packages.
 - **Formatting**: Use gofumpt (stricter than gofmt), enabled in
   golangci-lint.
-- **Naming**: Standard Go conventions. PascalCase for exported, camelCase for
-  unexported.
-- **Types**: Prefer explicit types and small, clear aliases where they help.
-- **Error handling**: Return errors explicitly and wrap with `fmt.Errorf`.
-- **Context**: Always pass `context.Context` as first parameter for operations.
-- **Interfaces**: Define interfaces in consuming packages, keep them small and
-  focused.
+- **Naming**: Standard Go conventions — PascalCase for exported, camelCase
+  for unexported.
+- **Types**: Prefer explicit types, use type aliases for clarity (e.g.,
+  `type AgentName string`).
+- **Error handling**: Return errors explicitly, use `fmt.Errorf` for
+  wrapping.
+- **Context**: Always pass `context.Context` as first parameter for
+  operations.
+- **Interfaces**: Define interfaces in consuming packages, keep them small
+  and focused.
 - **Structs**: Use struct embedding for composition, group related fields.
 - **Constants**: Use typed constants with iota for enums, group in const
   blocks.
-- **Testing**: Use testify's `require` package, `t.Parallel()`, `t.SetEnv()`,
-  and `t.TempDir()`.
+- **Testing**: Use testify's `require` package, parallel tests with
+  `t.Parallel()`, `t.SetEnv()` to set environment variables. Always use
+  `t.Tempdir()` when in need of a temporary directory. This directory does
+  not need to be removed.
 - **JSON tags**: Use snake_case for JSON field names.
 - **File permissions**: Use octal notation (0o755, 0o644) for file
   permissions.
-- **Log messages**: Log messages must start with a capital letter.
-  `task lint:log` enforces this.
+- **Log messages**: Log messages must start with a capital letter (e.g.,
+  "Failed to save session" not "failed to save session").
+  - This is enforced by `task lint:log` which runs as part of `task lint`.
 - **Comments**: End comments in periods unless comments are at the end of the
   line.
 
@@ -159,6 +139,7 @@ providers to avoid API calls:
 
 ```go
 func TestYourFunction(t *testing.T) {
+    // Enable mock providers for testing
     originalUseMock := config.UseMockProviders
     config.UseMockProviders = true
     defer func() {
@@ -166,10 +147,12 @@ func TestYourFunction(t *testing.T) {
         config.ResetProviders()
     }()
 
+    // Reset providers to ensure fresh mock data
     config.ResetProviders()
 
+    // Your test code here - providers will now return mock data
     providers := config.Providers()
-    _ = providers
+    // ... test logic
 }
 ```
 
@@ -177,38 +160,24 @@ func TestYourFunction(t *testing.T) {
 
 - ALWAYS format any Go code you write.
   - First, try `gofumpt -w .`.
-  - If `gofumpt` is unavailable, use `goimports`.
-  - If `goimports` is unavailable, use `gofmt`.
+  - If `gofumpt` is not available, use `goimports`.
+  - If `goimports` is not available, use `gofmt`.
+  - You can also use `task fmt` to run `gofumpt -w .` on the entire project,
+    as long as `gofumpt` is on the `PATH`.
 
 ## Comments
 
-- Own-line comments should start with capital letters and end with periods.
-- Wrap comments at 78 columns.
+- Comments that live on their own lines should start with capital letters and
+  end with periods. Wrap comments at 78 columns.
 
 ## Committing
 
 - ALWAYS use semantic commits (`fix:`, `feat:`, `chore:`, `refactor:`,
   `docs:`, `sec:`, etc).
-- Try to keep commits to one line unless extra context is genuinely necessary.
-
-## Working on Configuration
-
-Read `internal/config/AGENTS.md` before changing config loading, merge rules,
-or schema-backed options.
+- Try to keep commits to one line, not including your attribution. Only use
+  multi-line commits when additional context is truly necessary.
 
 ## Working on the TUI (UI)
 
-Read `internal/ui/AGENTS.md` before changing Bubble Tea models, components, or
-styles.
-
-## Working on LCM, Repo Map, or Tree-Sitter
-
-Start with these files:
-
-- `internal/app/app_lcm.go`
-- `internal/app/repomap.go`
-- `internal/agent/coordinator.go`
-- `internal/agent/coordinator_opts.go`
-- `internal/lcm/`
-- `internal/repomap/`
-- `internal/treesitter/`
+Anytime you need to work on the TUI, read `internal/ui/AGENTS.md` before
+starting work.
