@@ -15,13 +15,14 @@ import (
 
 var (
 	pragmas = map[string]string{
-		"foreign_keys":  "ON",
-		"journal_mode":  "WAL",
-		"page_size":     "4096",
-		"cache_size":    "-8000",
-		"synchronous":   "NORMAL",
-		"secure_delete": "ON",
-		"busy_timeout":  "30000",
+		"foreign_keys":      "ON",
+		"journal_mode":      "WAL",
+		"page_size":         "4096",
+		"cache_size":        "-8000",
+		"synchronous":       "NORMAL",
+		"secure_delete":     "ON",
+		"busy_timeout":      "30000",
+		"recursive_triggers": "ON",
 	}
 	gooseInitOnce sync.Once
 	gooseInitErr  error
