@@ -77,6 +77,10 @@ DELETE FROM lcm_summary_parents WHERE summary_id = ?;
 INSERT INTO lcm_context_items (session_id, position, item_type, message_id, summary_id, token_count)
 VALUES (?, ?, ?, ?, ?, ?);
 
+-- name: AppendLcmContextItem :exec
+INSERT INTO lcm_context_items (session_id, position, item_type, message_id, summary_id, token_count)
+VALUES (?, (SELECT COALESCE(MIN(m.position) - 1, -1) FROM lcm_context_items m WHERE m.session_id = ?), ?, ?, ?, ?);
+
 -- name: ListLcmContextItems :many
 SELECT * FROM lcm_context_items WHERE session_id = ? ORDER BY position ASC;
 

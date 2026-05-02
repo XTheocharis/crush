@@ -19,10 +19,13 @@ INSERT INTO messages (
     model,
     provider,
     is_summary_message,
+    seq,
     created_at,
     updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now')
+    ?, ?, ?, ?, ?, ?, ?,
+    (SELECT COALESCE(MAX(m.seq) + 1, 0) FROM messages m WHERE m.session_id = ?),
+    strftime('%s', 'now'), strftime('%s', 'now')
 )
 RETURNING id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count
 `
@@ -35,6 +38,7 @@ type CreateMessageParams struct {
 	Model            sql.NullString `json:"model"`
 	Provider         sql.NullString `json:"provider"`
 	IsSummaryMessage int64          `json:"is_summary_message"`
+	SessionID_2      string         `json:"session_id_2"`
 }
 
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
@@ -46,6 +50,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		arg.Model,
 		arg.Provider,
 		arg.IsSummaryMessage,
+		arg.SessionID_2,
 	)
 	var i Message
 	err := row.Scan(

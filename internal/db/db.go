@@ -24,6 +24,9 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.appendLcmContextItemStmt, err = db.PrepareContext(ctx, appendLcmContextItem); err != nil {
+		return nil, fmt.Errorf("error preparing query AppendLcmContextItem: %w", err)
+	}
 	if q.clearSessionSummaryMessageIDStmt, err = db.PrepareContext(ctx, clearSessionSummaryMessageID); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearSessionSummaryMessageID: %w", err)
 	}
@@ -275,6 +278,11 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 
 func (q *Queries) Close() error {
 	var err error
+	if q.appendLcmContextItemStmt != nil {
+		if cerr := q.appendLcmContextItemStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing appendLcmContextItemStmt: %w", cerr)
+		}
+	}
 	if q.clearSessionSummaryMessageIDStmt != nil {
 		if cerr := q.clearSessionSummaryMessageIDStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing clearSessionSummaryMessageIDStmt: %w", cerr)
@@ -724,6 +732,7 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 type Queries struct {
 	db                                DBTX
 	tx                                *sql.Tx
+	appendLcmContextItemStmt          *sql.Stmt
 	clearSessionSummaryMessageIDStmt  *sql.Stmt
 	createFileStmt                    *sql.Stmt
 	createMessageStmt                 *sql.Stmt
@@ -812,6 +821,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
 		db:                                tx,
 		tx:                                tx,
+		appendLcmContextItemStmt:          q.appendLcmContextItemStmt,
 		clearSessionSummaryMessageIDStmt:  q.clearSessionSummaryMessageIDStmt,
 		createFileStmt:                    q.createFileStmt,
 		createMessageStmt:                 q.createMessageStmt,

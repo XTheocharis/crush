@@ -10,6 +10,32 @@ import (
 	"database/sql"
 )
 
+const appendLcmContextItem = `-- name: AppendLcmContextItem :exec
+INSERT INTO lcm_context_items (session_id, position, item_type, message_id, summary_id, token_count)
+VALUES (?, (SELECT COALESCE(MIN(m.position) - 1, -1) FROM lcm_context_items m WHERE m.session_id = ?), ?, ?, ?, ?)
+`
+
+type AppendLcmContextItemParams struct {
+	SessionID   string         `json:"session_id"`
+	SessionID_2 string         `json:"session_id_2"`
+	ItemType    string         `json:"item_type"`
+	MessageID   sql.NullString `json:"message_id"`
+	SummaryID   sql.NullString `json:"summary_id"`
+	TokenCount  int64          `json:"token_count"`
+}
+
+func (q *Queries) AppendLcmContextItem(ctx context.Context, arg AppendLcmContextItemParams) error {
+	_, err := q.exec(ctx, q.appendLcmContextItemStmt, appendLcmContextItem,
+		arg.SessionID,
+		arg.SessionID_2,
+		arg.ItemType,
+		arg.MessageID,
+		arg.SummaryID,
+		arg.TokenCount,
+	)
+	return err
+}
+
 const clearSessionSummaryMessageID = `-- name: ClearSessionSummaryMessageID :exec
 UPDATE sessions SET summary_message_id = NULL WHERE id = ?
 `

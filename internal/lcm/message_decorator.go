@@ -151,9 +151,9 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 	}
 
 	// Step 4: insert a context-item row so the compactor can track this message.
-	ciErr := s.querier.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+	ciErr := s.querier.AppendLcmContextItem(ctx, db.AppendLcmContextItemParams{
 		SessionID:  msg.SessionID,
-		Position:   -1, // will be rewritten by compactor; -1 means "append"
+		SessionID_2: msg.SessionID,
 		ItemType:   "message",
 		MessageID:  sql.NullString{String: msg.ID, Valid: true},
 		TokenCount: tokenCount,

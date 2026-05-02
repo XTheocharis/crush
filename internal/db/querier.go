@@ -9,6 +9,7 @@ import (
 )
 
 type Querier interface {
+	AppendLcmContextItem(ctx context.Context, arg AppendLcmContextItemParams) error
 	ClearSessionSummaryMessageID(ctx context.Context, id string) error
 	CreateFile(ctx context.Context, arg CreateFileParams) (File, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)

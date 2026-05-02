@@ -494,10 +494,11 @@ func BenchmarkManager_GetContextTokenCount(b *testing.B) {
 	for i := range 50 {
 		msgID := fmt.Sprintf("bench-msg-%d", i)
 		_, err := queries.CreateMessage(ctx, db.CreateMessageParams{
-			ID:        msgID,
-			SessionID: sessionID,
-			Role:      "user",
-			Parts:     `[{"type":"text","data":{"text":"bench"}}]`,
+			ID:          msgID,
+			SessionID:   sessionID,
+			SessionID_2: sessionID,
+			Role:        "user",
+			Parts:       `[{"type":"text","data":{"text":"bench"}}]`,
 		})
 		if err != nil {
 			b.Fatal(err)
