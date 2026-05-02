@@ -28,12 +28,14 @@ import (
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/hooks"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/oauth/copilot"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/skills"
 	"golang.org/x/sync/errgroup"
@@ -97,6 +99,14 @@ type coordinator struct {
 	skillTracker *skills.Tracker
 
 	readyWg errgroup.Group
+
+	// Fork fields — wired via CoordinatorOption in Task 4.
+	repoMapSvc           RepoMapService
+	tokenCounterProvider repomap.TokenCounterProvider
+	extraTools           []fantasy.AgentTool
+	postUpdateModels     func(context.Context, Model, []fantasy.AgentTool)
+	systemPromptTokens   int64
+	lcm                  lcm.Manager
 }
 
 func NewCoordinator(

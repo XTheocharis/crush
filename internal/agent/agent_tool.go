@@ -16,7 +16,9 @@ import (
 var agentToolDescription []byte
 
 type AgentParams struct {
-	Prompt string `json:"prompt" description:"The task for the agent to perform"`
+	Prompt         string `json:"prompt" description:"The task for the agent to perform"`
+	DelegatedScope string `json:"delegated_scope,omitempty"`
+	KeptWork       string `json:"kept_work,omitempty"`
 }
 
 const (

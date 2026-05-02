@@ -27,11 +27,13 @@ import (
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/format"
 	"github.com/charmbracelet/crush/internal/history"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/skills"
@@ -59,10 +61,14 @@ type App struct {
 	FileTracker filetracker.Service
 
 	AgentCoordinator agent.Coordinator
+	repoMapOpts      []agent.CoordinatorOption
+	repoMapSvc       *repomap.Service
+	repoMapCtl       *RepoMapController
 
 	LSPManager *lsp.Manager
 
-	config *config.ConfigStore
+	config     *config.ConfigStore
+	lcmManager lcm.Manager
 
 	serviceEventsWG *sync.WaitGroup
 	eventsCtx       context.Context
@@ -87,24 +93,28 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore) (*App, er
 	if cfg.Permissions != nil && cfg.Permissions.AllowedTools != nil {
 		allowedTools = cfg.Permissions.AllowedTools
 	}
+	messages, lcmMgr := initLCM(cfg, q, conn, messages)
 
 	app := &App{
 		Sessions:    sessions,
 		Messages:    messages,
 		History:     files,
 		Permissions: permission.NewPermissionService(store.WorkingDir(), skipPermissionsRequests, allowedTools),
-		FileTracker: filetracker.NewService(q),
+		FileTracker: filetracker.NewService(q, store.WorkingDir()),
 		LSPManager:  lsp.NewManager(store),
 
 		globalCtx: ctx,
 
-		config: store,
+		config:     store,
+		lcmManager: lcmMgr,
 
 		events:             pubsub.NewBroker[tea.Msg](),
 		serviceEventsWG:    &sync.WaitGroup{},
 		tuiWG:              &sync.WaitGroup{},
 		agentNotifications: pubsub.NewBroker[notify.Notification](),
 	}
+
+	app.repoMapOpts = app.initRepoMap(ctx, conn)
 
 	app.setupEvents()
 
@@ -480,6 +490,9 @@ func (app *App) setupEvents() {
 	setupSubscriber(ctx, app.serviceEventsWG, "mcp", mcp.SubscribeEvents, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "lsp", SubscribeLSPEvents, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "skills", skills.SubscribeEvents, app.events)
+	if app.lcmManager != nil {
+		setupSubscriber(ctx, app.serviceEventsWG, "lcm", app.lcmManager.Subscribe, app.events)
+	}
 	cleanupFunc := func(context.Context) error {
 		cancel()
 		app.serviceEventsWG.Wait()
@@ -580,6 +593,11 @@ func (app *App) Shutdown() {
 	// before closing the DB so agents can finish writing their state.
 	if app.AgentCoordinator != nil {
 		app.AgentCoordinator.CancelAll()
+	}
+	if app.repoMapSvc != nil {
+		if err := app.repoMapSvc.Close(); err != nil {
+			slog.Error("Failed to close repo map service", "error", err)
+		}
 	}
 
 	// Now run remaining cleanup tasks in parallel.

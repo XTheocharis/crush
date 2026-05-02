@@ -25,6 +25,8 @@ type Prompt struct {
 	now        func() time.Time
 	platform   string
 	workingDir string
+
+	extraContextFiles []ContextFile
 }
 
 type PromptDat struct {
@@ -222,6 +224,7 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 	for _, contextFiles := range files {
 		data.ContextFiles = append(data.ContextFiles, contextFiles...)
 	}
+	data.ContextFiles = append(data.ContextFiles, p.extraContextFiles...)
 	return data, nil
 }
 

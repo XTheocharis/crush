@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -119,8 +120,10 @@ type sessionAgent struct {
 	isYolo               bool
 	notify               pubsub.Publisher[notify.Notification]
 
-	messageQueue   *csync.Map[string, []SessionAgentCall]
-	activeRequests *csync.Map[string, context.CancelFunc]
+	messageQueue         *csync.Map[string, []SessionAgentCall]
+	activeRequests       *csync.Map[string, context.CancelFunc]
+	prepareStepHooks     *csync.Slice[PrepareStepHook]
+	queueGenerationBySID *csync.Map[string, *atomic.Int64]
 }
 
 type SessionAgentOptions struct {
