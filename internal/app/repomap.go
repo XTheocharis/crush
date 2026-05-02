@@ -120,6 +120,10 @@ func IsRepoMapResetCommand(commandID string) bool {
 	return strings.TrimSpace(commandID) == "project:map-reset"
 }
 
+func (app *App) IsRepoMapEnabled() bool {
+	return app != nil && app.repoMapCtl != nil
+}
+
 func (app *App) RunRepoMapControl(ctx context.Context, commandID, sessionID string) (bool, string, error) {
 	switch strings.TrimSpace(commandID) {
 	case "project:map-refresh":

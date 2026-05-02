@@ -365,6 +365,16 @@ func (w *AppWorkspace) DisableDockerMCP() error {
 	return w.store.DisableDockerMCP()
 }
 
+// -- RepoMap --
+
+func (w *AppWorkspace) RunRepoMapControl(ctx context.Context, commandID, sessionID string) (bool, string, error) {
+	return w.app.RunRepoMapControl(ctx, commandID, sessionID)
+}
+
+func (w *AppWorkspace) IsRepoMapEnabled() bool {
+	return w.app.IsRepoMapEnabled()
+}
+
 // -- Lifecycle --
 
 func (w *AppWorkspace) Subscribe(program *tea.Program) {

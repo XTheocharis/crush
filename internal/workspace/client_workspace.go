@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -538,6 +539,14 @@ func (w *ClientWorkspace) DisableDockerMCP() error {
 }
 
 // -- Lifecycle --
+
+func (w *ClientWorkspace) RunRepoMapControl(_ context.Context, _, _ string) (bool, string, error) {
+	return true, "", errors.New("repo map operations are not supported in client mode")
+}
+
+func (w *ClientWorkspace) IsRepoMapEnabled() bool {
+	return false
+}
 
 func (w *ClientWorkspace) Subscribe(program *tea.Program) {
 	defer log.RecoverPanic("ClientWorkspace.Subscribe", func() {

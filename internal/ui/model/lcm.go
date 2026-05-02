@@ -86,8 +86,8 @@ func (m *UI) compactionPill() string {
 
 	t := m.com.Styles
 	elapsed := time.Since(m.lcmCompactingStart).Seconds()
-	label := t.Base.Render("⟳ Compacting")
-	duration := t.Muted.Render(fmt.Sprintf("(%.0fs)", elapsed))
+	label := t.Pills.Base.Render("⟳ Compacting")
+	duration := t.Pills.Base.Render(fmt.Sprintf("(%.0fs)", elapsed))
 	content := fmt.Sprintf("%s %s", label, duration)
 
 	return pillStyle(false, false, t).Render(content)
