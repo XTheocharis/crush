@@ -471,6 +471,11 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		}
 	}
 	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
+
+	if c.Options.RepoMap == nil {
+		defaults := DefaultRepoMapOptions()
+		c.Options.RepoMap = &defaults
+	}
 }
 
 // applyLSPDefaults applies default values from powernap to LSP configurations
