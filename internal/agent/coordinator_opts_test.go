@@ -204,7 +204,7 @@ func TestBuildToolsMapRefreshWiresRepoMapService(t *testing.T) {
 		repoMapSvc:  svc,
 	}
 
-	coderTools, err := c.buildTools(t.Context(), cfg.Config().Agents[config.AgentCoder])
+	coderTools, err := c.buildTools(t.Context(), cfg.Config().Agents[config.AgentCoder], false)
 	require.NoError(t, err)
 
 	var mapRefresh fantasy.AgentTool

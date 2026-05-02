@@ -46,7 +46,7 @@ func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
 		filetracker: *env.filetracker,
 	}
 
-	coderTools, err := cDisabled.buildTools(t.Context(), cfgDisabled.Config().Agents[config.AgentCoder])
+	coderTools, err := cDisabled.buildTools(t.Context(), cfgDisabled.Config().Agents[config.AgentCoder], false)
 	require.NoError(t, err)
 	require.NotContains(t, toolNames(coderTools), tools.MapRefreshToolName)
 
@@ -64,11 +64,11 @@ func TestBuildToolsVisibilityAndAllowlist(t *testing.T) {
 		filetracker: *env.filetracker,
 	}
 
-	coderTools, err = cEnabled.buildTools(t.Context(), cfgEnabled.Config().Agents[config.AgentCoder])
+	coderTools, err = cEnabled.buildTools(t.Context(), cfgEnabled.Config().Agents[config.AgentCoder], false)
 	require.NoError(t, err)
 	require.Contains(t, toolNames(coderTools), tools.MapRefreshToolName)
 
-	taskTools, err := cEnabled.buildTools(t.Context(), cfgEnabled.Config().Agents[config.AgentTask])
+	taskTools, err := cEnabled.buildTools(t.Context(), cfgEnabled.Config().Agents[config.AgentTask], false)
 	require.NoError(t, err)
 	require.NotContains(t, toolNames(taskTools), tools.MapRefreshToolName)
 	require.NotContains(t, toolNames(taskTools), "map_reset")

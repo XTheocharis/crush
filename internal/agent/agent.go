@@ -39,6 +39,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
@@ -89,6 +90,7 @@ type SessionAgent interface {
 	SetModels(large Model, small Model)
 	SetTools(tools []fantasy.AgentTool)
 	SetSystemPrompt(systemPrompt string)
+	SetPrepareStepHooks(hooks []PrepareStepHook)
 	Cancel(sessionID string)
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
@@ -113,6 +115,7 @@ type sessionAgent struct {
 	systemPrompt       *csync.Value[string]
 	tools              *csync.Slice[fantasy.AgentTool]
 
+	lcmManager           lcm.Manager
 	isSubAgent           bool
 	sessions             session.Service
 	messages             message.Service
@@ -122,8 +125,8 @@ type sessionAgent struct {
 
 	messageQueue         *csync.Map[string, []SessionAgentCall]
 	activeRequests       *csync.Map[string, context.CancelFunc]
-	prepareStepHooks     *csync.Slice[PrepareStepHook]
 	queueGenerationBySID *csync.Map[string, *atomic.Int64]
+	prepareStepHooks     *csync.Slice[PrepareStepHook]
 }
 
 type SessionAgentOptions struct {
@@ -131,6 +134,7 @@ type SessionAgentOptions struct {
 	SmallModel           Model
 	SystemPromptPrefix   string
 	SystemPrompt         string
+	LCMManager           lcm.Manager
 	IsSubAgent           bool
 	DisableAutoSummarize bool
 	IsYolo               bool
@@ -148,6 +152,7 @@ func NewSessionAgent(
 		smallModel:           csync.NewValue(opts.SmallModel),
 		systemPromptPrefix:   csync.NewValue(opts.SystemPromptPrefix),
 		systemPrompt:         csync.NewValue(opts.SystemPrompt),
+		lcmManager:           opts.LCMManager,
 		isSubAgent:           opts.IsSubAgent,
 		sessions:             opts.Sessions,
 		messages:             opts.Messages,
@@ -157,6 +162,8 @@ func NewSessionAgent(
 		notify:               opts.Notify,
 		messageQueue:         csync.NewMap[string, []SessionAgentCall](),
 		activeRequests:       csync.NewMap[string, context.CancelFunc](),
+		queueGenerationBySID: csync.NewMap[string, *atomic.Int64](),
+		prepareStepHooks:     csync.NewSlice[PrepareStepHook](),
 	}
 }
 

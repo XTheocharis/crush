@@ -543,6 +543,8 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		app.FileTracker,
 		app.LSPManager,
 		app.agentNotifications,
+		app.lcmManager,
+		app.repoMapOpts...,
 	)
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)
