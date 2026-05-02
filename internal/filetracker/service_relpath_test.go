@@ -140,18 +140,32 @@ func TestService_PathRelativizationSiblingDirs(t *testing.T) {
 }
 
 func TestService_ListReadFiles(t *testing.T) {
-	env := setupTest(t)
+	t.Parallel()
+
+	workingDir := t.TempDir()
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
 
 	sessionID := "list-session"
-	env.createSession(t, sessionID)
+	_, err = q.CreateSession(t.Context(), db.CreateSessionParams{
+		ID:    sessionID,
+		Title: "List Files Session",
+	})
+	require.NoError(t, err)
 
-	file1 := filepath.Join(env.workingDir, "file1.go")
-	file2 := filepath.Join(env.workingDir, "file2.go")
+	svc := NewService(q, workingDir)
 
-	env.svc.RecordRead(env.ctx, sessionID, file1)
-	env.svc.RecordRead(env.ctx, sessionID, file2)
+	file1 := filepath.Join(workingDir, "file1.go")
+	file2 := filepath.Join(workingDir, "file2.go")
 
-	listed, err := env.svc.ListReadFiles(env.ctx, sessionID)
+	svc.RecordRead(t.Context(), sessionID, file1)
+	svc.RecordRead(t.Context(), sessionID, file2)
+
+	listed, err := svc.ListReadFiles(t.Context(), sessionID)
 	require.NoError(t, err)
 	require.Len(t, listed, 2, "should list all read files")
 
