@@ -79,6 +79,15 @@ type Manager interface {
 	// GetSummaryMentionedPaths extracts file paths mentioned in LCM
 	// summaries for a session. Used as weak ranking hints for the repo map.
 	GetSummaryMentionedPaths(ctx context.Context, sessionID string) ([]string, error)
+
+	// SetActualPromptTokens records the provider-reported prompt token count
+	// after an LLM call. Resets the pending-item delta. Used by the agent
+	// to feed ground-truth token counts into LCM threshold checks.
+	SetActualPromptTokens(sessionID string, tokens int64)
+
+	// AddPendingItemTokens accumulates estimated tokens for messages created
+	// since the last provider report. Added by messageDecorator on each Create.
+	AddPendingItemTokens(sessionID string, tokens int64)
 }
 
 type compactionManager struct {
@@ -93,12 +102,19 @@ type compactionManager struct {
 	budgetCache   sync.Map // sessionID -> Budget
 	repoMapTokens sync.Map // sessionID -> int64
 	sessionMu     sync.Map // sessionID -> *sync.Mutex (per-session compaction lock)
+	providerState sync.Map // sessionID -> *providerTokenState
 
 	defaultContextWindow      int64
 	defaultCutoff             float64
 	defaultModelOutputLimit   int64
 	defaultSystemPromptTokens int64
 	defaultToolTokens         int64
+}
+
+type providerTokenState struct {
+	mu                sync.Mutex
+	promptTokens      int64
+	pendingItemTokens int64
 }
 
 // sessionMutex returns the per-session mutex, creating it lazily.
@@ -280,6 +296,30 @@ func (m *compactionManager) SetOverheadTokens(systemPromptTokens, toolTokens int
 // SetLLMClient updates the LLM client used for LCM summary generation.
 func (m *compactionManager) SetLLMClient(llm LLMClient) {
 	m.summarizer.SetLLM(llm)
+}
+
+func (m *compactionManager) getOrCreateProviderState(sessionID string) *providerTokenState {
+	actual, _ := m.providerState.LoadOrStore(sessionID, &providerTokenState{})
+	return actual.(*providerTokenState)
+}
+
+// SetActualPromptTokens records the provider-reported prompt token count
+// after an LLM call and resets the pending-item delta.
+func (m *compactionManager) SetActualPromptTokens(sessionID string, tokens int64) {
+	state := m.getOrCreateProviderState(sessionID)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.promptTokens = tokens
+	state.pendingItemTokens = 0
+}
+
+// AddPendingItemTokens accumulates estimated tokens for messages created
+// since the last provider report.
+func (m *compactionManager) AddPendingItemTokens(sessionID string, tokens int64) {
+	state := m.getOrCreateProviderState(sessionID)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.pendingItemTokens += tokens
 }
 
 var filePathPattern = regexp.MustCompile(
@@ -472,7 +512,19 @@ func (m *compactionManager) GetBudget(ctx context.Context, sessionID string) (Bu
 }
 
 // GetContextTokenCount returns the current token count for a session's context.
+// When provider-reported prompt tokens are available (from SetActualPromptTokens),
+// returns those plus any pending-item tokens added since the last provider report.
+// Falls back to the lcm_context_items sum otherwise.
 func (m *compactionManager) GetContextTokenCount(ctx context.Context, sessionID string) (int64, error) {
+	if state, ok := m.providerState.Load(sessionID); ok {
+		s := state.(*providerTokenState)
+		s.mu.Lock()
+		total := s.promptTokens + s.pendingItemTokens
+		s.mu.Unlock()
+		if total > 0 {
+			return total, nil
+		}
+	}
 	return m.store.GetContextTokenCount(ctx, sessionID)
 }
 

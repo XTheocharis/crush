@@ -1115,6 +1115,10 @@ func (a *sessionAgent) updateSessionUsage(model Model, session *session.Session,
 
 	session.CompletionTokens = usage.OutputTokens
 	session.PromptTokens = usage.InputTokens + usage.CacheReadTokens
+
+	if a.lcmManager != nil {
+		a.lcmManager.SetActualPromptTokens(session.ID, session.PromptTokens)
+	}
 }
 
 func (a *sessionAgent) Cancel(sessionID string) {

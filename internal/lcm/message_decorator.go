@@ -165,6 +165,13 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 		)
 	}
 
+	// Step 4b: accumulate estimated tokens as a pending delta so that
+	// threshold checks include the new message on top of the last
+	// provider-reported prompt tokens.
+	if s.mgr != nil {
+		s.mgr.AddPendingItemTokens(msg.SessionID, tokenCount)
+	}
+
 	// Step 5: schedule async soft-threshold compaction.
 	if s.mgr != nil {
 		go func() {
