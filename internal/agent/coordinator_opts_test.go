@@ -47,6 +47,8 @@ func (f *fakeRepoMapService) ShouldInject(_ string, _ repomap.RunInjectionKey) b
 	return f.shouldInject
 }
 
+func (f *fakeRepoMapService) ClearInjection(_ string, _ repomap.RunInjectionKey) {}
+
 func (f *fakeRepoMapService) RefreshAsync(sessionID string, opts repomap.GenerateOpts) {
 	f.refreshAsyncCalls++
 	f.lastSessionID = sessionID

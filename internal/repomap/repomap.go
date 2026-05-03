@@ -483,6 +483,23 @@ func (s *Service) ShouldInject(sessionID string, runKey RunInjectionKey) bool {
 	return true
 }
 
+// ClearInjection removes the injection record for the given run key so that
+// the next prepare-step will re-evaluate injection. Used by map_refresh to
+// ensure a freshly generated map gets re-injected within the same run.
+func (s *Service) ClearInjection(sessionID string, runKey RunInjectionKey) {
+	if s == nil || sessionID == "" || runKey.RootUserMessageID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if runs, ok := s.injectedBySessionRun[sessionID]; ok {
+		delete(runs, runKey)
+		if len(runs) == 0 {
+			delete(s.injectedBySessionRun, sessionID)
+		}
+	}
+}
+
 // RefreshAsync schedules async refresh.
 func (s *Service) RefreshAsync(sessionID string, opts GenerateOpts) {
 	if s == nil || s.isClosed() {

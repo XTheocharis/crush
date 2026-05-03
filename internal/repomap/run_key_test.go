@@ -88,3 +88,47 @@ func TestShouldInjectGuardConcurrentSingleWinner(t *testing.T) {
 
 	require.EqualValues(t, 1, trueCount.Load())
 }
+
+func TestClearInjectionReAllowsInjection(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil, nil, ".", context.Background())
+	runKey := RunInjectionKey{RootUserMessageID: "root-user-msg", QueueGeneration: 0}
+
+	require.True(t, svc.ShouldInject("session-1", runKey))
+	require.False(t, svc.ShouldInject("session-1", runKey))
+
+	svc.ClearInjection("session-1", runKey)
+	require.True(t, svc.ShouldInject("session-1", runKey))
+	require.False(t, svc.ShouldInject("session-1", runKey))
+}
+
+func TestClearInjectionIsScopedToRunKey(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil, nil, ".", context.Background())
+	first := RunInjectionKey{RootUserMessageID: "root-user-msg", QueueGeneration: 0}
+	second := RunInjectionKey{RootUserMessageID: "root-user-msg", QueueGeneration: 1}
+
+	require.True(t, svc.ShouldInject("session-1", first))
+	require.True(t, svc.ShouldInject("session-1", second))
+
+	svc.ClearInjection("session-1", first)
+	require.True(t, svc.ShouldInject("session-1", first))
+	require.False(t, svc.ShouldInject("session-1", second))
+}
+
+func TestClearInjectionNoopOnEmptyInputs(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil, nil, ".", context.Background())
+	runKey := RunInjectionKey{RootUserMessageID: "root-user-msg", QueueGeneration: 0}
+
+	require.True(t, svc.ShouldInject("session-1", runKey))
+
+	svc.ClearInjection("", runKey)
+	svc.ClearInjection("session-1", RunInjectionKey{})
+	svc.ClearInjection("nonexistent", RunInjectionKey{RootUserMessageID: "other", QueueGeneration: 0})
+
+	require.False(t, svc.ShouldInject("session-1", runKey))
+}

@@ -28,6 +28,7 @@ type RepoMapService interface {
 	LastTokenCount(sessionID string) int
 	SessionReadOnlyFiles(ctx context.Context, sessionID string) []string
 	ShouldInject(sessionID string, runKey repomap.RunInjectionKey) bool
+	ClearInjection(sessionID string, runKey repomap.RunInjectionKey)
 	RefreshAsync(sessionID string, opts repomap.GenerateOpts)
 	Refresh(ctx context.Context, sessionID string, opts repomap.GenerateOpts) (string, int, error)
 	Reset(ctx context.Context, sessionID string) error
@@ -328,51 +329,61 @@ func (c *coordinator) sessionChatFiles(ctx context.Context, sessionID string) []
 		return nil
 	}
 
-	var readPaths []string
-	var err error
+	sessionIDs := []string{sessionID}
 
-	if c.lcm != nil {
-		if rfr, ok := c.filetracker.(recentFileReader); ok {
-			// When LCM is active, only exclude files read recently.
-			// Files whose content has been compacted away should
-			// reappear in the repo map.
-			since := time.Now().Add(-30 * time.Minute).Unix()
-			readPaths, err = rfr.ListRecentReadFiles(ctx, sessionID, since)
-		} else {
-			readPaths, err = c.filetracker.ListReadFiles(ctx, sessionID)
+	// Sub-agent sessions (parent_session_id set) should also include
+	// files tracked by the parent so that edits made in the parent
+	// session boost repo-map ranking in the child.
+	if c.sessions != nil {
+		if sess, err := c.sessions.Get(ctx, sessionID); err == nil && sess.ParentSessionID != "" {
+			sessionIDs = append(sessionIDs, sess.ParentSessionID)
 		}
-	} else {
-		readPaths, err = c.filetracker.ListReadFiles(ctx, sessionID)
 	}
-	if err != nil {
-		return nil
-	}
+
 	wd := ""
 	if c.cfg != nil {
 		wd = c.cfg.WorkingDir()
 	}
-	files := make([]string, 0, len(readPaths))
-	for _, p := range readPaths {
-		rel := p
-		if wd != "" {
-			if pathRel, relErr := filepath.Rel(wd, p); relErr == nil {
-				rel = pathRel
-			}
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == "." || strings.HasPrefix(rel, "../") {
+
+	var allFiles []string
+	for _, sid := range sessionIDs {
+		readPaths, err := c.listSessionReadFiles(ctx, sid)
+		if err != nil {
 			continue
 		}
-		files = append(files, rel)
+		for _, p := range readPaths {
+			rel := p
+			if wd != "" {
+				if pathRel, relErr := filepath.Rel(wd, p); relErr == nil {
+					rel = pathRel
+				}
+			}
+			rel = filepath.ToSlash(rel)
+			if rel == "." || strings.HasPrefix(rel, "../") {
+				continue
+			}
+			allFiles = append(allFiles, rel)
+		}
 	}
-	sort.Strings(files)
-	uniq := files[:0]
-	for _, p := range files {
+
+	sort.Strings(allFiles)
+	uniq := allFiles[:0]
+	for _, p := range allFiles {
 		if len(uniq) == 0 || uniq[len(uniq)-1] != p {
 			uniq = append(uniq, p)
 		}
 	}
 	return uniq
+}
+
+func (c *coordinator) listSessionReadFiles(ctx context.Context, sessionID string) ([]string, error) {
+	if c.lcm != nil {
+		if rfr, ok := c.filetracker.(recentFileReader); ok {
+			since := time.Now().Add(-30 * time.Minute).Unix()
+			return rfr.ListRecentReadFiles(ctx, sessionID, since)
+		}
+	}
+	return c.filetracker.ListReadFiles(ctx, sessionID)
 }
 
 func unionRepoPaths(a, b []string) []string {
@@ -455,12 +466,20 @@ func buildMapRefreshFns(svc RepoMapService, profile repoMapProfileOptions) (tool
 	}
 	syncFn := func(ctx context.Context, sessionID string) error {
 		opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, profile, true)
-		_, _, err := svc.Refresh(ctx, sessionID, opts)
-		return err
+		if _, _, err := svc.Refresh(ctx, sessionID, opts); err != nil {
+			return err
+		}
+		if runKey, ok := repomap.RunInjectionKeyFromContext(ctx); ok {
+			svc.ClearInjection(sessionID, runKey)
+		}
+		return nil
 	}
 	asyncFn := func(ctx context.Context, sessionID string) error {
 		opts := buildRepoMapGenerateOpts(sessionID, nil, "", nil, nil, nil, profile, true)
 		svc.RefreshAsync(sessionID, opts)
+		if runKey, ok := repomap.RunInjectionKeyFromContext(ctx); ok {
+			svc.ClearInjection(sessionID, runKey)
+		}
 		return nil
 	}
 	return syncFn, asyncFn
