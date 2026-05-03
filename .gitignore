@@ -51,3 +51,10 @@ manpages/
 completions/crush.*sh
 .prettierignore
 .task
+
+# Agent tooling and orchestration
+.claude/
+.opencode/
+.serena/
+.sisyphus/
+profiles/

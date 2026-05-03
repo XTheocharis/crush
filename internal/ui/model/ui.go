@@ -35,6 +35,7 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -267,6 +268,11 @@ type UI struct {
 	todoSpinner    spinner.Model
 	todoIsSpinning bool
 
+	// LCM compaction state
+	lcmCompacting      bool
+	lcmCompactingStart time.Time
+	lcmSpinner         spinner.Model
+
 	// mouse highlighting related state
 	lastClickTime time.Time
 
@@ -310,6 +316,11 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		spinner.WithStyle(com.Styles.Pills.TodoSpinner),
 	)
 
+	lcmSpinner := spinner.New(
+		spinner.WithSpinner(spinner.MiniDot),
+		spinner.WithStyle(com.Styles.Pills.TodoSpinner),
+	)
+
 	// Attachments component
 	attachments := attachments.New(
 		attachments.NewRenderer(
@@ -337,6 +348,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		completions:         comp,
 		attachments:         attachments,
 		todoSpinner:         todoSpinner,
+		lcmSpinner:          lcmSpinner,
 		lspStates:           make(map[string]app.LSPClientInfo),
 		mcpStates:           make(map[string]mcp.ClientInfo),
 		notifyBackend:       notification.NoopBackend{},
@@ -670,6 +682,23 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pubsub.Event[permission.PermissionNotification]:
 		m.handlePermissionNotification(msg.Payload)
+	case CompactionStartedMsg:
+		cmds = append(cmds, m.handleCompactionStarted())
+	case CompactionCompletedMsg:
+		m.handleCompactionFinished()
+	case CompactionFailedMsg:
+		m.handleCompactionFinished()
+	case pubsub.Event[lcm.CompactionEvent]:
+		if m.hasSession() && m.session.ID == msg.Payload.SessionID {
+			switch msg.Payload.Type {
+			case lcm.CompactionStarted:
+				cmds = append(cmds, m.handleCompactionStarted())
+			case lcm.CompactionCompleted:
+				m.handleCompactionFinished()
+			case lcm.CompactionFailed:
+				m.handleCompactionFinished()
+			}
+		}
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
 	case tea.TerminalVersionMsg:
@@ -847,6 +876,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.renderPills()
 				cmds = append(cmds, cmd)
 			}
+		}
+		if cmd := m.updateLCMSpinner(msg); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 
 	case tea.KeyPressMsg:

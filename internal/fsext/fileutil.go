@@ -1,6 +1,7 @@
 package fsext
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -94,7 +95,18 @@ func GlobGitignoreAware(pattern string, cwd string, limit int) ([]string, bool, 
 	return globWithDoubleStar(pattern, cwd, limit, true)
 }
 
+// GlobGitignoreAwareCtx is like GlobGitignoreAware but respects context
+// cancellation. The walk callback checks ctx.Done() on each entry and returns
+// an error to abort the walk when the context is cancelled.
+func GlobGitignoreAwareCtx(ctx context.Context, pattern, cwd string, limit int) ([]string, bool, error) {
+	return globWithDoubleStarCtx(ctx, pattern, cwd, limit, true)
+}
+
 func globWithDoubleStar(pattern, searchPath string, limit int, gitignore bool) ([]string, bool, error) {
+	return globWithDoubleStarCtx(context.Background(), pattern, searchPath, limit, gitignore)
+}
+
+func globWithDoubleStarCtx(ctx context.Context, pattern, searchPath string, limit int, gitignore bool) ([]string, bool, error) {
 	// Normalize pattern to forward slashes on Windows so their config can use
 	// backslashes
 	pattern = filepath.ToSlash(pattern)
@@ -108,7 +120,13 @@ func globWithDoubleStar(pattern, searchPath string, limit int, gitignore bool) (
 	}
 	err := fastwalk.Walk(&conf, searchPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // Skip files we can't access
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
 
 		isDir := d.IsDir()
@@ -127,10 +145,8 @@ func globWithDoubleStar(pattern, searchPath string, limit int, gitignore bool) (
 			relPath = path
 		}
 
-		// Normalize separators to forward slashes
 		relPath = filepath.ToSlash(relPath)
 
-		// Check if path matches the pattern
 		matched, err := doublestar.Match(pattern, relPath)
 		if err != nil || !matched {
 			return nil
@@ -142,13 +158,17 @@ func globWithDoubleStar(pattern, searchPath string, limit int, gitignore bool) (
 		}
 
 		found.Append(FileInfo{Path: path, ModTime: info.ModTime()})
-		if limit > 0 && found.Len() >= limit*2 { // NOTE: why x2?
+		if limit > 0 && found.Len() >= limit*2 {
 			return filepath.SkipAll
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, filepath.SkipAll) {
+	if err != nil && !errors.Is(err, filepath.SkipAll) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return nil, false, fmt.Errorf("fastwalk error: %w", err)
+	}
+
+	if ctx.Err() != nil {
+		return nil, false, ctx.Err()
 	}
 
 	matches := slices.SortedFunc(found.Seq(), func(a, b FileInfo) int {

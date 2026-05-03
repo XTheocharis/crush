@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -230,20 +231,31 @@ func deleteContent(edit editContext, filePath, oldString string, replaceAll bool
 	if replaceAll {
 		newContent = strings.ReplaceAll(oldContent, oldString, "")
 		if newContent == oldContent {
-			return oldStringNotFoundErr, nil
+			var err error
+			newContent, err = fuzzyReplace(oldContent, oldString, "", true)
+			if err != nil {
+				return oldStringNotFoundErr, nil
+			}
 		}
 	} else {
 		index := strings.Index(oldContent, oldString)
 		if index == -1 {
-			return oldStringNotFoundErr, nil
-		}
+			var err error
+			newContent, err = fuzzyReplace(oldContent, oldString, "", false)
+			if err != nil {
+				if errors.Is(err, errFuzzyMultipleHits) {
+					return oldStringMultipleMatchesErr, nil
+				}
+				return oldStringNotFoundErr, nil
+			}
+		} else {
+			lastIndex := strings.LastIndex(oldContent, oldString)
+			if index != lastIndex {
+				return fantasy.NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true"), nil
+			}
 
-		lastIndex := strings.LastIndex(oldContent, oldString)
-		if index != lastIndex {
-			return fantasy.NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true"), nil
+			newContent = oldContent[:index] + oldContent[index+len(oldString):]
 		}
-
-		newContent = oldContent[:index] + oldContent[index+len(oldString):]
 	}
 
 	_, additions, removals := diff.GenerateDiff(
@@ -360,18 +372,32 @@ func replaceContent(edit editContext, filePath, oldString, newString string, rep
 
 	if replaceAll {
 		newContent = strings.ReplaceAll(oldContent, oldString, newString)
+		if newContent == oldContent {
+			var err error
+			newContent, err = fuzzyReplace(oldContent, oldString, newString, true)
+			if err != nil {
+				return oldStringNotFoundErr, nil
+			}
+		}
 	} else {
 		index := strings.Index(oldContent, oldString)
 		if index == -1 {
-			return oldStringNotFoundErr, nil
-		}
+			var err error
+			newContent, err = fuzzyReplace(oldContent, oldString, newString, false)
+			if err != nil {
+				if errors.Is(err, errFuzzyMultipleHits) {
+					return oldStringMultipleMatchesErr, nil
+				}
+				return oldStringNotFoundErr, nil
+			}
+		} else {
+			lastIndex := strings.LastIndex(oldContent, oldString)
+			if index != lastIndex {
+				return oldStringMultipleMatchesErr, nil
+			}
 
-		lastIndex := strings.LastIndex(oldContent, oldString)
-		if index != lastIndex {
-			return oldStringMultipleMatchesErr, nil
+			newContent = oldContent[:index] + newString + oldContent[index+len(oldString):]
 		}
-
-		newContent = oldContent[:index] + newString + oldContent[index+len(oldString):]
 	}
 
 	if oldContent == newContent {

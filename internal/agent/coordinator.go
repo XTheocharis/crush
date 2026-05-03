@@ -28,12 +28,14 @@ import (
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/hooks"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/oauth/copilot"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/skills"
 	"golang.org/x/sync/errgroup"
@@ -97,6 +99,14 @@ type coordinator struct {
 	skillTracker *skills.Tracker
 
 	readyWg errgroup.Group
+
+	// Fork fields — wired via CoordinatorOption in Task 4.
+	repoMapSvc           RepoMapService
+	tokenCounterProvider repomap.TokenCounterProvider
+	extraTools           []fantasy.AgentTool
+	postUpdateModels     func(context.Context, Model, []fantasy.AgentTool)
+	systemPromptTokens   int64
+	lcm                  lcm.Manager
 }
 
 func NewCoordinator(
@@ -109,6 +119,8 @@ func NewCoordinator(
 	filetracker filetracker.Service,
 	lspManager *lsp.Manager,
 	notify pubsub.Publisher[notify.Notification],
+	lcmMgr lcm.Manager,
+	opts ...CoordinatorOption,
 ) (Coordinator, error) {
 	// Discover skills once at session start.
 	allSkills, activeSkills := discoverSkills(cfg)
@@ -127,6 +139,19 @@ func NewCoordinator(
 		allSkills:    allSkills,
 		activeSkills: activeSkills,
 		skillTracker: skillTracker,
+		lcm:          lcmMgr,
+	}
+
+	// Wire LCM tools before applying user options so that options can
+	// still override if needed.
+	if lcmMgr != nil {
+		c.extraTools = lcm.ExtraAgentTools(lcmMgr)
+	}
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(c)
+		}
 	}
 
 	agentCfg, ok := cfg.Config().Agents[config.AgentCoder]
@@ -135,7 +160,11 @@ func NewCoordinator(
 	}
 
 	// TODO: make this dynamic when we support multiple agents
-	prompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	promptOpts := []prompt.Option{prompt.WithWorkingDir(c.cfg.WorkingDir())}
+	if lcmMgr != nil {
+		promptOpts = append(promptOpts, prompt.WithExtraContextFiles(lcmContextFiles(lcmMgr)))
+	}
+	prompt, err := coderPrompt(promptOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +175,14 @@ func NewCoordinator(
 	}
 	c.currentAgent = agent
 	c.agents[config.AgentCoder] = agent
+
+	if c.lcm != nil {
+		c.lcm.SetDefaultContextWindow(agent.Model().CatwalkCfg.ContextWindow)
+		c.lcm.SetModelOutputLimit(agent.Model().CatwalkCfg.DefaultMaxTokens)
+		if err := c.syncLCMSummarizerClient(ctx); err != nil {
+			return nil, err
+		}
+	}
 	return c, nil
 }
 
@@ -193,6 +230,7 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 		}
 	}
 
+	lcm.CompactIfOverHardLimit(ctx, c.lcm, sessionID)
 	run := func() (*fantasy.AgentResult, error) {
 		return c.currentAgent.Run(ctx, SessionAgentCall{
 			SessionID:        sessionID,
@@ -425,8 +463,9 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 		SmallModel:           small,
 		SystemPromptPrefix:   largeProviderCfg.SystemPromptPrefix,
 		SystemPrompt:         "",
+		LCMManager:           c.lcm,
 		IsSubAgent:           isSubAgent,
-		DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
+		DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize || c.lcm != nil,
 		IsYolo:               c.permissions.SkipRequests(),
 		Sessions:             c.sessions,
 		Messages:             c.messages,
@@ -434,12 +473,19 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 		Notify:               c.notify,
 	})
 
+	if !isSubAgent {
+		if hook := c.buildRepoMapHook(); hook != nil {
+			result.SetPrepareStepHooks([]PrepareStepHook{hook})
+		}
+	}
+
 	c.readyWg.Go(func() error {
 		systemPrompt, err := prompt.Build(ctx, large.Model.Provider(), large.Model.Model(), c.cfg)
 		if err != nil {
 			return err
 		}
 		result.SetSystemPrompt(systemPrompt)
+		c.systemPromptTokens = lcm.EstimateTokens(systemPrompt)
 		return nil
 	})
 
@@ -481,6 +527,8 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		}
 	}
 
+	mapRefreshSync, mapRefreshAsync := buildMapRefreshFns(c.repoMapSvc, c.repoMapProfile())
+
 	logFile := filepath.Join(c.cfg.Config().Options.DataDirectory, "logs", "crush.log")
 
 	// Build hook runner if PreToolUse hooks are configured.
@@ -506,7 +554,11 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		tools.NewTodosTool(c.sessions),
 		tools.NewViewTool(c.lspManager, c.permissions, c.filetracker, c.skillTracker, c.cfg.WorkingDir(), c.cfg.Config().Options.SkillsPaths...),
 		tools.NewWriteTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
+		tools.NewMapRefreshTool(mapRefreshSync, mapRefreshAsync),
 	)
+
+	// Append extra tools (e.g., LCM tools).
+	allTools = append(allTools, c.extraTools...)
 
 	// Add LSP tools if user has configured LSPs or auto_lsp is enabled (nil or true).
 	if len(c.cfg.Config().LSP) > 0 || c.cfg.Config().Options.AutoLSP == nil || *c.cfg.Config().Options.AutoLSP {
@@ -892,6 +944,8 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 	}
 }
 
+// isExactoSupported returns whether the model supports OpenRouter's exacto
+// routing.
 func isExactoSupported(modelID string) bool {
 	supportedModels := []string{
 		"moonshotai/kimi-k2-0905",
@@ -901,6 +955,118 @@ func isExactoSupported(modelID string) bool {
 		"qwen/qwen3-coder",
 	}
 	return slices.Contains(supportedModels, modelID)
+}
+
+func (c *coordinator) buildResolvedModel(
+	ctx context.Context,
+	modelCfg config.SelectedModel,
+	providerCfg config.ProviderConfig,
+	catwalkModel catwalk.Model,
+	isSubAgent bool,
+) (Model, error) {
+	provider, err := c.buildProvider(providerCfg, modelCfg, isSubAgent)
+	if err != nil {
+		return Model{}, err
+	}
+
+	modelID := modelCfg.Model
+	if modelCfg.Provider == openrouter.Name && isExactoSupported(modelID) {
+		modelID += ":exacto"
+	}
+
+	languageModel, err := provider.LanguageModel(ctx, modelID)
+	if err != nil {
+		return Model{}, err
+	}
+
+	return Model{
+		Model:      languageModel,
+		CatwalkCfg: catwalkModel,
+		ModelCfg:   modelCfg,
+	}, nil
+}
+
+func (c *coordinator) lcmSummarizerSelection() (config.SelectedModel, config.ProviderConfig, catwalk.Model, error) {
+	cfg := c.cfg.Config()
+	largeModelCfg, ok := cfg.Models[config.SelectedModelTypeLarge]
+	if !ok {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, errLargeModelNotSelected
+	}
+
+	if largeModelCfg.Provider == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("large model provider not configured")
+	}
+	if largeModelCfg.Model == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("large model not configured")
+	}
+
+	largeProviderCfg, ok := cfg.Providers.Get(largeModelCfg.Provider)
+	if !ok {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, errLargeModelProviderNotConfigured
+	}
+
+	largeCatwalkModel := cfg.GetModel(largeModelCfg.Provider, largeModelCfg.Model)
+	if largeCatwalkModel == nil {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, errLargeModelNotFound
+	}
+
+	selectedModelCfg := largeModelCfg
+	selectedProviderCfg := largeProviderCfg
+	selectedCatwalkModel := *largeCatwalkModel
+
+	if cfg.Options == nil || cfg.Options.LCM == nil || cfg.Options.LCM.SummarizerModel == nil {
+		return selectedModelCfg, selectedProviderCfg, selectedCatwalkModel, nil
+	}
+
+	summarizerModelCfg := *cfg.Options.LCM.SummarizerModel
+	if summarizerModelCfg.Provider == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model provider not configured")
+	}
+	if summarizerModelCfg.Model == "" {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model not configured")
+	}
+
+	summarizerProviderCfg, ok := cfg.Providers.Get(summarizerModelCfg.Provider)
+	if !ok {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model provider %q not configured", summarizerModelCfg.Provider)
+	}
+
+	summarizerCatwalkModel := cfg.GetModel(summarizerModelCfg.Provider, summarizerModelCfg.Model)
+	if summarizerCatwalkModel == nil {
+		return config.SelectedModel{}, config.ProviderConfig{}, catwalk.Model{}, fmt.Errorf("lcm summarizer model %q not found in provider %q config", summarizerModelCfg.Model, summarizerModelCfg.Provider)
+	}
+
+	if summarizerCatwalkModel.ContextWindow < largeCatwalkModel.ContextWindow {
+		slog.Warn(
+			"Ignoring LCM summarizer model with insufficient context window",
+			"provider", summarizerModelCfg.Provider,
+			"model", summarizerModelCfg.Model,
+			"summarizer_context_window", summarizerCatwalkModel.ContextWindow,
+			"large_context_window", largeCatwalkModel.ContextWindow,
+		)
+		return selectedModelCfg, selectedProviderCfg, selectedCatwalkModel, nil
+	}
+
+	return summarizerModelCfg, summarizerProviderCfg, *summarizerCatwalkModel, nil
+}
+
+func (c *coordinator) syncLCMSummarizerClient(ctx context.Context) error {
+	if c.lcm == nil {
+		return nil
+	}
+
+	modelCfg, providerCfg, catwalkModel, err := c.lcmSummarizerSelection()
+	if err != nil {
+		return err
+	}
+
+	model, err := c.buildResolvedModel(ctx, modelCfg, providerCfg, catwalkModel, true)
+	if err != nil {
+		return fmt.Errorf("building lcm summarizer model: %w", err)
+	}
+
+	c.lcm.SetLLMClient(newLCMLLMClient(model, providerCfg))
+	return nil
 }
 
 func (c *coordinator) Cancel(sessionID string) {
@@ -945,6 +1111,20 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 		return err
 	}
 	c.currentAgent.SetTools(tools)
+
+	if c.postUpdateModels != nil {
+		c.postUpdateModels(ctx, large, tools)
+	}
+
+	if c.lcm != nil {
+		if err := c.syncLCMSummarizerClient(ctx); err != nil {
+			return err
+		}
+		c.lcm.SetModelOutputLimit(large.CatwalkCfg.DefaultMaxTokens)
+		if err := c.lcm.UpdateContextWindow(ctx, large.CatwalkCfg.ContextWindow); err != nil {
+			return fmt.Errorf("updating LCM context window: %w", err)
+		}
+	}
 	return nil
 }
 

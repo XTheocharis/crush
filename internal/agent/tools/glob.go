@@ -69,6 +69,10 @@ func NewGlobTool(workingDir string) fantasy.AgentTool {
 }
 
 func globFiles(ctx context.Context, pattern, searchPath string, limit int) ([]string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+
 	cmdRg := getRgCmd(ctx, pattern)
 	if cmdRg != nil {
 		cmdRg.Dir = searchPath
@@ -79,7 +83,7 @@ func globFiles(ctx context.Context, pattern, searchPath string, limit int) ([]st
 		slog.Warn("Ripgrep execution failed, falling back to doublestar", "error", err)
 	}
 
-	return fsext.GlobGitignoreAware(pattern, searchPath, limit)
+	return fsext.GlobGitignoreAwareCtx(ctx, pattern, searchPath, limit)
 }
 
 func runRipgrep(cmd *exec.Cmd, searchRoot string, limit int) ([]string, error) {

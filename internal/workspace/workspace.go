@@ -138,6 +138,10 @@ type Workspace interface {
 	EnableDockerMCP(ctx context.Context) error
 	DisableDockerMCP() error
 
+	// RepoMap operations
+	RunRepoMapControl(ctx context.Context, commandID, sessionID string) (handled bool, statusMsg string, err error)
+	IsRepoMapEnabled() bool
+
 	// Events
 	Subscribe(program *tea.Program)
 	Shutdown()

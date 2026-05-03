@@ -1,0 +1,127 @@
+# Fork-only tasks for LCM, repo-map, tree-sitter, and extended profiling.
+# This branch requires CGO for source builds because tree-sitter is mandatory.
+# Included via flatten in Taskfile.yaml so task names are unchanged.
+
+version: "3"
+
+tasks:
+  build:cgo:
+    desc: Build with explicit CGO_ENABLED (requires CGO)
+    vars:
+      LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - "go build -v {{.LDFLAGS}} ."
+    sources:
+      - ./**/*.go
+      - go.mod
+    generates:
+      - crush{{exeExt}}
+
+  build:all:
+    desc: Regenerate all generated files and build
+    cmds:
+      - task: sqlc
+      - task: hyper
+      - task: schema
+      - task: build
+
+  test:cgo:
+    desc: Run tests with explicit CGO_ENABLED (requires CGO)
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - go test -race -failfast ./... {{.CLI_ARGS}}
+
+  test:parity:
+    desc: Run parity mode tests (parity_mode=true, requires CGO)
+    env:
+      CGO_ENABLED: 1
+      PARITY_MODE: true
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "test:parity requires CGO_ENABLED=1"; exit 1; }
+      - go test -race -failfast ./... -run Parity {{.CLI_ARGS}}
+
+  parity:bundle:
+    desc: Generate and validate local atomic parity sign-off bundle (requires CGO)
+    env:
+      CGO_ENABLED: 1
+      PARITY_MODE: true
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "parity:bundle requires CGO_ENABLED=1"; exit 1; }
+      - go test -failfast ./internal/repomap/... ./internal/lcm/explorer/... -run 'Parity|Conformance|Bundle|Manifest|Gate' -count=1 {{.CLI_ARGS}}
+
+  test:exceed:
+    desc: Run exceed mode tests (parity_mode=false, requires CGO)
+    env:
+      CGO_ENABLED: 1
+      PARITY_MODE: false
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "test:exceed requires CGO_ENABLED=1"; exit 1; }
+      - >
+        bash -lc 'set -uo pipefail; out="$(go test -v -count=1 -race -failfast ./... -run Exceed {{.CLI_ARGS}} 2>&1)"; status=$?; printf "%s\n" "$out"; if [ $status -ne 0 ]; then exit $status; fi; if ! printf "%s\n" "$out" | grep -Eq -- "--- (PASS|FAIL): Test.*Exceed"; then echo "test:exceed executed zero Exceed tests; failing closed"; exit 1; fi'
+
+  profile:start:
+    desc: Start crush with profiling in a detached tmux session
+    cmds:
+      - tmux new-session -d -s crush-profile 'CRUSH_PROFILE=true go run .'
+      - echo "Waiting for pprof endpoint..."
+      - 'until curl -sf http://localhost:6060/debug/pprof/ > /dev/null 2>&1; do sleep 0.5; done'
+      - 'echo "Crush profiling session ready (tmux session: crush-profile)"'
+
+  profile:stop:
+    desc: Stop the crush profiling tmux session
+    cmds:
+      - tmux kill-session -t crush-profile
+
+  profile:capture:
+    desc: Capture CPU (10s), heap, and allocs profiles to ./profiles/
+    cmds:
+      - mkdir -p profiles
+      - echo "Capturing CPU profile (10s)..."
+      - curl -sf -o profiles/cpu.pprof 'http://localhost:6060/debug/pprof/profile?seconds=10'
+      - echo "Capturing heap profile..."
+      - curl -sf -o profiles/heap.pprof 'http://localhost:6060/debug/pprof/heap'
+      - echo "Capturing allocs profile..."
+      - curl -sf -o profiles/allocs.pprof 'http://localhost:6060/debug/pprof/allocs'
+      - echo "Profiles saved to ./profiles/"
+
+  profile:run:
+    desc: Headless full profile run (start dev, capture all profiles, stop)
+    cmds:
+      - task: profile:start
+      - task: profile:capture
+      - task: profile:stop
+
+  tsaudit:
+    desc: Run treesitter dependency check
+    cmds:
+      - go run ./internal/cmd/tsaudit check {{.CLI_ARGS}}
+
+  tsaudit:update:
+    desc: Update treesitter dependency files
+    cmds:
+      - go run ./internal/cmd/tsaudit update {{.CLI_ARGS}}
+
+  tsaudit:verify:
+    desc: Verify treesitter dependencies are up to date
+    cmds:
+      - go run ./internal/cmd/tsaudit verify {{.CLI_ARGS}}
+
+  validate:ts:
+    desc: Validate tree-sitter parser setup (requires CGO)
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "validate:ts requires CGO_ENABLED=1"; exit 1; }
+      - go test -run TestTsParser -v ./internal/treesitter/
+      - task: tsaudit
+
+  validate:repomap:
+    desc: Validate repo-map implementation (requires CGO)
+    env:
+      CGO_ENABLED: 1
+    cmds:
+      - test "$CGO_ENABLED" = "1" || { echo "validate:repomap requires CGO_ENABLED=1"; exit 1; }
+      - go test -run TestRepoMap -race -v ./internal/repomap/

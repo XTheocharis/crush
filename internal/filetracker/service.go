@@ -26,19 +26,24 @@ type Service interface {
 }
 
 type service struct {
-	q *db.Queries
+	q          *db.Queries
+	workingDir string
 }
 
 // NewService creates a new file tracker service.
-func NewService(q *db.Queries) Service {
-	return &service{q: q}
+func NewService(q *db.Queries, workingDir ...string) Service {
+	wd := ""
+	if len(workingDir) > 0 {
+		wd = workingDir[0]
+	}
+	return &service{q: q, workingDir: wd}
 }
 
 // RecordRead records when a file was read.
 func (s *service) RecordRead(ctx context.Context, sessionID, path string) {
 	if err := s.q.RecordFileRead(ctx, db.RecordFileReadParams{
 		SessionID: sessionID,
-		Path:      relpath(path),
+		Path:      s.relpath(path),
 	}); err != nil {
 		slog.Error("Error recording file read", "error", err, "file", path)
 	}
@@ -49,7 +54,7 @@ func (s *service) RecordRead(ctx context.Context, sessionID, path string) {
 func (s *service) LastReadTime(ctx context.Context, sessionID, path string) time.Time {
 	readFile, err := s.q.GetFileRead(ctx, db.GetFileReadParams{
 		SessionID: sessionID,
-		Path:      relpath(path),
+		Path:      s.relpath(path),
 	})
 	if err != nil {
 		return time.Time{}
@@ -58,12 +63,16 @@ func (s *service) LastReadTime(ctx context.Context, sessionID, path string) time
 	return time.Unix(readFile.ReadAt, 0)
 }
 
-func relpath(path string) string {
+func (s *service) relpath(path string) string {
 	path = filepath.Clean(path)
-	basepath, err := os.Getwd()
-	if err != nil {
-		slog.Warn("Error getting basepath", "error", err)
-		return path
+	basepath := s.workingDir
+	if basepath == "" {
+		var err error
+		basepath, err = os.Getwd()
+		if err != nil {
+			slog.Warn("Error getting basepath", "error", err)
+			return path
+		}
 	}
 	relpath, err := filepath.Rel(basepath, path)
 	if err != nil {
@@ -80,9 +89,13 @@ func (s *service) ListReadFiles(ctx context.Context, sessionID string) ([]string
 		return nil, fmt.Errorf("listing read files: %w", err)
 	}
 
-	basepath, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("getting working directory: %w", err)
+	basepath := s.workingDir
+	if basepath == "" {
+		var err error
+		basepath, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("getting working directory: %w", err)
+		}
 	}
 
 	paths := make([]string, 0, len(readFiles))

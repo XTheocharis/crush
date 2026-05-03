@@ -11,6 +11,26 @@ agent skills.
 
 The module path is `github.com/charmbracelet/crush`.
 
+This fork branch (`fork/xrush`) carries additional features:
+
+- **`internal/lcm/`**: Lossless context management (LCM) — summaries, large-output
+  storage, compaction, and extra LCM tools (`lcm_grep`, `lcm_describe`, `lcm_expand`).
+- **`internal/repomap/`**: Repository indexing, ranking, rendering, caching,
+  and refresh/reset control paths. Provides `agentic_map`, `llm_map`, and
+  `map_refresh` tools.
+- **`internal/treesitter/`**: Parser pool, grammar/query loading, and shared
+  code analysis used by repo-map and LCM exploration. Requires `CGO_ENABLED=1`.
+- **`internal/app/app_lcm.go`**: App wiring for LCM initialization.
+- **`internal/app/repomap.go`**: App wiring for repo-map initialization.
+- **`internal/agent/coordinator_opts.go`**: Coordinator option plumbing for
+  repo-map prepare-step hooks and LCM overhead tracking.
+- **`internal/agent/lcm_client.go`**: LLM client factory for LCM summarizer.
+- **`internal/db/migrations/`**: LCM (`20260219000000_lcm.sql`) and repo-map
+  (`20260222000000_repo_map.sql`) migrations.
+
+Keep this file focused on stable workflow and architecture notes. Track open
+branch issues in `TODO.md`.
+
 ## Architecture
 
 ```
@@ -25,6 +45,7 @@ internal/
   agent/
     agent.go                       SessionAgent: runs LLM conversations per session
     coordinator.go                 Coordinator: manages named agents ("coder", "task")
+    coordinator_opts.go            Fork hook plumbing for repo-map and LCM
     hooked_tool.go                 Decorator that runs PreToolUse hooks before tool execution
     prompts.go                     Loads Go-template system prompts
     templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
@@ -48,6 +69,9 @@ internal/
   pubsub/                          Internal pub/sub for cross-component messaging
   filetracker/                     Tracks files touched per session
   history/                         Prompt history
+  lcm/                             Lossless context management (fork)
+  repomap/                         Repository indexing, ranking, rendering (fork)
+  treesitter/                      Parser pool, grammar/query loading (fork)
 ```
 
 ### Key Dependency Roles
@@ -81,14 +105,20 @@ internal/
   `hookedTool` decorator in `internal/agent/hooked_tool.go` wraps tools at
   the coordinator level. Hooks run before permission checks. See
   `HOOKS.md` for the user-facing protocol.
-- **CGO disabled**: builds with `CGO_ENABLED=0` and
-  `GOEXPERIMENT=greenteagc`.
+- **CGO enabled**: this fork requires `CGO_ENABLED=1` and a working C
+  compiler because tree-sitter support is mandatory.
 
 ## Build/Test/Lint Commands
 
 - **Build**: `go build .` or `go run .`
+- **Source build requirement**: This branch requires `CGO_ENABLED=1` and a
+  working C compiler because tree-sitter support is mandatory.
 - **Test**: `task test` or `go test ./...` (run single test:
   `go test ./internal/llm/prompt -run TestGetContextFromPaths`)
+- **Focused fork packages**:
+  `go test ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
+- **Race suite for fork additions**:
+  `go test -race ./internal/agent ./internal/app ./internal/lcm ./internal/repomap ./internal/treesitter`
 - **Update Golden Files**: `go test ./... -update` (regenerates `.golden`
   files when test output changes)
   - Update specific package:
@@ -99,6 +129,7 @@ internal/
 - **Modernize**: `task modernize` (runs `modernize` which makes code
   simplifications)
 - **Dev**: `task dev` (runs with profiling enabled)
+- **Additional fork-only tasks**: see `Taskfile.xrush.yaml`
 
 ## Code Style Guidelines
 
