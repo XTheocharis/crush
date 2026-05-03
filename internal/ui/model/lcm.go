@@ -70,15 +70,6 @@ func (m *UI) updateLCMSpinner(msg tea.Msg) tea.Cmd {
 // compactionPill renders a compact status indicator for LCM compaction.
 // When compacting is true, shows "⟳ Compacting (Xs)" with elapsed time.
 // Returns "" when not compacting.
-//
-// NOTE: This function references fields that will be added to the UI model in task #26:
-// - compacting (bool): tracks whether LCM compaction is in progress
-// - compactingStart (time.Time): records when compaction began
-//
-// These fields should be added to the UI struct in ui.go:
-//
-//	compacting      bool      // tracks whether LCM compaction is in progress
-//	compactingStart time.Time // records when compaction began (for elapsed time display)
 func (m *UI) compactionPill() string {
 	if !m.lcmCompacting {
 		return ""

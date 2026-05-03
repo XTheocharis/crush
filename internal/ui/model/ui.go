@@ -35,6 +35,7 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -687,6 +688,17 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleCompactionFinished()
 	case CompactionFailedMsg:
 		m.handleCompactionFinished()
+	case pubsub.Event[lcm.CompactionEvent]:
+		if m.hasSession() && m.session.ID == msg.Payload.SessionID {
+			switch msg.Payload.Type {
+			case lcm.CompactionStarted:
+				cmds = append(cmds, m.handleCompactionStarted())
+			case lcm.CompactionCompleted:
+				m.handleCompactionFinished()
+			case lcm.CompactionFailed:
+				m.handleCompactionFinished()
+			}
+		}
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
 	case tea.TerminalVersionMsg:

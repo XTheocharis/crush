@@ -222,8 +222,9 @@ func (m *UI) renderPills() {
 
 	hasIncomplete := hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
+	isCompacting := m.lcmCompacting
 
-	if !hasIncomplete && !hasQueue {
+	if !hasIncomplete && !hasQueue && !isCompacting {
 		return
 	}
 
@@ -237,6 +238,11 @@ func (m *UI) renderPills() {
 	}
 
 	var pills []string
+	if isCompacting {
+		if pill := m.compactionPill(); pill != "" {
+			pills = append(pills, pill)
+		}
+	}
 	if hasIncomplete {
 		pills = append(pills, todoPill(m.session.Todos, inProgressIcon, todosFocused, m.pillsExpanded, t))
 	}
