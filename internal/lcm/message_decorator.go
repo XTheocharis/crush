@@ -152,11 +152,11 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 
 	// Step 4: insert a context-item row so the compactor can track this message.
 	ciErr := s.querier.AppendLcmContextItem(ctx, db.AppendLcmContextItemParams{
-		SessionID:  msg.SessionID,
+		SessionID:   msg.SessionID,
 		SessionID_2: msg.SessionID,
-		ItemType:   "message",
-		MessageID:  sql.NullString{String: msg.ID, Valid: true},
-		TokenCount: tokenCount,
+		ItemType:    "message",
+		MessageID:   sql.NullString{String: msg.ID, Valid: true},
+		TokenCount:  tokenCount,
 	})
 	if ciErr != nil {
 		slog.Warn("Failed to insert LCM context item",
