@@ -142,6 +142,12 @@ func NewCoordinator(
 		lcm:          lcmMgr,
 	}
 
+	// Wire LCM tools before applying user options so that options can
+	// still override if needed.
+	if lcmMgr != nil {
+		c.extraTools = lcm.ExtraAgentTools(lcmMgr)
+	}
+
 	for _, opt := range opts {
 		if opt != nil {
 			opt(c)

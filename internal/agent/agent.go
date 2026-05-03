@@ -608,7 +608,30 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		if updateErr != nil {
 			return nil, updateErr
 		}
-		return nil, err
+		// LCM mid-turn resumption: if the turn was interrupted with
+		// pending tool calls and LCM is active, queue a continuation
+		// so the agent resumes after compaction.
+		if a.lcmManager != nil && len(currentAssistant.ToolCalls()) > 0 {
+			existing, ok := a.messageQueue.Get(call.SessionID)
+			if !ok {
+				existing = []SessionAgentCall{}
+			}
+			call.Prompt = fmt.Sprintf("The previous turn was interrupted for context compaction. The initial user request was: `%s`", call.Prompt)
+			existing = append(existing, call)
+			a.messageQueue.Set(call.SessionID, existing)
+		}
+
+		// Process any queued continuations (including LCM resumption).
+		a.activeRequests.Del(call.SessionID)
+		cancel()
+		queuedMessages, ok := a.messageQueue.Get(call.SessionID)
+		if !ok || len(queuedMessages) == 0 {
+			return nil, err
+		}
+		firstQueuedMessage := queuedMessages[0]
+		a.messageQueue.Set(call.SessionID, queuedMessages[1:])
+		a.incrementQueueGeneration(call.SessionID)
+		return a.Run(ctx, firstQueuedMessage)
 	}
 
 	// Send notification that agent has finished its turn (skip for
