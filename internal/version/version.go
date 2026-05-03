@@ -14,6 +14,9 @@ var (
 // we use the embedded build version that *is* set when using `go install` (and
 // is only set for `go install` and not for `go build`).
 func init() {
+	if Version != "devel" {
+		return
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return

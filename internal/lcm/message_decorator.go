@@ -112,10 +112,12 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 					"session_id", sessionID,
 					"error", err,
 				)
-				truncated := truncateString(partsText, fallbackTruncateChars)
-				suffix := "\n\n[LCM Warning: large output could not be stored; content truncated]"
-				params.Parts = []message.ContentPart{
-					message.TextContent{Text: truncated + suffix},
+				for i, part := range params.Parts {
+					if tr, ok := part.(message.ToolResult); ok {
+						tr.Content = truncateString(tr.Content, fallbackTruncateChars) +
+							"\n\n[LCM Warning: large output could not be stored; content truncated]"
+						params.Parts[i] = tr
+					}
 				}
 			} else {
 				s.persistLargeOutputExploration(ctx, sessionID, fileID, partsText)
@@ -123,8 +125,11 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 				preview := truncateString(partsText, previewChars)
 				ref := fmt.Sprintf("[Large Tool Output Stored: %s]\nLCM File ID: %s\n\nPreview (first %d chars):\n%s",
 					fileID, fileID, previewChars, preview)
-				params.Parts = []message.ContentPart{
-					message.TextContent{Text: ref},
+				for i, part := range params.Parts {
+					if tr, ok := part.(message.ToolResult); ok {
+						tr.Content = ref
+						params.Parts[i] = tr
+					}
 				}
 			}
 		}

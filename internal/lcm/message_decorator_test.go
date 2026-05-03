@@ -31,11 +31,13 @@ func TestMessageDecorator_Create_LargeToolOutput_ThresholdAndExplorationPersiste
 	toolOutput := strings.Repeat("x", 80) // ~20 tokens (> threshold 5, < default 10000)
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: toolOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-threshold", Name: "test", Content: toolOutput}},
 	})
 	require.NoError(t, err)
-	require.Contains(t, msg.Content().Text, "[Large Tool Output Stored:")
-	require.Contains(t, msg.Content().Text, "LCM File ID:")
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "[Large Tool Output Stored:")
+	require.Contains(t, tr[0].Content, "LCM File ID:")
 
 	files, err := queries.ListLcmLargeFilesBySession(ctx, sessionID)
 	require.NoError(t, err)
@@ -64,11 +66,13 @@ func TestMessageDecorator_Create_LargeToolOutput_DisabledByConfig(t *testing.T) 
 	toolOutput := strings.Repeat("y", 120000) // very large, should still bypass interception
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: toolOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-disabled", Name: "test", Content: toolOutput}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, toolOutput, msg.Content().Text)
-	require.NotContains(t, msg.Content().Text, "[Large Tool Output Stored:")
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Equal(t, toolOutput, tr[0].Content)
+	require.NotContains(t, tr[0].Content, "[Large Tool Output Stored:")
 
 	files, err := queries.ListLcmLargeFilesBySession(ctx, sessionID)
 	require.NoError(t, err)
@@ -92,12 +96,14 @@ func TestMessageDecorator_Create_LargeToolOutput_BelowThreshold_NoStorage(t *tes
 	toolOutput := strings.Repeat("z", 80) // ~20 tokens (below threshold of 1000)
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: toolOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-below", Name: "test", Content: toolOutput}},
 	})
 	require.NoError(t, err)
 	// Below threshold: full content is stored inline, no LCM reference
-	require.Equal(t, toolOutput, msg.Content().Text)
-	require.NotContains(t, msg.Content().Text, "[Large Tool Output Stored:")
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Equal(t, toolOutput, tr[0].Content)
+	require.NotContains(t, tr[0].Content, "[Large Tool Output Stored:")
 
 	files, err := queries.ListLcmLargeFilesBySession(ctx, sessionID)
 	require.NoError(t, err)
@@ -181,7 +187,7 @@ func TestMessageDecorator_Create_StorageFails_NonBlockingFallback(t *testing.T) 
 	toolOutput := strings.Repeat("c", 120000)
 	_, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: toolOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-storage-fail", Name: "test", Content: toolOutput}},
 	})
 	// Message creation should fail (DB is closed, inner service can't create message)
 	require.Error(t, err)
@@ -206,7 +212,7 @@ func TestMessageDecorator_Create_PersistenceMatrix_EndToEnd(t *testing.T) {
 	smallOutput := strings.Repeat(".", 100) // ~25 tokens (below threshold)
 	_, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: smallOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-matrix-small", Name: "test", Content: smallOutput}},
 	})
 	require.NoError(t, err)
 
@@ -218,7 +224,7 @@ func TestMessageDecorator_Create_PersistenceMatrix_EndToEnd(t *testing.T) {
 	largeOutput := strings.Repeat("x", 500) // ~125 tokens (above threshold)
 	_, err = svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: largeOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-matrix-large", Name: "test", Content: largeOutput}},
 	})
 	require.NoError(t, err)
 
@@ -268,12 +274,14 @@ func TestMessageDecorator_Create_ExplorationFailure_NonBlocking(t *testing.T) {
 	largeOutput := strings.Repeat("a", 5000) // ~1250 tokens (well above threshold)
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: largeOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-explore-fail", Name: "test", Content: largeOutput}},
 	})
 
 	// Message creation must succeed even though exploration will fail
 	require.NoError(t, err, "Message creation should succeed despite exploration failure")
-	require.Contains(t, msg.Content().Text, "[Large Tool Output Stored:",
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "[Large Tool Output Stored:",
 		"Message content should reference the stored file")
 
 	files, err := queries.ListLcmLargeFilesBySession(ctx, sessionID)
@@ -304,12 +312,14 @@ func TestMessageDecorator_Create_RuntimePathPersistenceMatrix(t *testing.T) {
 	textOutput := strings.Repeat("x", 5000)
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: textOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-runtime-text", Name: "test", Content: textOutput}},
 	})
 	require.NoError(t, err)
-	require.Contains(t, msg.Content().Text, "LCM File ID:")
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "LCM File ID:")
 
-	textFileIDs := ExtractFileIDs(msg.Content().Text)
+	textFileIDs := ExtractFileIDs(tr[0].Content)
 	require.Len(t, textFileIDs, 1)
 	textFile, err := queries.GetLcmLargeFile(ctx, textFileIDs[0])
 	require.NoError(t, err)
@@ -323,12 +333,14 @@ func TestMessageDecorator_Create_RuntimePathPersistenceMatrix(t *testing.T) {
 	binaryLikeOutput := string([]byte{0x7f, 0x45, 0x4c, 0x46}) + strings.Repeat("\x00", 4096)
 	msg, err = svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: binaryLikeOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-runtime-bin", Name: "test", Content: binaryLikeOutput}},
 	})
 	require.NoError(t, err)
-	require.Contains(t, msg.Content().Text, "LCM File ID:")
+	tr = msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "LCM File ID:")
 
-	binaryFileIDs := ExtractFileIDs(msg.Content().Text)
+	binaryFileIDs := ExtractFileIDs(tr[0].Content)
 	require.Len(t, binaryFileIDs, 1)
 	binaryFile, err := queries.GetLcmLargeFile(ctx, binaryFileIDs[0])
 	require.NoError(t, err)
@@ -416,11 +428,13 @@ func main() {
 
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: goCode}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-treesitter", Name: "test", Content: goCode}},
 	})
 	require.NoError(t, err)
-	require.Contains(t, msg.Content().Text, "[Large Tool Output Stored:")
-	require.Contains(t, msg.Content().Text, "LCM File ID:")
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "[Large Tool Output Stored:")
+	require.Contains(t, tr[0].Content, "LCM File ID:")
 
 	files, err := queries.ListLcmLargeFilesBySession(ctx, sessionID)
 	require.NoError(t, err)
@@ -467,10 +481,12 @@ func main() {
 
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: goCode}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-no-treesitter", Name: "test", Content: goCode}},
 	})
 	require.NoError(t, err)
-	require.Contains(t, msg.Content().Text, "[Large Tool Output Stored:")
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "[Large Tool Output Stored:")
 
 	files, err := queries.ListLcmLargeFilesBySession(ctx, sessionID)
 	require.NoError(t, err)
@@ -501,12 +517,14 @@ func TestMessageDecorator_Create_RuntimeMatrix_NonPersistedPaths(t *testing.T) {
 	binaryOutput := string([]byte{0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00}) + strings.Repeat("\x00", 5000)
 	msg, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: binaryOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-nonpers-bin", Name: "test", Content: binaryOutput}},
 	})
 	require.NoError(t, err)
-	require.Contains(t, msg.Content().Text, "LCM File ID:")
+	tr := msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "LCM File ID:")
 
-	binaryFileIDs := ExtractFileIDs(msg.Content().Text)
+	binaryFileIDs := ExtractFileIDs(tr[0].Content)
 	require.Len(t, binaryFileIDs, 1)
 	binaryFile, err := queries.GetLcmLargeFile(ctx, binaryFileIDs[0])
 	require.NoError(t, err)
@@ -521,12 +539,14 @@ func TestMessageDecorator_Create_RuntimeMatrix_NonPersistedPaths(t *testing.T) {
 	fallbackOutput := strings.Repeat(string([]byte{0x80, 0x81, 0x82, 0x83}), 200)
 	msg, err = svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: fallbackOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-nonpers-fallback", Name: "test", Content: fallbackOutput}},
 	})
 	require.NoError(t, err)
-	require.Contains(t, msg.Content().Text, "LCM File ID:")
+	tr = msg.ToolResults()
+	require.Len(t, tr, 1)
+	require.Contains(t, tr[0].Content, "LCM File ID:")
 
-	fallbackFileIDs := ExtractFileIDs(msg.Content().Text)
+	fallbackFileIDs := ExtractFileIDs(tr[0].Content)
 	require.Len(t, fallbackFileIDs, 1)
 	fallbackFile, err := queries.GetLcmLargeFile(ctx, fallbackFileIDs[0])
 	require.NoError(t, err)
@@ -540,11 +560,13 @@ func TestMessageDecorator_Create_RuntimeMatrix_NonPersistedPaths(t *testing.T) {
 	textOutput := strings.Repeat("This is plain text content.\n", 200)
 	msg, err = svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: textOutput}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-nonpers-text", Name: "test", Content: textOutput}},
 	})
 	require.NoError(t, err)
+	tr = msg.ToolResults()
+	require.Len(t, tr, 1)
 
-	textFileIDs := ExtractFileIDs(msg.Content().Text)
+	textFileIDs := ExtractFileIDs(tr[0].Content)
 	require.Len(t, textFileIDs, 1)
 	textFile, err := queries.GetLcmLargeFile(ctx, textFileIDs[0])
 	require.NoError(t, err)
@@ -578,7 +600,7 @@ func main() {}
 
 	_, err := svc.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Tool,
-		Parts: []message.ContentPart{message.TextContent{Text: goCode}},
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "tc-parity", Name: "test", Content: goCode}},
 	})
 	require.NoError(t, err)
 
