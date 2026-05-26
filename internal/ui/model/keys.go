@@ -47,6 +47,7 @@ type KeyMap struct {
 		Copy           key.Binding
 		ClearHighlight key.Binding
 		Expand         key.Binding
+		MessageOptions key.Binding // XRUSH: message options keybinding
 	}
 
 	Initialize struct {
@@ -249,6 +250,11 @@ func DefaultKeyMap() KeyMap {
 	km.Chat.Expand = key.NewBinding(
 		key.WithKeys("space"),
 		key.WithHelp("space", "expand/collapse"),
+	)
+	// XRUSH: message options keybinding.
+	km.Chat.MessageOptions = key.NewBinding(
+		key.WithKeys("o"),
+		key.WithHelp("o", "message options"),
 	)
 	km.Initialize.Yes = key.NewBinding(
 		key.WithKeys("y", "Y"),

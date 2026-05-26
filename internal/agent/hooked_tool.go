@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/agent/tools"
@@ -83,10 +84,23 @@ func (h *hookedTool) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.To
 		ctx = permission.WithHookApproval(ctx, call.ID)
 	}
 
+	start := time.Now()
 	resp, err := h.inner.Run(ctx, call)
+	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
 		return resp, err
 	}
+
+	// [XRUSH: begin: PostToolUse hook invocation]
+	if h.runner != nil {
+		postResult, postErr := h.runner.RunPostToolUse(ctx, hooks.EventPostToolUse, sessionID, call.Name, call.Input, resp.Content, durationMs)
+		if postErr != nil {
+			slog.Warn("PostToolUse hook execution error", "tool", call.Name, "error", postErr)
+		} else if postResult.UpdatedOutput != "" {
+			resp.Content = postResult.UpdatedOutput
+		}
+	}
+	// [XRUSH: end]
 
 	if result.Context != "" {
 		if resp.Content != "" {

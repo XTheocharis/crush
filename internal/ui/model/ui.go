@@ -36,6 +36,7 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -270,6 +271,11 @@ type UI struct {
 	todoSpinner    spinner.Model
 	todoIsSpinning bool
 
+	// LCM compaction state (only active when LCM extension is registered). // XRUSH: LCM compaction fields
+	lcmCompacting      bool
+	lcmCompactingStart time.Time
+	lcmSpinner         spinner.Model
+
 	// mouse highlighting related state
 	lastClickTime time.Time
 
@@ -298,6 +304,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	ta.Focus()
 
 	ch := NewChat(com)
+	initXrushChatCallbacks(ch, com) // XRUSH: wire fork-only chat callbacks
 
 	keyMap := DefaultKeyMap()
 
@@ -341,6 +348,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		completions:         comp,
 		attachments:         attachments,
 		todoSpinner:         todoSpinner,
+		lcmSpinner:          newLCMSpinner(com), // XRUSH: LCM compaction spinner
 		lspStates:           make(map[string]app.LSPClientInfo),
 		mcpStates:           make(map[string]mcp.ClientInfo),
 		notifyBackend:       notification.NoopBackend{},
@@ -585,7 +593,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setState(uiChat, m.focus)
 		m.session = msg.session
+		m.chat.SetSessionID(m.session.ID) // XRUSH: set session ID for message options
 		m.sessionFiles = msg.files
+		// [XRUSH: begin: recover corrupt session]
+		if recoverErr := m.com.Workspace.AgentRecoverSession(context.Background(), m.session.ID); recoverErr != nil {
+			slog.Error("Failed to recover session", "session_id", m.session.ID, "error", recoverErr)
+		}
+		// [XRUSH: end]
 		cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
 		msgs, err := m.com.Workspace.ListMessages(context.Background(), m.session.ID)
 		if err != nil {
@@ -738,6 +752,23 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pubsub.Event[permission.PermissionNotification]:
 		m.handlePermissionNotification(msg.Payload)
+	// [XRUSH: begin: wire compaction event to pill]
+	case pubsub.Event[lcm.CompactionEvent]:
+		var xrushMsg tea.Msg
+		switch msg.Payload.Type {
+		case lcm.CompactionStarted:
+			xrushMsg = CompactionStartedMsg{SessionID: msg.Payload.SessionID}
+		case lcm.CompactionCompleted:
+			xrushMsg = CompactionCompletedMsg{SessionID: msg.Payload.SessionID, Rounds: msg.Payload.Rounds}
+		case lcm.CompactionFailed:
+			xrushMsg = CompactionFailedMsg{SessionID: msg.Payload.SessionID, Err: msg.Payload.Error}
+		}
+		if xrushMsg != nil {
+			if cmd := m.handleXrushRoutingUpdate(xrushMsg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	// [XRUSH: end]
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
 	case tea.TerminalVersionMsg:
@@ -763,9 +794,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case copyChatHighlightMsg:
 		cmds = append(cmds, m.copyChatHighlight())
-	case DelayedClickMsg:
-		// Handle delayed single-click action (e.g., expansion).
-		m.chat.HandleDelayedClick(msg)
 	case tea.MouseClickMsg:
 		// Pass mouse events to dialogs first if any are open.
 		if m.dialog.HasDialogs() {
@@ -916,6 +944,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+		// XRUSH: update LCM compaction spinner.
+		if cmd := m.updateLCMSpinner(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case tea.KeyPressMsg:
 		if cmd := m.handleKeyPressMsg(msg); cmd != nil {
@@ -976,6 +1008,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+	}
+
+	// XRUSH: Handle fork-only message routing.
+	if cmd := m.handleXrushRoutingUpdate(msg); cmd != nil {
+		cmds = append(cmds, cmd)
 	}
 
 	// This logic gets triggered on any message type, but should it?
@@ -1630,7 +1667,14 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 		cmds = append(cmds, m.runMCPPrompt(msg.ClientID, msg.PromptID, msg.Args))
 	default:
-		cmds = append(cmds, util.CmdHandler(msg))
+		// XRUSH: route fork dialog actions (rewind, fork, edit, message options).
+		if isXrushDialogAction(action) {
+			if cmd := m.handleXrushDialogMsg(action); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		} else {
+			cmds = append(cmds, util.CmdHandler(msg))
+		}
 	}
 
 	return tea.Batch(cmds...)
@@ -2113,6 +2157,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				}
 			case key.Matches(msg, m.keyMap.Chat.Expand):
 				m.chat.ToggleExpandedSelectedItem()
+			// XRUSH: message options keybinding handler.
+			case key.Matches(msg, m.keyMap.Chat.MessageOptions):
+				if cmd := m.handleXrushKeyPress(msg); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			case key.Matches(msg, m.keyMap.Chat.Up):
 				if cmd := m.chat.ScrollByAndAnimate(-1); cmd != nil {
 					cmds = append(cmds, cmd)

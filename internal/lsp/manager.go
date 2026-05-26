@@ -21,16 +21,22 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 )
 
-const unavailableRetryDelay = 30 * time.Second
-
 // Manager handles lazy initialization of LSP clients based on file types.
 type Manager struct {
 	clients     *csync.Map[string, *Client]
-	unavailable *csync.Map[string, time.Time]
+	unavailable *csync.Map[string, *serverRetryState] // XRUSH: changed from Map[string, time.Time]
 	cfg         *config.ConfigStore
 	manager     *powernapconfig.Manager
 	callback    func(name string, client *Client)
 	now         func() time.Time
+	// [XRUSH: begin: xrush manager fields]
+	backoff  ExponentialBackoff
+	executor *TaskExecutor
+	// CrashRecovery field enables/disables crash recovery.
+	crashRecovery   bool
+	healthChecker   *HealthChecker
+	withHealthCheck bool
+	// [XRUSH: end]
 }
 
 // NewManager creates a new LSP manager service.
@@ -60,14 +66,27 @@ func NewManager(cfg *config.ConfigStore) *Manager {
 		})
 	}
 
-	return &Manager{
+	mgr := &Manager{ // XRUSH: changed from inline return to named variable for post-init setup
 		clients:     csync.NewMap[string, *Client](),
-		unavailable: csync.NewMap[string, time.Time](),
+		unavailable: csync.NewMap[string, *serverRetryState](), // XRUSH: changed type
 		cfg:         cfg,
 		manager:     manager,
-		callback:    func(string, *Client) {}, // default no-op callback
+		callback:    func(string, *Client) {}, // XRUSH: removed upstream no-op comment
 		now:         time.Now,
+		// [XRUSH: begin: xrush manager initialization]
+		backoff:  DefaultBackoff(),
+		executor: NewTaskExecutor(0),
+		// Crash recovery default enabled.
+		crashRecovery:   true,
+		withHealthCheck: true,
+		// [XRUSH: end]
 	}
+	// [XRUSH: begin: start executor and health checker]
+	mgr.executor.Start()
+	mgr.healthChecker = NewHealthChecker(mgr, DefaultHealthCheckInterval)
+	mgr.healthChecker.Start()
+	// [XRUSH: end]
+	return mgr
 }
 
 // Clients returns the map of LSP clients.
@@ -103,12 +122,15 @@ func (s *Manager) Start(ctx context.Context, path string) {
 		return
 	}
 
+	// [XRUSH: begin: sort servers by priority]
+	sorted := sortServersByPriority(s.manager.GetServers())
 	var wg sync.WaitGroup
-	for name, server := range s.manager.GetServers() {
+	for _, entry := range sorted {
 		wg.Go(func() {
-			s.startServer(ctx, name, path, server)
+			s.startServer(ctx, entry.Name, path, entry.Config)
 		})
 	}
+	// [XRUSH: end]
 	wg.Wait()
 }
 
@@ -172,20 +194,23 @@ func (s *Manager) startServer(ctx context.Context, name, filepath string, server
 		if s.recentlyUnavailable(name) {
 			return
 		}
+
+		// [XRUSH: begin: auto-download LSP servers]
+		s.resolveAutoDownload(ctx, name, server)
+		// [XRUSH: end]
+
 		if _, err := exec.LookPath(server.Command); err != nil {
 			slog.Debug("LSP server not installed, skipping", "name", name, "command", server.Command)
 			s.markUnavailable(name)
-			return
-		}
-		s.clearUnavailable(name)
-		if skipAutoStartCommands[server.Command] {
-			slog.Debug("LSP command too generic for auto-start, skipping", "name", name, "command", server.Command)
+			// XRUSH: removed clearUnavailable call and skipAutoStartCommands check
 			return
 		}
 	}
 
 	// this is the slowest bit, so we do it last.
-	if !handles(server, filepath, s.cfg.WorkingDir()) {
+	// [XRUSH: begin: use handlesWithPatterns for match pattern support]
+	if !handlesWithPatterns(server, cfg.MatchPatterns, filepath, s.cfg.WorkingDir()) {
+		// [XRUSH: end]
 		// nothing to do
 		return
 	}
@@ -245,10 +270,15 @@ func (s *Manager) startServer(ctx context.Context, name, filepath string, server
 	}
 
 	if err := client.WaitForServerReady(initCtx); err != nil {
-		slog.Warn("LSP server not fully ready, continuing anyway", "name", name, "error", err)
-		client.SetServerState(StateError)
+		slog.Warn("LSP server not fully ready, cleaning up", "name", name, "error", err) // XRUSH: changed from "continuing anyway"
+		// [XRUSH: begin: cleanup on server ready failure]
+		s.handleServerReadyFailure(ctx, client, name)
+		// [XRUSH: end]
 	} else {
 		client.SetServerState(StateReady)
+		// [XRUSH: begin: crash recovery on success]
+		s.handleServerReadySuccess(ctx, name, cfg)
+		// [XRUSH: end]
 	}
 
 	slog.Debug("LSP client started", "name", name)
@@ -259,35 +289,21 @@ func (s *Manager) isUserConfigured(name string) bool {
 	return ok && !cfg.Disabled
 }
 
-func (s *Manager) recentlyUnavailable(name string) bool {
-	lastUnavailableAt, exists := s.unavailable.Get(name)
-	if !exists {
-		return false
-	}
-	if s.now().Sub(lastUnavailableAt) < unavailableRetryDelay {
-		return true
-	}
-	s.unavailable.Del(name)
-	return false
-}
-
-func (s *Manager) markUnavailable(name string) {
-	s.unavailable.Set(name, s.now())
-}
-
+// XRUSH: clearUnavailable kept from upstream (recentlyUnavailable/markUnavailable moved to backoff system).
 func (s *Manager) clearUnavailable(name string) {
 	s.unavailable.Del(name)
 }
 
 func (s *Manager) buildConfig(name string, server *powernapconfig.ServerConfig) config.LSPConfig {
 	cfg := config.LSPConfig{
-		Command:     server.Command,
-		Args:        server.Args,
-		Env:         server.Environment,
-		FileTypes:   server.FileTypes,
-		RootMarkers: server.RootMarkers,
-		InitOptions: server.InitOptions,
-		Options:     server.Settings,
+		Command:       server.Command,
+		Args:          server.Args,
+		Env:           server.Environment,
+		FileTypes:     server.FileTypes,
+		RootMarkers:   server.RootMarkers,
+		InitOptions:   server.InitOptions,
+		Options:       server.Settings,
+		MatchPatterns: s.userMatchPatterns(name), // XRUSH: added match patterns
 	}
 	if userCfg, ok := s.cfg.Config().LSP[name]; ok {
 		cfg.Timeout = userCfg.Timeout

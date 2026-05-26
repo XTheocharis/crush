@@ -1,0 +1,35 @@
+//go:build treesitter
+
+package treesitter
+
+import (
+	_ "github.com/UserNobody14/tree-sitter-dart/bindings/go"
+	_ "github.com/gleam-lang/tree-sitter-gleam/bindings/go"
+	_ "github.com/pkoukk/tiktoken-go"
+	_ "github.com/tree-sitter-grammars/tree-sitter-arduino/bindings/go"
+	_ "github.com/tree-sitter-grammars/tree-sitter-chatito/bindings/go"
+	_ "github.com/tree-sitter-grammars/tree-sitter-hcl/bindings/go"
+	_ "github.com/tree-sitter-grammars/tree-sitter-kotlin/bindings/go"
+	_ "github.com/tree-sitter-grammars/tree-sitter-lua/bindings/go"
+	_ "github.com/tree-sitter-grammars/tree-sitter-properties/bindings/go"
+	_ "github.com/tree-sitter-grammars/tree-sitter-udev/bindings/go"
+	_ "github.com/tree-sitter/go-tree-sitter"
+	_ "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-c/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-cpp/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-elixir/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-java/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-julia/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-matlab/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-php/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-python/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-ql/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-ruby/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-rust/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-scala/bindings/go"
+	_ "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
+)

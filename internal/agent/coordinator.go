@@ -24,6 +24,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/event"
+	"github.com/charmbracelet/crush/internal/ext" // XRUSH: extension host import
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/hooks"
@@ -84,6 +85,10 @@ type Coordinator interface {
 	Summarize(context.Context, string) error
 	Model() Model
 	UpdateModels(ctx context.Context) error
+	// XRUSH: session recovery
+	RecoverSession(ctx context.Context, sessionID string) error
+	// XRUSH: repomap refresh from command palette
+	RepoMapRefresh(ctx context.Context, sessionID string) error
 }
 
 type coordinator struct {
@@ -104,6 +109,10 @@ type coordinator struct {
 	activeSkills []*skills.Skill // Post-filter: active skills only.
 	skillTracker *skills.Tracker
 
+	extHost *ext.ExtensionHost // nil if no extensions // XRUSH: extension host
+
+	structuredSubagentFactory StructuredSubagentFactory // XRUSH: structured subagent factory
+
 	readyWg errgroup.Group
 }
 
@@ -118,6 +127,7 @@ func NewCoordinator(
 	lspManager *lsp.Manager,
 	notify pubsub.Publisher[notify.Notification],
 	skillsMgr *skills.Manager,
+	extHost *ext.ExtensionHost, // may be nil // XRUSH: extension host parameter
 ) (Coordinator, error) {
 	// Skills are pre-discovered by the caller (see app.New /
 	// backend.CreateWorkspace) and passed in via the manager. If no
@@ -145,6 +155,7 @@ func NewCoordinator(
 		allSkills:    allSkills,
 		activeSkills: activeSkills,
 		skillTracker: skillTracker,
+		extHost:      extHost, // XRUSH: extension host wiring
 	}
 
 	agentCfg, ok := cfg.Config().Agents[config.AgentCoder]
@@ -450,6 +461,13 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 		Messages:             c.messages,
 		Tools:                nil,
 		Notify:               c.notify,
+		// XRUSH: pass extension host to main agent only
+		ExtHost: func() *ext.ExtensionHost {
+			if isSubAgent {
+				return nil
+			}
+			return c.extHost
+		}(),
 	})
 
 	c.readyWg.Go(func() error {
@@ -538,6 +556,11 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 			tools.NewListMCPResourcesTool(c.cfg, c.permissions),
 			tools.NewReadMCPResourceTool(c.cfg, c.permissions),
 		)
+	}
+
+	// XRUSH: inject extension-contributed tools for main agent
+	if c.extHost != nil && !isSubAgent {
+		allTools = append(allTools, c.extHost.ContributedTools()...)
 	}
 
 	var filteredTools []fantasy.AgentTool

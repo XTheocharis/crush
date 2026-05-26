@@ -1,0 +1,40 @@
+package tools
+
+import (
+	"context"
+	"time"
+)
+
+// MailboxMessage is a message sent between agents via the mailbox system.
+type MailboxMessage struct {
+	From      string    `json:"from"`
+	To        string    `json:"to"`
+	Content   string    `json:"content"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// Mailbox is the interface for sending messages between agents.
+type Mailbox interface {
+	Send(msg MailboxMessage) error
+	HasInbox(name string) bool
+}
+
+// AgentHandle is the interface for interacting with a managed agent.
+type AgentHandle interface {
+	Name() string
+	IsRunning() bool
+	Stop()
+	Close()
+}
+
+// AgentRegistry is the interface for discovering and accessing agents.
+type AgentRegistry interface {
+	Get(name string) (AgentHandle, bool)
+	HasAgent(name string) bool
+	List() []string
+}
+
+// ForkedMessenger is the interface for sending messages from a forked agent.
+type ForkedMessenger interface {
+	SendMessage(ctx context.Context, to, content string) error
+}

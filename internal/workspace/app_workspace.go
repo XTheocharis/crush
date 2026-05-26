@@ -167,6 +167,22 @@ func (w *AppWorkspace) AgentSummarize(ctx context.Context, sessionID string) err
 	return w.app.AgentCoordinator.Summarize(ctx, sessionID)
 }
 
+// XRUSH: session recovery
+func (w *AppWorkspace) AgentRecoverSession(ctx context.Context, sessionID string) error {
+	if w.app.AgentCoordinator == nil {
+		return nil
+	}
+	return w.app.AgentCoordinator.RecoverSession(ctx, sessionID)
+}
+
+// XRUSH: repomap command palette bridge
+func (w *AppWorkspace) RepoMapRefresh(ctx context.Context, sessionID string) error {
+	if w.app.AgentCoordinator == nil {
+		return nil
+	}
+	return w.app.AgentCoordinator.RepoMapRefresh(ctx, sessionID)
+}
+
 func (w *AppWorkspace) UpdateAgentModel(ctx context.Context) error {
 	return w.app.UpdateAgentModel(ctx)
 }

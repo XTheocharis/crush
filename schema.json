@@ -29,6 +29,31 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ArchitectOptions": {
+      "properties": {
+        "approval_required": {
+          "type": "boolean",
+          "description": "Require user approval before executing architect plans",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "AutoDownloadConfig": {
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Download URL for the LSP server binary"
+        },
+        "sha256": {
+          "type": "string",
+          "description": "Expected SHA256 hash of the downloaded binary"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Completions": {
       "properties": {
         "max_depth": {
@@ -126,6 +151,41 @@
         "command"
       ]
     },
+    "LCMOptions": {
+      "properties": {
+        "ctx_cutoff_threshold": {
+          "type": "number"
+        },
+        "summarizer_model": {
+          "$ref": "#/$defs/SelectedModel",
+          "description": "Optional dedicated model configuration for LCM summarization; defaults to the configured large model"
+        },
+        "disable_large_tool_output": {
+          "type": "boolean"
+        },
+        "large_tool_output_token_threshold": {
+          "type": "integer"
+        },
+        "explorer_output_profile": {
+          "type": "string"
+        },
+        "operational_memory_enabled": {
+          "type": "boolean",
+          "description": "Enable operational memory persistence from LCM lifecycle hooks",
+          "default": false
+        },
+        "observation": {
+          "$ref": "#/$defs/ObservationOptions",
+          "description": "Observation strategy configuration for the LCM observer"
+        },
+        "nudge": {
+          "$ref": "#/$defs/NudgeOptions",
+          "description": "Nudge injection configuration for context-limit warnings"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "LSPConfig": {
       "properties": {
         "disabled": {
@@ -169,6 +229,18 @@
           "type": "array",
           "description": "File types this LSP server handles"
         },
+        "match_patterns": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "*.proto",
+              "**/graphql/**",
+              "src/generated/**"
+            ]
+          },
+          "type": "array",
+          "description": "Glob patterns for LSP file routing (e.g. *.proto"
+        },
         "root_markers": {
           "items": {
             "type": "string",
@@ -197,6 +269,10 @@
             60,
             120
           ]
+        },
+        "auto_download": {
+          "$ref": "#/$defs/AutoDownloadConfig",
+          "description": "Auto-download configuration for the LSP server binary"
         }
       },
       "additionalProperties": false,
@@ -388,6 +464,39 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "NudgeOptions": {
+      "properties": {
+        "min_context_limit": {
+          "type": "integer"
+        },
+        "max_context_limit": {
+          "type": "integer"
+        },
+        "nudge_frequency": {
+          "type": "integer"
+        },
+        "nudge_force": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ObservationOptions": {
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "default",
+            "resource-scoped"
+          ],
+          "description": "Observation strategy name",
+          "default": "default"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Options": {
       "properties": {
         "context_paths": {
@@ -490,6 +599,18 @@
           "description": "Show indeterminate progress updates during long operations",
           "default": true
         },
+        "lcm": {
+          "$ref": "#/$defs/LCMOptions",
+          "description": "Lossless Context Management options"
+        },
+        "repo_map": {
+          "$ref": "#/$defs/RepoMapOptions",
+          "description": "Repository map configuration"
+        },
+        "validation": {
+          "$ref": "#/$defs/ValidationOptions",
+          "description": "Edit validation configuration"
+        },
         "disable_notifications": {
           "type": "boolean",
           "description": "Deprecated: Use notification_style instead. Disable desktop notifications",
@@ -516,6 +637,46 @@
           },
           "type": "array",
           "description": "List of skill names to disable and hide from the agent"
+        },
+        "architect": {
+          "$ref": "#/$defs/ArchitectOptions",
+          "description": "Architect planning phase configuration"
+        },
+        "architect_model": {
+          "$ref": "#/$defs/SelectedModel",
+          "description": "Override model for architect/planning calls. Defaults to the large model when not set."
+        },
+        "editor_model": {
+          "$ref": "#/$defs/SelectedModel",
+          "description": "Override model for editor/coding calls. Defaults to the small model when not set."
+        },
+        "router_token_limit": {
+          "type": "integer",
+          "description": "Token count threshold for model routing"
+        },
+        "router_tiers": {
+          "items": {
+            "$ref": "#/$defs/RoutingTier"
+          },
+          "type": "array",
+          "description": "Multi-tier routing configuration with token thresholds"
+        },
+        "processors": {
+          "$ref": "#/$defs/ProcessorsOptions",
+          "description": "Message processing pipeline configuration"
+        },
+        "doom_loop_intervention": {
+          "type": "string",
+          "enum": [
+            "none",
+            "warn",
+            "full"
+          ],
+          "description": "Doom loop intervention mode: none (message only)"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/SnapshotConfig",
+          "description": "Snapshot retention configuration"
         }
       },
       "additionalProperties": false,
@@ -533,6 +694,24 @@
           },
           "type": "array",
           "description": "List of tools that don't require permission prompts"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ProcessorsOptions": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable the message processing pipeline",
+          "default": false
+        },
+        "list": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "List of processor names to enable. Safe defaults: token_limiter"
         }
       },
       "additionalProperties": false,
@@ -620,6 +799,57 @@
           },
           "type": "array",
           "description": "List of models available from this provider"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "RepoMapOptions": {
+      "properties": {
+        "disabled": {
+          "type": "boolean",
+          "description": "Disable repo map generation entirely"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "description": "Override max token budget for rendered map (0 = dynamic)"
+        },
+        "exclude_globs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Additional glob patterns to exclude from repo map scanning"
+        },
+        "refresh_mode": {
+          "type": "string",
+          "description": "When to regenerate the repo map: auto files manual or always"
+        },
+        "map_mul_no_files": {
+          "type": "number",
+          "description": "Budget multiplier when no files are in chat (default 2.0)"
+        },
+        "parser_pool_size": {
+          "type": "integer",
+          "description": "Tree-sitter parser pool size (0 = runtime default)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "RoutingTier": {
+      "properties": {
+        "up_to_tokens": {
+          "type": "integer",
+          "description": "Token count threshold for this tier"
+        },
+        "model_type": {
+          "type": "string",
+          "description": "Model type for this tier",
+          "examples": [
+            "small",
+            "large"
+          ]
         }
       },
       "additionalProperties": false,
@@ -795,6 +1025,45 @@
         },
         "grep": {
           "$ref": "#/$defs/ToolGrep"
+        },
+        "repo_map": {
+          "$ref": "#/$defs/RepoMapOptions",
+          "description": "Repository map generation options"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "repo_map"
+      ]
+    },
+    "ValidationOptions": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable post-edit validation pipeline",
+          "default": false
+        },
+        "auto_fix": {
+          "type": "boolean",
+          "description": "Enable automatic fix attempts when validation fails",
+          "default": false
+        },
+        "autofix_loop_enabled": {
+          "type": "boolean",
+          "description": "Enable post-turn auto-fix quality cycle",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "SnapshotConfig": {
+      "properties": {
+        "max_per_session": {
+          "type": "integer",
+          "description": "Maximum snapshots to retain per session (older ones are cleaned up)",
+          "default": 50
         }
       },
       "additionalProperties": false,

@@ -1,0 +1,21 @@
+## Python file: app.py
+
+### Imports
+- import dataclasses
+- import flask
+- import json
+- import os
+- import pathlib
+- import requests
+- import sys
+- import time
+- ... and 1 more
+
+### Classes
+- AuthService(BaseService)
+- UserRepo
+
+### Functions
+- create_app(config)
+- helper()
+- main()

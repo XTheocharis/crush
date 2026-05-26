@@ -63,6 +63,10 @@ type Client struct {
 
 	// Server state
 	serverState atomic.Value
+
+	// [XRUSH: begin: xrush client fields (embedded)]
+	xrushClientFields
+	// [XRUSH: end]
 }
 
 // New creates a new LSP client using the powernap implementation.
@@ -286,12 +290,12 @@ func (c *Client) GetServerState() ServerState {
 	return StateStarting
 }
 
-// SetServerState sets the current state of the LSP server
+// SetServerState sets the current state of the LSP server. // XRUSH: added trailing period
 func (c *Client) SetServerState(state ServerState) {
 	c.serverState.Store(state)
 }
 
-// GetName returns the name of the LSP client
+// GetName returns the name of the LSP client. // XRUSH: added trailing period
 func (c *Client) GetName() string {
 	return c.name
 }
@@ -361,7 +365,9 @@ func (c *Client) HandlesFile(path string) bool {
 		slog.Debug("File outside workspace", "name", c.name, "file", path, "workDir", c.cwd)
 		return false
 	}
-	return handlesFiletype(c.name, c.fileTypes, path)
+	// [XRUSH: begin: use handleFiletypeWithPatterns for match pattern support]
+	return handleFiletypeWithPatterns(c.name, c.fileTypes, c.config.MatchPatterns, path)
+	// [XRUSH: end]
 }
 
 // OpenFile opens a file in the LSP server.

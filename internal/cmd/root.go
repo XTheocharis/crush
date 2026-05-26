@@ -71,6 +71,7 @@ func init() {
 		loginCmd,
 		statsCmd,
 		sessionCmd,
+		evalCmd, // XRUSH: eval sub-command
 	)
 }
 

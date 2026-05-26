@@ -26,6 +26,9 @@ type Prompt struct {
 	now        func() time.Time
 	platform   string
 	workingDir string
+
+	extraContextFiles []ContextFile  // XRUSH: extra context file support
+	cache             *ContextCache  // XRUSH: context caching
 }
 
 type PromptDat struct {

@@ -42,6 +42,7 @@ var defaultContextPaths = []string{
 	"AGENTS.md",
 	"agents.md",
 	"Agents.md",
+	"CRUSH.memory.md", // XRUSH: added memory context path
 }
 
 type SelectedModelType string
@@ -200,15 +201,20 @@ type MCPConfig struct {
 }
 
 type LSPConfig struct {
-	Disabled    bool              `json:"disabled,omitempty" jsonschema:"description=Whether this LSP server is disabled,default=false"`
-	Command     string            `json:"command,omitempty" jsonschema:"description=Command to execute for the LSP server,example=gopls"`
-	Args        []string          `json:"args,omitempty" jsonschema:"description=Arguments to pass to the LSP server command"`
-	Env         map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set to the LSP server command"`
-	FileTypes   []string          `json:"filetypes,omitempty" jsonschema:"description=File types this LSP server handles,example=go,example=mod,example=rs,example=c,example=js,example=ts"`
-	RootMarkers []string          `json:"root_markers,omitempty" jsonschema:"description=Files or directories that indicate the project root,example=go.mod,example=package.json,example=Cargo.toml"`
-	InitOptions map[string]any    `json:"init_options,omitempty" jsonschema:"description=Initialization options passed to the LSP server during initialize request"`
-	Options     map[string]any    `json:"options,omitempty" jsonschema:"description=LSP server-specific settings passed during initialization"`
-	Timeout     int               `json:"timeout,omitempty" jsonschema:"description=Timeout in seconds for LSP server initialization,default=30,example=60,example=120"`
+	Disabled  bool              `json:"disabled,omitempty" jsonschema:"description=Whether this LSP server is disabled,default=false"`
+	Command   string            `json:"command,omitempty" jsonschema:"description=Command to execute for the LSP server,example=gopls"`
+	Args      []string          `json:"args,omitempty" jsonschema:"description=Arguments to pass to the LSP server command"`
+	Env       map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set to the LSP server command"`
+	FileTypes []string          `json:"filetypes,omitempty" jsonschema:"description=File types this LSP server handles,example=go,example=mod,example=rs,example=c,example=js,example=ts"`
+	// [XRUSH: begin: LSP match patterns for file routing]
+	MatchPatterns []string `json:"match_patterns,omitempty" jsonschema:"description=Glob patterns for LSP file routing (e.g. *.proto, **/graphql/**),example=*.proto,example=**/graphql/**,example=src/generated/**"`
+	// [XRUSH: end]
+	RootMarkers []string       `json:"root_markers,omitempty" jsonschema:"description=Files or directories that indicate the project root,example=go.mod,example=package.json,example=Cargo.toml"`
+	InitOptions map[string]any `json:"init_options,omitempty" jsonschema:"description=Initialization options passed to the LSP server during initialize request"`
+	Options     map[string]any `json:"options,omitempty" jsonschema:"description=LSP server-specific settings passed during initialization"`
+	Timeout     int            `json:"timeout,omitempty" jsonschema:"description=Timeout in seconds for LSP server initialization,default=30,example=60,example=120"`
+	// XRUSH: auto-download support for LSP binaries
+	AutoDownload *AutoDownloadConfig `json:"auto_download,omitempty" jsonschema:"description=Auto-download configuration for the LSP server binary"`
 }
 
 type TUIOptions struct {
@@ -281,6 +287,43 @@ type Options struct {
 	DisableNotifications      bool         `json:"disable_notifications,omitempty" jsonschema:"description=Deprecated: Use notification_style instead. Disable desktop notifications,default=false"`
 	NotificationStyle         string       `json:"notification_style,omitempty" jsonschema:"description=Notification style to use. Options: auto (default), native, osc, bell, disabled. Auto selects based on environment: native for local sessions, osc for SSH (with automatic OSC 99/777 detection).,enum=auto,enum=native,enum=osc,enum=bell,enum=disabled,default=auto"`
 	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=crush-config"`
+	// [XRUSH: begin: xrush-specific Options fields]
+	LCM        *LCMOptions        `json:"lcm,omitempty" jsonschema:"description=Lossless Context Management options"`
+	RepoMap    *RepoMapOptions    `json:"repo_map,omitempty" jsonschema:"description=Repository map configuration"`
+	Validation *ValidationOptions `json:"validation,omitempty" jsonschema:"description=Edit validation configuration"`
+	Architect  *ArchitectOptions  `json:"architect,omitempty" jsonschema:"description=Architect planning phase configuration"`
+
+	// ArchitectModel overrides the model used for architect (planning)
+	// calls. When nil the large model is used.
+	ArchitectModel *SelectedModel `json:"architect_model,omitempty" jsonschema:"description=Override model for architect/planning calls. Defaults to the large model when not set."`
+	// EditorModel overrides the model used for editor (coding) calls.
+	// When nil the small model is used.
+	EditorModel *SelectedModel `json:"editor_model,omitempty" jsonschema:"description=Override model for editor/coding calls. Defaults to the small model when not set."`
+
+	// RouterTokenLimit is the token count threshold from the xrush router
+	// config's first tier. When set, it overrides the default small-model
+	// token limit used by the ModelRouter.
+	RouterTokenLimit int `json:"router_token_limit,omitempty" jsonschema:"description=Token count threshold for model routing, extracted from the xrush router config's first tier"`
+
+	// RouterTiers holds the full multi-tier routing configuration parsed
+	// from the xrush router config. When non-empty, TierRouter is used
+	// instead of the binary ModelRouter. Falls back to RouterTokenLimit
+	// when empty.
+	RouterTiers []RoutingTier `json:"router_tiers,omitempty" jsonschema:"description=Multi-tier routing configuration with token thresholds"`
+
+	// Processors controls the message processing pipeline. When enabled, a
+	// ProcessorRunner is wired into the coordinator for intercepting LLM
+	// input/output. Defaults to false (disabled, zero overhead).
+	Processors *ProcessorsOptions `json:"processors,omitempty" jsonschema:"description=Message processing pipeline configuration"`
+
+	// DoomLoopIntervention controls the doom loop intervention level.
+	// Values: "none" (message only), "warn" (soft intervention), "full"
+	// (soft + medium intervention). Default: "warn".
+	DoomLoopIntervention string `json:"doom_loop_intervention,omitempty" jsonschema:"description=Doom loop intervention mode: none (message only), warn (soft intervention), full (soft+medium). Default: warn,enum=none,enum=warn,enum=full"`
+
+	// Snapshot configures snapshot retention for the rewind system.
+	Snapshot *SnapshotConfig `json:"snapshot,omitempty" jsonschema:"description=Snapshot retention configuration"`
+	// [XRUSH: end]
 }
 
 type MCPs map[string]MCPConfig
@@ -517,8 +560,9 @@ type Agent struct {
 }
 
 type Tools struct {
-	Ls   ToolLs   `json:"ls,omitzero"`
-	Grep ToolGrep `json:"grep,omitzero"`
+	Ls      ToolLs         `json:"ls,omitzero"`
+	Grep    ToolGrep       `json:"grep,omitzero"`
+	RepoMap RepoMapOptions `json:"repo_map" jsonschema:"description=Repository map generation options"` // XRUSH: repo map tool options
 }
 
 type ToolLs struct {
@@ -653,34 +697,6 @@ func (c *Config) SmallModel() *catwalk.Model {
 
 const maxRecentModelsPerType = 5
 
-func allToolNames() []string {
-	return []string{
-		"agent",
-		"bash",
-		"crush_info",
-		"crush_logs",
-		"job_output",
-		"job_kill",
-		"download",
-		"edit",
-		"multiedit",
-		"lsp_diagnostics",
-		"lsp_references",
-		"lsp_restart",
-		"fetch",
-		"agentic_fetch",
-		"glob",
-		"grep",
-		"ls",
-		"sourcegraph",
-		"todos",
-		"view",
-		"write",
-		"list_mcp_resources",
-		"read_mcp_resource",
-	}
-}
-
 func resolveAllowedTools(allTools []string, disabledTools []string) []string {
 	if disabledTools == nil {
 		return allTools
@@ -691,6 +707,7 @@ func resolveAllowedTools(allTools []string, disabledTools []string) []string {
 
 func resolveReadOnlyTools(tools []string) []string {
 	readOnlyTools := []string{"glob", "grep", "ls", "sourcegraph", "view"}
+	readOnlyTools = append(readOnlyTools, xrushReadOnlyTools()...) // XRUSH: add xrush read-only tools
 	// filter to only include tools that are in allowedtools (include mode)
 	return filterSlice(tools, readOnlyTools, true)
 }

@@ -38,6 +38,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/ext" // XRUSH: extension host import
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
@@ -122,6 +123,9 @@ type sessionAgent struct {
 
 	messageQueue   *csync.Map[string, []SessionAgentCall]
 	activeRequests *csync.Map[string, context.CancelFunc]
+
+	extHost *ext.ExtensionHost // XRUSH: extension host
+	hooks   agentHookMediator  // XRUSH: hook mediator for extension lifecycle
 }
 
 type SessionAgentOptions struct {
@@ -136,6 +140,7 @@ type SessionAgentOptions struct {
 	Messages             message.Service
 	Tools                []fantasy.AgentTool
 	Notify               pubsub.Publisher[notify.Notification]
+	ExtHost              *ext.ExtensionHost // XRUSH: extension host option
 }
 
 func NewSessionAgent(
@@ -153,6 +158,8 @@ func NewSessionAgent(
 		tools:                csync.NewSliceFrom(opts.Tools),
 		isYolo:               opts.IsYolo,
 		notify:               opts.Notify,
+		extHost:              opts.ExtHost,                          // XRUSH: extension host
+		hooks:                agentHookMediator{host: opts.ExtHost}, // XRUSH: hook mediator init
 		messageQueue:         csync.NewMap[string, []SessionAgentCall](),
 		activeRequests:       csync.NewMap[string, context.CancelFunc](),
 	}
@@ -260,6 +267,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	startTime := time.Now()
 	a.eventPromptSent(call.SessionID)
 
+	a.hooks.invokeRunStart(ctx, call.SessionID, call.Prompt) // XRUSH: hook lifecycle - run start
+
 	var currentAssistant *message.Message
 	var stepMessages []fantasy.Message
 	var shouldSummarize bool
@@ -320,9 +329,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				prepared.Messages = append([]fantasy.Message{fantasy.NewSystemMessage(promptPrefix)}, prepared.Messages...)
 			}
 
+			a.hooks.invokePreparePrompt(callContext, call.SessionID, &prepared) // XRUSH: hook lifecycle - prepare prompt
+
 			sessionLock.Lock()
 			stepMessages = cloneFantasyMessages(prepared.Messages)
 			sessionLock.Unlock()
+
+			a.hooks.invokePrepareStep(callContext, call.SessionID, &prepared) // XRUSH: hook lifecycle - prepare step
 
 			var assistantMsg message.Message
 			assistantMsg, err = a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{
@@ -456,6 +469,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				return sessionErr
 			}
 			currentSession = updatedSession
+			a.hooks.invokeStepFinish(genCtx, call.SessionID, stepResult) // XRUSH: hook lifecycle - step finish
 			return a.messages.Update(genCtx, *currentAssistant)
 		},
 		StopWhen: []fantasy.StopCondition{
@@ -483,10 +497,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			func(steps []fantasy.StepResult) bool {
 				return hasRepeatedToolCalls(steps, loopDetectionWindowSize, loopDetectionMaxRepeats)
 			},
+			// XRUSH: hook-based stop condition for extension control
+			func(steps []fantasy.StepResult) bool {
+				return a.hooks.checkStopCondition(ctx, steps)
+			},
 		},
 	})
 
 	a.eventPromptResponded(call.SessionID, time.Since(startTime).Truncate(time.Second))
+
+	a.hooks.invokeRunEnd(ctx, call.SessionID, result, err) // XRUSH: hook lifecycle - run end
 
 	if err != nil {
 		isHyper := largeModel.ModelCfg.Provider == hyper.Name

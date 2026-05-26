@@ -18,10 +18,13 @@ INSERT INTO messages (
     model,
     provider,
     is_summary_message,
+    seq, -- XRUSH: auto-incrementing sequence number for rewind
     created_at,
     updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now')
+    ?, ?, ?, ?, ?, ?, ?,
+    (SELECT COALESCE(MAX(m.seq) + 1, 0) FROM messages m WHERE m.session_id = ?), -- XRUSH: seq subquery
+    strftime('%s', 'now'), strftime('%s', 'now')
 )
 RETURNING *;
 

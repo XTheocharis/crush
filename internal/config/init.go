@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/charmbracelet/crush/internal/fsext"
@@ -63,33 +62,32 @@ func ProjectNeedsInitialization(store *ConfigStore) (bool, error) {
 	return true, nil
 }
 
+// [XRUSH: begin: contextPathsExist rewritten to support nested paths and directory entries]
 func contextPathsExist(dir string) (bool, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false, err
-	}
-
-	// Create a slice of lowercase filenames for lookup with slices.Contains
-	var files []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			files = append(files, strings.ToLower(entry.Name()))
-		}
-	}
-
-	// Check if any of the default context paths exist in the directory
+	// Check if any of the default context paths exist in the directory.
+	// This handles both top-level files (e.g. "CRUSH.md") and nested paths
+	// (e.g. ".github/copilot-instructions.md") and directory entries
+	// (e.g. ".cursor/rules/").
 	for _, path := range defaultContextPaths {
-		// Extract just the filename from the path
-		_, filename := filepath.Split(path)
-		filename = strings.ToLower(filename)
+		fullPath := filepath.Join(dir, path)
 
-		if slices.Contains(files, filename) {
+		// Paths ending with "/" are directory checks.
+		if strings.HasSuffix(path, "/") {
+			if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+				return true, nil
+			}
+			continue
+		}
+
+		if fileExists(fullPath) {
 			return true, nil
 		}
 	}
 
 	return false, nil
 }
+
+// [XRUSH: end]
 
 // dirHasNoVisibleFiles returns true if the directory has no files/dirs after applying ignore rules.
 func dirHasNoVisibleFiles(dir string) (bool, error) {

@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  web:
+    image: nginx:alpine
+    container_name: web_server
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx:/etc/nginx:ro
+      - ./static:/usr/share/nginx/html:ro
+    networks:
+      - frontend
+    depends_on:
+      - api
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: api_server
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:secret@db:5432/app
+      Redis_URL: redis://redis:6379
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge

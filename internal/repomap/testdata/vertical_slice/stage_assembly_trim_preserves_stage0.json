@@ -1,0 +1,47 @@
+{
+  "name": "stage_assembly_trim_preserves_stage0",
+  "repository": {
+    "root": "fixture/trim_stage0",
+    "files": [
+      "README.md",
+      "cmd/main.go",
+      "internal/core/handler.go",
+      "pkg/http/server.go",
+      "docs/api.md"
+    ]
+  },
+  "pipeline": {
+    "stage0_special_files": ["README.md", "docs/api.md"],
+    "stage1_ranked_defs": [
+      {"file": "cmd/main.go", "ident": "main", "rank": 0.88}
+    ],
+    "stage2_graph_nodes": ["internal/core/handler.go"],
+    "stage3_repo_files": ["pkg/http/server.go"]
+  },
+  "profiles": [
+    {
+      "name": "tight_budget_all_trim_stage3",
+      "parity_mode": false,
+      "token_budget": 25,
+      "repeat_runs": 10
+    },
+    {
+      "name": "tight_budget_trim_stage3_and_2",
+      "parity_mode": false,
+      "token_budget": 18,
+      "repeat_runs": 10
+    },
+    {
+      "name": "tight_budget_trim_stage3_2_and_1",
+      "parity_mode": false,
+      "token_budget": 15,
+      "repeat_runs": 10
+    }
+  ],
+  "assertions": {
+    "require_non_empty_map": true,
+    "require_rendered_entries": false,
+    "require_stage_invariants": true,
+    "require_trim_order": [3, 2, 1]
+  }
+}

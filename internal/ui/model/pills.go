@@ -226,7 +226,8 @@ func (m *UI) pillsAreaHeight() int {
 	}
 	hasIncomplete := hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
-	hasPills := hasIncomplete || hasQueue
+	isCompacting := m.lcmCompacting
+	hasPills := hasIncomplete || hasQueue || isCompacting
 	if !hasPills {
 		return 0
 	}
@@ -259,8 +260,9 @@ func (m *UI) renderPills() {
 
 	hasIncomplete := hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
+	isCompacting := m.lcmCompacting // XRUSH: LCM compaction pill
 
-	if !hasIncomplete && !hasQueue {
+	if !hasIncomplete && !hasQueue && !isCompacting { // XRUSH: added isCompacting check
 		return
 	}
 
@@ -274,6 +276,12 @@ func (m *UI) renderPills() {
 	}
 
 	var pills []string
+	// XRUSH: compaction pill rendering.
+	if isCompacting {
+		if pill := m.compactionPill(); pill != "" {
+			pills = append(pills, pill)
+		}
+	}
 	if hasIncomplete {
 		pills = append(pills, todoPill(m.session.Todos, inProgressIcon, todosFocused, m.pillsExpanded, t))
 	}

@@ -20,6 +20,10 @@ func (m mockFileTrackerService) LastReadTime(ctx context.Context, sessionID, pat
 	return time.Now()
 }
 
+func (m mockFileTrackerService) ListRecentReadFiles(ctx context.Context, since time.Duration) ([]string, error) {
+	return nil, nil
+}
+
 func (m mockFileTrackerService) ListReadFiles(ctx context.Context, sessionID string) ([]string, error) {
 	return nil, nil
 }

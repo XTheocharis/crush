@@ -176,6 +176,7 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 	dbMessage, err := s.q.CreateMessage(ctx, db.CreateMessageParams{
 		ID:               uuid.New().String(),
 		SessionID:        sessionID,
+		SessionID_2:      sessionID, // XRUSH: duplicate session ID for DB schema
 		Role:             string(params.Role),
 		Parts:            string(partsJSON),
 		Model:            sql.NullString{String: string(params.Model), Valid: true},
@@ -513,6 +514,7 @@ func (s *service) fromDBItem(item db.Message) (Message, error) {
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 		IsSummaryMessage: item.IsSummaryMessage != 0,
+		Seq:              int(item.Seq), // XRUSH: populate Seq from DB
 	}, nil
 }
 

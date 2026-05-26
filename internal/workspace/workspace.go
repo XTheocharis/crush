@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/oauth"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/rewind" // XRUSH: rewind service
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/skills"
 )
@@ -91,6 +92,8 @@ type Workspace interface {
 	AgentQueuedPromptsList(sessionID string) []string
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
+	// XRUSH: session recovery
+	AgentRecoverSession(ctx context.Context, sessionID string) error
 	UpdateAgentModel(ctx context.Context) error
 	InitCoderAgent(ctx context.Context) error
 	GetDefaultSmallModel(providerID string) config.SelectedModel
@@ -154,6 +157,14 @@ type Workspace interface {
 	GetMCPPrompt(clientID, promptID string, args map[string]string) (string, error)
 	EnableDockerMCP(ctx context.Context) error
 	DisableDockerMCP() error
+
+	// Rewind returns the rewind service, or nil if rewind is not available.
+	// [XRUSH: begin: rewind service interface method]
+	RewindService() rewind.Service
+	// [XRUSH: end]
+
+	// XRUSH: repomap command palette bridge
+	RepoMapRefresh(ctx context.Context, sessionID string) error
 
 	// Events
 	Subscribe(program *tea.Program)
