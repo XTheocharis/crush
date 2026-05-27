@@ -35,6 +35,7 @@ import (
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/rewind" // XRUSH: RewindService field type on App struct
 	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/skills"
 	"github.com/charmbracelet/crush/internal/ui/anim"
@@ -65,6 +66,8 @@ type App struct {
 	LSPManager *lsp.Manager
 
 	Skills *skills.Manager
+
+	RewindService rewind.Service // XRUSH: rewind service
 
 	ExtHost *ext.ExtensionHost // XRUSH: extension host
 
@@ -132,7 +135,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		func(ctx context.Context) error { return mcp.Close(ctx) },
 	)
 
-	setupExtensions(ctx, app, conn, sessions, messages, store) // XRUSH: extension host setup
+	setupExtensions(ctx, app, conn, q, sessions, messages, store) // XRUSH: extension host + rewind setup
 
 	// TODO: remove the concept of agent config, most likely.
 	if !cfg.IsConfigured() {
@@ -663,3 +666,4 @@ func (app *App) checkForUpdates(ctx context.Context) {
 		IsDevelopment:  info.IsDevelopment(),
 	})
 }
+
