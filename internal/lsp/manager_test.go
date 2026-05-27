@@ -8,15 +8,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnavailableBackoff(t *testing.T) {
+func TestUnavailableBackoff(t *testing.T) { // XRUSH: rewritten for exponential backoff
 	t.Parallel()
 
 	base := time.Date(2026, 3, 26, 0, 0, 0, 0, time.UTC)
 	now := base
 
 	manager := &Manager{
-		unavailable: csync.NewMap[string, time.Time](),
+		unavailable: csync.NewMap[string, *serverRetryState](), // XRUSH: changed type
 		now:         func() time.Time { return now },
+		backoff:     DefaultBackoff(), // XRUSH: added backoff
 	}
 
 	require.False(t, manager.recentlyUnavailable("gopls"))
@@ -24,10 +25,14 @@ func TestUnavailableBackoff(t *testing.T) {
 	manager.markUnavailable("gopls")
 	require.True(t, manager.recentlyUnavailable("gopls"))
 
-	now = now.Add(unavailableRetryDelay + time.Second)
+	now = now.Add(2 * time.Second)
 	require.False(t, manager.recentlyUnavailable("gopls"))
-	_, exists := manager.unavailable.Get("gopls")
-	require.False(t, exists)
+
+	manager.markUnavailable("gopls")
+	require.True(t, manager.recentlyUnavailable("gopls"))
+
+	now = now.Add(3 * time.Second)
+	require.False(t, manager.recentlyUnavailable("gopls"))
 
 	manager.markUnavailable("gopls")
 	manager.clearUnavailable("gopls")

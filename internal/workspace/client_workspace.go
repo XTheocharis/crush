@@ -245,6 +245,16 @@ func (w *ClientWorkspace) AgentSummarize(ctx context.Context, sessionID string) 
 	return w.client.AgentSummarizeSession(ctx, w.workspaceID(), sessionID)
 }
 
+// XRUSH: session recovery
+func (w *ClientWorkspace) AgentRecoverSession(_ context.Context, _ string) error {
+	return nil
+}
+
+// XRUSH: repomap command palette bridge
+func (w *ClientWorkspace) RepoMapRefresh(_ context.Context, _ string) error {
+	return nil
+}
+
 func (w *ClientWorkspace) UpdateAgentModel(ctx context.Context) error {
 	return w.client.UpdateAgent(ctx, w.workspaceID())
 }

@@ -23,6 +23,9 @@ type Service interface {
 
 	// ListReadFiles returns the paths of all files read in a session.
 	ListReadFiles(ctx context.Context, sessionID string) ([]string, error)
+
+	// XRUSH: LCM recent files method
+	ListRecentReadFiles(ctx context.Context, since time.Duration) ([]string, error)
 }
 
 type service struct {

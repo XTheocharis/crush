@@ -24,6 +24,8 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/event"
+	"github.com/charmbracelet/crush/internal/ext"          // XRUSH: extension host import
+	_ "github.com/charmbracelet/crush/internal/extensions" // XRUSH: agent config restorer wiring
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/format"
 	"github.com/charmbracelet/crush/internal/history"
@@ -63,6 +65,8 @@ type App struct {
 	LSPManager *lsp.Manager
 
 	Skills *skills.Manager
+
+	ExtHost *ext.ExtensionHost // XRUSH: extension host
 
 	config *config.ConfigStore
 
@@ -127,6 +131,8 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		func(context.Context) error { return db.Release(dataDir) },
 		func(ctx context.Context) error { return mcp.Close(ctx) },
 	)
+
+	setupExtensions(ctx, app, conn, sessions, messages, store) // XRUSH: extension host setup
 
 	// TODO: remove the concept of agent config, most likely.
 	if !cfg.IsConfigured() {
@@ -541,11 +547,15 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		app.LSPManager,
 		app.agentNotifications,
 		app.Skills,
+		app.ExtHost, // XRUSH: pass extension host to coordinator
 	)
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)
 		return err
 	}
+
+	wireAgentConfigRestorer(app.AgentCoordinator) // XRUSH: post-compaction skill restoration
+
 	return nil
 }
 

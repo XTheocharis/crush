@@ -12,7 +12,10 @@ import (
 
 // Hook event name constants.
 const (
-	EventPreToolUse = "PreToolUse"
+	EventPreToolUse  = "PreToolUse"
+	EventPostToolUse = "PostToolUse" // XRUSH: additional hook events
+	EventPreCompact  = "PreCompact"  // XRUSH: compaction hooks
+	EventPostCompact = "PostCompact" // XRUSH: compaction hooks
 )
 
 // HaltExitCode is the exit code that halts the whole turn. 2 blocks the
@@ -72,6 +75,8 @@ type HookResult struct {
 	Reason       string // Deny or halt reason (same field, different audience).
 	Context      string
 	UpdatedInput string // Shallow-merge patch against tool_input (opaque JSON).
+	// XRUSH: PostToolUse output rewriting.
+	UpdatedOutput string // Hook-provided replacement for tool output (PostToolUse only).
 }
 
 // AggregateResult holds the combined outcome of all hooks for an event.
@@ -83,6 +88,8 @@ type AggregateResult struct {
 	Reason       string     // Concatenated deny/halt reasons (newline-separated).
 	Context      string     // Concatenated context from all hooks.
 	UpdatedInput string     // Merged tool_input JSON (empty if no patches).
+	// XRUSH: PostToolUse output rewriting.
+	UpdatedOutput string // Last-writer-wins replacement for tool output.
 }
 
 // aggregate merges multiple HookResults into a single AggregateResult.
@@ -93,12 +100,13 @@ type AggregateResult struct {
 // ones on colliding keys.
 func aggregate(results []HookResult, origToolInput string) AggregateResult {
 	var (
-		decision Decision
-		halt     bool
-		reasons  []string
-		contexts []string
-		merged   = origToolInput
-		anyPatch = false
+		decision      Decision
+		halt          bool
+		reasons       []string
+		contexts      []string
+		merged        = origToolInput
+		anyPatch      = false
+		updatedOutput string // XRUSH: last-writer-wins for PostToolUse.
 	)
 	for _, r := range results {
 		switch r.Decision {
@@ -138,6 +146,10 @@ func aggregate(results []HookResult, origToolInput string) AggregateResult {
 			merged = next
 			anyPatch = true
 		}
+		// XRUSH: PostToolUse — last-writer-wins for UpdatedOutput.
+		if r.UpdatedOutput != "" {
+			updatedOutput = r.UpdatedOutput
+		}
 	}
 
 	agg := AggregateResult{
@@ -154,6 +166,8 @@ func aggregate(results []HookResult, origToolInput string) AggregateResult {
 	if len(contexts) > 0 {
 		agg.Context = strings.Join(contexts, "\n")
 	}
+	// XRUSH: PostToolUse output rewriting.
+	agg.UpdatedOutput = updatedOutput
 	return agg
 }
 

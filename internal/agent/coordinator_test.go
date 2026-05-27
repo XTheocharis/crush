@@ -16,9 +16,10 @@ import (
 
 // mockSessionAgent is a minimal mock for the SessionAgent interface.
 type mockSessionAgent struct {
-	model     Model
-	runFunc   func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
-	cancelled []string
+	model        Model
+	runFunc      func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
+	cancelled    []string
+	busySessions map[string]bool // XRUSH: session recovery test support
 }
 
 func (m *mockSessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
@@ -32,8 +33,13 @@ func (m *mockSessionAgent) SetSystemPrompt(systemPrompt string) {}
 func (m *mockSessionAgent) Cancel(sessionID string) {
 	m.cancelled = append(m.cancelled, sessionID)
 }
-func (m *mockSessionAgent) CancelAll()                                  {}
-func (m *mockSessionAgent) IsSessionBusy(sessionID string) bool         { return false }
+func (m *mockSessionAgent) CancelAll() {}
+func (m *mockSessionAgent) IsSessionBusy(sessionID string) bool {
+	if m.busySessions != nil {
+		return m.busySessions[sessionID]
+	}
+	return false
+}
 func (m *mockSessionAgent) IsBusy() bool                                { return false }
 func (m *mockSessionAgent) QueuedPrompts(sessionID string) int          { return 0 }
 func (m *mockSessionAgent) QueuedPromptsList(sessionID string) []string { return nil }

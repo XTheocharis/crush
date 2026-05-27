@@ -54,3 +54,9 @@ manpages/
 completions/crush.*sh
 .prettierignore
 .task
+
+# XRUSH: Sisyphus plans/notepads (orchestration tooling)
+.sisyphus/
+
+# XRUSH: OpenCode working data
+.opencode/

@@ -25,9 +25,10 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/home"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
-	"github.com/qjebbs/go-jsons"
+	// XRUSH: removed go-jsons import (replaced by merge-based loadFromBytes)
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+
 )
 
 const defaultCatwalkURL = "https://catwalk.charm.land"
@@ -737,6 +738,8 @@ func lookupConfigs(cwd string) []string {
 		return configPaths
 	}
 
+	foundConfigs = lookupYAMLConfigPaths(cwd, foundConfigs) // XRUSH: lookup YAML config paths
+
 	// reverse order so last config has more priority
 	slices.Reverse(foundConfigs)
 
@@ -758,10 +761,12 @@ func loadFromConfigPaths(configPaths []string) (*Config, []string, error) {
 		if len(data) == 0 {
 			continue
 		}
-		if !json.Valid(data) {
-			return nil, nil, fmt.Errorf("invalid JSON in config file %s", path)
+		// XRUSH: replaced json.Valid check with parseConfigData for YAML support
+		processed, err := parseConfigData(path, data)
+		if err != nil {
+			return nil, nil, err
 		}
-		configs = append(configs, data)
+		configs = append(configs, processed)
 		loaded = append(loaded, path)
 	}
 
@@ -772,21 +777,24 @@ func loadFromConfigPaths(configPaths []string) (*Config, []string, error) {
 	return cfg, loaded, nil
 }
 
+// [XRUSH: begin: loadFromBytes rewritten to use merge() instead of jsons.Merge]
 func loadFromBytes(configs [][]byte) (*Config, error) {
 	if len(configs) == 0 {
 		return &Config{}, nil
 	}
 
-	data, err := jsons.Merge(configs)
-	if err != nil {
-		return nil, err
+	result := &Config{}
+	for _, data := range configs {
+		var cfg Config
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, err
+		}
+		*result = result.merge(cfg)
 	}
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
+	return result, nil
 }
+
+// [XRUSH: end]
 
 func hasAWSCredentials(env env.Env) bool {
 	if env.Get("AWS_BEARER_TOKEN_BEDROCK") != "" {
@@ -1055,6 +1063,9 @@ func normalizeHookEvent(name string) string {
 	switch strings.ToLower(strings.ReplaceAll(name, "_", "")) {
 	case "pretooluse":
 		return "PreToolUse"
+	// XRUSH: PostToolUse event normalization.
+	case "posttooluse":
+		return "PostToolUse"
 	default:
 		return name
 	}

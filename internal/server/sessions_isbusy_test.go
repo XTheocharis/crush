@@ -42,8 +42,11 @@ func (s *stubCoordinator) ClearQueue(string)                 {}
 func (s *stubCoordinator) Summarize(context.Context, string) error {
 	return nil
 }
-func (s *stubCoordinator) Model() agent.Model                 { return agent.Model{} }
-func (s *stubCoordinator) UpdateModels(context.Context) error { return nil }
+func (s *stubCoordinator) Model() agent.Model                                            { return agent.Model{} }
+func (s *stubCoordinator) UpdateModels(context.Context) error                            { return nil }
+func (s *stubCoordinator) RecoverSession(context.Context, string) error                  { return nil } // XRUSH: session recovery
+func (s *stubCoordinator) RepoMapRefresh(context.Context, string) error                  { return nil } // XRUSH: repomap refresh
+func (s *stubCoordinator) RestoreAgentConfig(context.Context, map[string][]string) error { return nil } // XRUSH: agent config restore
 
 // stubSessions is a minimal session.Service that returns a fixed list
 // (and supports Get by ID). All other methods return zero values; the

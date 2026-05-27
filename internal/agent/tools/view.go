@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/filepathext"
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/lsp"
@@ -46,8 +47,10 @@ func viewDescription() string {
 
 type ViewParams struct {
 	FilePath string `json:"file_path" description:"The path to the file to read"`
-	Offset   int    `json:"offset,omitempty" description:"The line number to start reading from (0-based)"`
-	Limit    int    `json:"limit,omitempty" description:"The number of lines to read (defaults to 200)"`
+	// XRUSH: batch file paths
+	FilePaths []string `json:"file_paths,omitempty" description:"List of file paths to read in batch mode"`
+	Offset    int      `json:"offset,omitempty" description:"The line number to start reading from (0-based)"`
+	Limit     int      `json:"limit,omitempty" description:"The number of lines to read (defaults to 200)"`
 }
 
 type ViewPermissionsParams struct {
@@ -99,9 +102,17 @@ func NewViewTool(
 		ViewToolName,
 		viewDescription(),
 		func(ctx context.Context, params ViewParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			if params.FilePath == "" {
+			if params.FilePath == "" && len(params.FilePaths) == 0 {
 				return fantasy.NewTextErrorResponse("file_path is required"), nil
 			}
+
+			sessionID := GetSessionFromContext(ctx)
+
+			// [XRUSH: begin: batch file reading]
+			if len(params.FilePaths) > 0 {
+				return handleBatchRead(ctx, params, workingDir, filetracker, sessionID)
+			}
+			// [XRUSH: end]
 
 			// Handle builtin skill files (crush: prefix).
 			if strings.HasPrefix(params.FilePath, skills.BuiltinPrefix) {
@@ -127,7 +138,6 @@ func NewViewTool(
 			isOutsideWorkDir := err != nil || strings.HasPrefix(relPath, "..")
 			isSkillFile := isInSkillsPath(absFilePath, skillsPaths)
 
-			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for accessing files outside working directory")
 			}
@@ -143,7 +153,11 @@ func NewViewTool(
 						ToolName:    ViewToolName,
 						Action:      "read",
 						Description: fmt.Sprintf("Read file outside working directory: %s", absFilePath),
-						Params:      ViewPermissionsParams(params),
+						Params: ViewPermissionsParams{
+							FilePath: params.FilePath,
+							Offset:   params.Offset,
+							Limit:    params.Limit,
+						},
 					},
 				)
 				if permReqErr != nil {
@@ -186,10 +200,16 @@ func NewViewTool(
 				return fantasy.ToolResponse{}, fmt.Errorf("error accessing file: %w", err)
 			}
 
-			// Check if it's a directory
+			// [XRUSH: begin: delegate directory listing to ls tool]
+			// Check if it's a directory and delegate to ls tool's ListDirectoryTree.
 			if fileInfo.IsDir() {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("Path is a directory, not a file: %s", filePath)), nil
+				output, _, err := ListDirectoryTree(filePath, LSParams{}, config.ToolLs{})
+				if err != nil {
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("Error listing directory %s: %v", filePath, err)), nil
+				}
+				return fantasy.NewTextResponse(output), nil
 			}
+			// [XRUSH: end]
 
 			// Set default limit if not provided (no limit for SKILL.md files)
 			if params.Limit <= 0 {

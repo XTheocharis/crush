@@ -18,3 +18,8 @@ WHERE session_id = ? AND path = ? LIMIT 1;
 SELECT * FROM read_files
 WHERE session_id = ?
 ORDER BY read_at DESC;
+
+-- name: ListRecentReadFiles :many
+SELECT session_id, path, read_at FROM read_files
+WHERE read_at >= ?
+ORDER BY read_at DESC;

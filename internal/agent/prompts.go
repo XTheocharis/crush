@@ -17,6 +17,9 @@ var taskPromptTmpl []byte
 //go:embed templates/initialize.md.tpl
 var initializePromptTmpl []byte
 
+//go:embed templates/architect.md.tpl
+var architectPromptTmpl []byte
+
 func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	systemPrompt, err := prompt.NewPrompt("coder", string(coderPromptTmpl), opts...)
 	if err != nil {
@@ -27,6 +30,14 @@ func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 
 func taskPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	systemPrompt, err := prompt.NewPrompt("task", string(taskPromptTmpl), opts...)
+	if err != nil {
+		return nil, err
+	}
+	return systemPrompt, nil
+}
+
+func architectPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	systemPrompt, err := prompt.NewPrompt("architect", string(architectPromptTmpl), opts...)
 	if err != nil {
 		return nil, err
 	}

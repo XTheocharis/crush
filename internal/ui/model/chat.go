@@ -60,6 +60,13 @@ type Chat struct {
 	// Pending single click action (delayed to detect double-click)
 	pendingClickID int // Incremented on each click to invalidate old pending clicks
 
+	// XRUSH: OnMessageOptions is called when a user message should show the
+	// message options dialog (via single click that wasn't consumed).
+	OnMessageOptions func(messageID, sessionID string, seq int) tea.Cmd
+
+	// XRUSH: SessionID is the current session ID, used for message options.
+	sessionID string
+
 	// follow is a flag to indicate whether the view should auto-scroll to
 	// bottom on new messages.
 	follow bool
@@ -699,25 +706,20 @@ func (m *Chat) HandleMouseDown(x, y int) (bool, tea.Cmd) {
 // HandleDelayedClick handles a delayed single-click action (like expansion).
 // It only executes if the click ID matches (i.e., no double-click occurred)
 // and no text selection was made (drag to select).
-func (m *Chat) HandleDelayedClick(msg DelayedClickMsg) bool {
-	// Ignore if this click was superseded by a newer click (double/triple).
+//
+// XRUSH: changed return type from bool to (bool, tea.Cmd) for fork message options dispatch.
+func (m *Chat) HandleDelayedClick(msg DelayedClickMsg) (bool, tea.Cmd) {
 	if msg.ClickID != m.pendingClickID {
-		return false
+		return false, nil
 	}
 
-	// Don't expand if user dragged to select text.
 	if m.HasHighlight() {
-		return false
+		return false, nil
 	}
 
-	// Execute the click action (e.g., expansion).
 	selectedItem := m.list.SelectedItem()
 	if clickable, ok := selectedItem.(list.MouseClickable); ok {
 		handled := clickable.HandleMouseClick(ansi.MouseButton1, msg.X, msg.Y)
-		// Toggle expansion only when the item signalled it handled the
-		// click. Items like AssistantMessageItem only report handled when
-		// the click is on their expandable region, so this avoids
-		// toggling expansion for clicks outside the clickable area.
 		if handled {
 			if expandable, ok := selectedItem.(chat.Expandable); ok {
 				if !expandable.ToggleExpanded() {
@@ -728,10 +730,10 @@ func (m *Chat) HandleDelayedClick(msg DelayedClickMsg) bool {
 		if m.AtBottom() {
 			m.ScrollToBottom()
 		}
-		return handled
+		return handled, nil
 	}
 
-	return false
+	return m.dispatchXrushMessageOptions(selectedItem) // XRUSH: dispatch message options instead of returning false
 }
 
 // HandleMouseUp handles mouse up events for the chat component.

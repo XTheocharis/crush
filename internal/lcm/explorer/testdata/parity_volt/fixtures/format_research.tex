@@ -1,0 +1,46 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{natbib}
+
+\begin{document}
+
+\section{Introduction}
+This report references prior work in \cite{smith2024} and \citep{doe2023}.
+
+\subsection{Background}
+The baseline appears in Figure~\ref{fig:pipeline} and Equation~\eqref{eq:score}.
+
+\section{Method}
+\subsection{Dataset}
+We derive features from normalized telemetry and aggregate by service tier.
+
+\subsubsection{Feature Extraction}
+Features include request rate, tail latency, and queue depth.
+
+\begin{figure}
+\caption{Pipeline overview}
+\label{fig:pipeline}
+\end{figure}
+
+\begin{table}
+\caption{Evaluation splits}
+\label{tab:splits}
+\end{table}
+
+\begin{equation}
+\label{eq:score}
+score = \frac{tp}{tp + 0.5(fp + fn)}
+\end{equation}
+
+\section{Results}
+Results improve over baseline in both precision and recall.
+
+\section{Conclusion}
+Future work should evaluate adaptation under topology shifts.
+
+\bibliography{refs,appendix_refs}
+\bibliographystyle{plainnat}
+
+\end{document}

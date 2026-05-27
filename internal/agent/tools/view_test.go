@@ -248,6 +248,10 @@ func (m mockFileTracker) ListReadFiles(ctx context.Context, sessionID string) ([
 	return nil, nil
 }
 
+func (m mockFileTracker) ListRecentReadFiles(ctx context.Context, since time.Duration) ([]string, error) {
+	return nil, nil
+}
+
 func newViewToolForTest(workingDir string) fantasy.AgentTool {
 	permissions := &mockViewPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
 	return NewViewTool(nil, permissions, mockFileTracker{}, nil, workingDir)

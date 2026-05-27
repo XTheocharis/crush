@@ -1,0 +1,127 @@
+{
+  "version": "1",
+  "generated_at": "2026-02-26T00:00:00Z",
+  "discovery_method": "deterministic_static_plus_runtime",
+  "profile": "parity",
+  "deterministic_mode": true,
+  "enhancement_tiers_enabled": "none",
+  "token_counter_mode": "tokenizer_backed",
+  "fixed_seed": 1337,
+  "paths": [
+    {
+      "id": "lcm.tool_output.create",
+      "path_kind": "ingestion",
+      "entrypoint": "messageDecorator.Create",
+      "trigger": "tool_output_over_threshold",
+      "in_scope": true,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "DisableLargeToolOutput",
+        "LargeToolOutputTokenThreshold"
+      ],
+      "description": "Large tool output interception and storage path",
+      "explorer": "TextExplorer"
+    },
+    {
+      "id": "lcm.describe.readback",
+      "path_kind": "retrieval",
+      "entrypoint": "lcm_describe",
+      "trigger": "describe_by_file_id",
+      "in_scope": true,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope"
+      ],
+      "description": "Readback path for large file summaries",
+      "explorer": "FallbackExplorer"
+    },
+    {
+      "id": "lcm.expand.readback",
+      "path_kind": "retrieval",
+      "entrypoint": "lcm_expand",
+      "trigger": "expand_by_file_id",
+      "in_scope": true,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope",
+        "sub_agent_only"
+      ],
+      "description": "Readback path for expanded large file content",
+      "explorer": "FallbackExplorer"
+    },
+    {
+      "id": "volt.prompt.file.persist",
+      "path_kind": "ingestion",
+      "entrypoint": "prompt_dispatch",
+      "trigger": "file_reference",
+      "in_scope": false,
+      "persists_exploration_parity": true,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope"
+      ],
+      "description": "Volt prompt file reference ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.prompt.user_text.nonpersist",
+      "path_kind": "ingestion",
+      "entrypoint": "prompt_dispatch",
+      "trigger": "user_text_input",
+      "in_scope": false,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": false,
+      "config_gates": [
+        "session_scope"
+      ],
+      "description": "Volt prompt user text ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.tool.large_output.nonpersist",
+      "path_kind": "ingestion",
+      "entrypoint": "tool_output",
+      "trigger": "large_tool_result",
+      "in_scope": false,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": false,
+      "config_gates": [
+        "session_scope",
+        "output_size_threshold"
+      ],
+      "description": "Volt tool large output ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.tool.read.nonpersist",
+      "path_kind": "ingestion",
+      "entrypoint": "tool_dispatch",
+      "trigger": "file_read_tool",
+      "in_scope": false,
+      "persists_exploration_parity": false,
+      "persists_exploration_enhanced": false,
+      "config_gates": [
+        "session_scope"
+      ],
+      "description": "Volt tool file read ingestion path",
+      "explorer": ""
+    },
+    {
+      "id": "volt.map_shared.persist",
+      "path_kind": "ingestion",
+      "entrypoint": "map_shared_dispatch",
+      "trigger": "shared_context_injection",
+      "in_scope": false,
+      "persists_exploration_parity": true,
+      "persists_exploration_enhanced": true,
+      "config_gates": [
+        "session_lineage_scope"
+      ],
+      "description": "Volt map shared context ingestion path",
+      "explorer": ""
+    }
+  ]
+}

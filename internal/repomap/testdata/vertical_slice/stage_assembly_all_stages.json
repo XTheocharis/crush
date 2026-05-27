@@ -1,0 +1,37 @@
+{
+  "name": "stage_assembly_all_stages",
+  "repository": {
+    "root": "fixture/all_stages",
+    "files": [
+      "README.md",
+      "cmd/main.go",
+      "internal/service/user.go",
+      "internal/model/types.go",
+      "pkg/util/helpers.go",
+      "config/app.json"
+    ]
+  },
+  "pipeline": {
+    "stage0_special_files": ["README.md"],
+    "stage1_ranked_defs": [
+      {"file": "cmd/main.go", "ident": "main", "rank": 0.90},
+      {"file": "internal/service/user.go", "ident": "CreateUser", "rank": 0.85}
+    ],
+    "stage2_graph_nodes": ["internal/model/types.go"],
+    "stage3_repo_files": ["pkg/util/helpers.go", "config/app.json"]
+  },
+  "profiles": [
+    {
+      "name": "full_budget_all_stages",
+      "parity_mode": false,
+      "token_budget": 100,
+      "repeat_runs": 10
+    }
+  ],
+  "assertions": {
+    "require_non_empty_map": true,
+    "require_rendered_entries": true,
+    "require_stage_invariants": true,
+    "require_trim_order": [3, 2, 1]
+  }
+}
