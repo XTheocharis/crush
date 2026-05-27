@@ -14,10 +14,19 @@ import (
 )
 
 var safeProcessorNames = map[string]struct{}{
-	"token_limiter": {},
+	"token_limiter":          {},
+	"system_prompt_scrubber": {},
 }
 
 const defaultTokenBudget = 200000
+
+type completerAdapter struct {
+	fn ext.TextCompleter
+}
+
+func (a *completerAdapter) Complete(ctx context.Context, prompt, input string) (string, error) {
+	return a.fn(ctx, prompt, input)
+}
 
 // ProcessorExtension wires the processor pipeline into the extension host as
 // both a StepHookProvider and RunHookProvider. Config-gated: only active when
@@ -40,7 +49,7 @@ func (e *ProcessorExtension) Init(_ context.Context, host ext.HostContext) error
 		return nil
 	}
 
-	runner := buildProcessorRunner(cfg.Options.Processors.List)
+	runner := buildProcessorRunner(cfg.Options.Processors.List, host.Completer())
 	if runner == nil {
 		e.active = false
 		return nil
@@ -96,6 +105,9 @@ func (e *ProcessorExtension) RunHooks() []ext.RunHook {
 			OnRunStart: func(ctx context.Context, sessionID string, userMessage string) error {
 				return e.processRunStart(ctx, sessionID, userMessage)
 			},
+			OnRunEnd: func(_ context.Context, _ string, _ *fantasy.AgentResult, _ error) error {
+				return nil
+			},
 		},
 	}
 }
@@ -122,7 +134,23 @@ func (e *ProcessorExtension) processInput(ctx context.Context, _ string, message
 		return messages, nil
 	}
 
-	return processorToFantasyMessages(result.Messages), nil
+	// Preserve original fantasy messages to keep rich content (tool
+	// calls, tool results, reasoning) that the flat processor.Message
+	// type cannot represent. Do NOT use processorToFantasyMessages here
+	// — it strips all non-text parts.
+	if len(result.Messages) == len(messages) {
+		return messages, nil
+	}
+
+	removed := len(messages) - len(result.Messages)
+	if removed > 0 {
+		if removed >= len(messages) {
+			removed = len(messages) - 1
+		}
+		return messages[removed:], nil
+	}
+
+	return messages, nil
 }
 
 func (e *ProcessorExtension) processOutput(ctx context.Context, _ string, step fantasy.StepResult) {
@@ -181,7 +209,7 @@ func (e *ProcessorExtension) processRunStart(ctx context.Context, _ string, user
 	return nil
 }
 
-func buildProcessorRunner(list []string) *processor.ProcessorRunner {
+func buildProcessorRunner(list []string, completer ext.TextCompleter) *processor.ProcessorRunner {
 	var inputProcessors []processor.Processor
 	var outputProcessors []processor.Processor
 
@@ -195,6 +223,12 @@ func buildProcessorRunner(list []string) *processor.ProcessorRunner {
 			inputProcessors = append(inputProcessors, &processor.TokenLimiter{
 				Budget: defaultTokenBudget,
 			})
+		case "system_prompt_scrubber":
+			if completer == nil {
+				slog.Debug("Skipping system_prompt_scrubber: no text completer available")
+				continue
+			}
+			outputProcessors = append(outputProcessors, processor.NewSystemPromptScrubber(&completerAdapter{fn: completer}))
 		}
 	}
 

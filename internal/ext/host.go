@@ -211,6 +211,10 @@ func (hc *hostContext) WorkingDir() string {
 	return hc.deps.WorkingDir
 }
 
+func (hc *hostContext) Completer() TextCompleter {
+	return hc.deps.Completer
+}
+
 func (hc *hostContext) RegisterTools(provider ToolProvider) {
 	// Registration happens during Init via Bootstrap's capability check.
 	// This method is a placeholder for future dynamic registration.

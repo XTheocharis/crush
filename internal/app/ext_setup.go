@@ -6,13 +6,15 @@ import (
 	"log/slog"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/extensions"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/session"
 )
 
-func setupExtensions(ctx context.Context, app *App, conn *sql.DB, sessions session.Service, messages message.Service, store *config.ConfigStore) {
+func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, sessions session.Service, messages message.Service, store *config.ConfigStore) {
+	completer := newTextCompleter(store)
 	extHost := ext.NewExtensionHost(ext.HostDeps{
 		Sessions:   sessions,
 		Messages:   messages,
@@ -21,6 +23,7 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, sessions sessi
 		Config:     store,
 		Events:     app.events,
 		WorkingDir: store.WorkingDir(),
+		Completer:  completer,
 	})
 	if err := extHost.Bootstrap(ctx); err != nil {
 		slog.Warn("Extension host bootstrap failed", "error", err)
@@ -29,6 +32,10 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, sessions sessi
 		store.SetupAgents()
 	}
 	app.ExtHost = extHost
+
+	// [XRUSH: begin: rewind service initialization]
+	app.RewindService = initRewindService(q, sessions, store)
+	// [XRUSH: end]
 
 	// [XRUSH: begin: wire compaction event to pill]
 	if mgr := extensions.TheLCMExtension.Manager(); mgr != nil {

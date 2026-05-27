@@ -22,6 +22,7 @@ type mockHostContext struct {
 
 func (m *mockHostContext) Config() *config.Config                    { return m.cfg }
 func (m *mockHostContext) WorkingDir() string                        { return "/tmp" }
+func (m *mockHostContext) Completer() ext.TextCompleter              { return nil }
 func (m *mockHostContext) RegisterTools(ext.ToolProvider)            {}
 func (m *mockHostContext) RegisterRunHooks(ext.RunHookProvider)      {}
 func (m *mockHostContext) RegisterStepHooks(ext.StepHookProvider)    {}
@@ -256,13 +257,13 @@ func TestExtractFantasyMessageText_MultipleParts(t *testing.T) {
 
 func TestBuildProcessorRunner_UnknownName(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"nonexistent"})
+	runner := buildProcessorRunner([]string{"nonexistent"}, nil)
 	require.Nil(t, runner)
 }
 
 func TestBuildProcessorRunner_TokenLimiter(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"token_limiter"})
+	runner := buildProcessorRunner([]string{"token_limiter"}, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Equal(t, "token_limiter", runner.InputProcessors[0].ID())
@@ -270,7 +271,7 @@ func TestBuildProcessorRunner_TokenLimiter(t *testing.T) {
 
 func TestBuildProcessorRunner_MixedKnownAndUnknown(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"unknown", "token_limiter", "also_unknown"})
+	runner := buildProcessorRunner([]string{"unknown", "token_limiter", "also_unknown"}, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 }

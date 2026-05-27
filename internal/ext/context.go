@@ -12,10 +12,16 @@ import (
 	"github.com/charmbracelet/crush/internal/session"
 )
 
+// TextCompleter is a function that sends a prompt+input pair to an LLM and
+// returns the text response. Extensions use this for lightweight LLM calls
+// (e.g., system prompt leak detection).
+type TextCompleter func(ctx context.Context, prompt, input string) (string, error)
+
 // HostContext is the narrow facade extensions use to access host services.
 type HostContext interface {
 	Config() *config.Config
 	WorkingDir() string
+	Completer() TextCompleter
 	RegisterTools(provider ToolProvider)
 	RegisterRunHooks(provider RunHookProvider)
 	RegisterStepHooks(provider StepHookProvider)
@@ -36,4 +42,5 @@ type HostDeps struct {
 	Config     *config.ConfigStore
 	Events     *pubsub.Broker[tea.Msg]
 	WorkingDir string
+	Completer  TextCompleter
 }
