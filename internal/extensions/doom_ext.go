@@ -2,6 +2,7 @@ package extensions
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"charm.land/fantasy"
@@ -15,12 +16,14 @@ import (
 // escalates through soft/medium/hard levels to break loops. Loops that produce
 // diverse outputs (productive loops) are not escalated.
 type DoomExtension struct {
-	mu        sync.RWMutex
-	host      ext.HostContext
-	detector  *agent.ProductiveLoopDetector
-	active    bool
-	steps     []fantasy.StepResult
-	maxWindow int
+	mu             sync.RWMutex
+	host           ext.HostContext
+	detector       *agent.ProductiveLoopDetector
+	active         bool
+	steps          []fantasy.StepResult
+	maxWindow      int
+	pendingWarning string
+	pendingLevel   agent.EscalationLevel
 }
 
 func (e *DoomExtension) Name() string { return "doom-loop" }
@@ -51,6 +54,32 @@ func (e *DoomExtension) StepHooks() []ext.StepHook {
 	return []ext.StepHook{
 		{
 			Name: "doom-loop-detect",
+			OnPrepareStep: func(_ context.Context, _ string, messages []fantasy.Message) ([]fantasy.Message, error) {
+				e.mu.Lock()
+				warning := e.pendingWarning
+				level := e.pendingLevel
+				e.pendingWarning = ""
+				e.pendingLevel = agent.EscalationNone
+				e.mu.Unlock()
+
+				if warning == "" {
+					return messages, nil
+				}
+
+				levelStr := "soft"
+				if level == agent.EscalationMedium {
+					levelStr = "medium"
+				}
+
+				warningText := fmt.Sprintf(`<doom-loop-warning level="%s">%s</doom-loop-warning>`, levelStr, warning)
+				warningMsg := fantasy.Message{
+					Role: fantasy.MessageRoleUser,
+					Content: []fantasy.MessagePart{
+						&fantasy.TextPart{Text: warningText},
+					},
+				}
+				return append([]fantasy.Message{warningMsg}, messages...), nil
+			},
 			OnStepFinish: func(_ context.Context, _ string, step fantasy.StepResult) error {
 				e.mu.Lock()
 				defer e.mu.Unlock()
@@ -62,7 +91,10 @@ func (e *DoomExtension) StepHooks() []ext.StepHook {
 					e.steps = e.steps[len(e.steps)-e.maxWindow:]
 				}
 				result := e.detector.Detect(e.steps)
-				_ = result
+				if result.Level == agent.EscalationSoft || result.Level == agent.EscalationMedium {
+					e.pendingLevel = result.Level
+					e.pendingWarning = result.Message
+				}
 				return nil
 			},
 			StopCondition: func(_ context.Context, steps []fantasy.StepResult) bool {
