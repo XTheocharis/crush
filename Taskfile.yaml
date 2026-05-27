@@ -11,6 +11,7 @@ vars:
 env:
   CGO_ENABLED: 1
   GOEXPERIMENT: greenteagc
+  GOFLAGS: -tags=treesitter
 
 tasks:
   lint:install:
