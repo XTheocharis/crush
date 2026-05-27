@@ -64,14 +64,14 @@ func ParseArchitectPlan(data string) (ArchitectPlan, error) {
 // String returns a human-readable summary of the plan.
 func (p ArchitectPlan) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Plan (%d steps)", len(p.Steps)))
+	fmt.Fprintf(&b, "Plan (%d steps)", len(p.Steps))
 	if p.Rationale != "" {
-		b.WriteString(fmt.Sprintf(": %s", p.Rationale))
+		fmt.Fprintf(&b, ": %s", p.Rationale)
 	}
 	for i, step := range p.Steps {
-		b.WriteString(fmt.Sprintf("\n  %d. [%s] %s", i+1, step.Status, step.Description))
+		fmt.Fprintf(&b, "\n  %d. [%s] %s", i+1, step.Status, step.Description)
 		if len(step.TargetFiles) > 0 {
-			b.WriteString(fmt.Sprintf(" (files: %s)", strings.Join(step.TargetFiles, ", ")))
+			fmt.Fprintf(&b, " (files: %s)", strings.Join(step.TargetFiles, ", "))
 		}
 	}
 	return b.String()
@@ -98,7 +98,7 @@ func IsPlanningTask(prompt string) bool {
 	}
 
 	fileRefCount := 0
-	for _, segment := range strings.Fields(prompt) {
+	for segment := range strings.FieldsSeq(prompt) {
 		if strings.Contains(segment, "/") || strings.Contains(segment, ".go") ||
 			strings.Contains(segment, ".ts") || strings.Contains(segment, ".py") ||
 			strings.Contains(segment, ".rs") || strings.Contains(segment, ".js") {

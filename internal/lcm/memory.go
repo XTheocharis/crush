@@ -163,10 +163,7 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 	}
 
 	// Use only the most recent turns (bounded by MemoryMaxTurnsPerTrigger).
-	start := len(messages) - MemoryMaxTurnsPerTrigger
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(messages)-MemoryMaxTurnsPerTrigger, 0)
 	recent := messages[start:]
 
 	// Build user prompt from recent conversation.

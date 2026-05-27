@@ -326,13 +326,13 @@ func TestAutoCommit_CreatesCommit(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	require.NoError(t, exec.Command("git", "init", tmpDir).Run())
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run())
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "init", tmpDir).Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "config", "user.email", "test@test.com").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "config", "user.name", "Test").Run())
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("hello"), 0o644))
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "add", "-A").Run())
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "add", "-A").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "commit", "-m", "initial").Run())
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "file.go"), []byte("package p\n"), 0o644))
 
@@ -340,7 +340,7 @@ func TestAutoCommit_CreatesCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, hash)
 
-	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%s").Output()
+	out, err := exec.CommandContext(context.Background(), "git", "-C", tmpDir, "log", "-1", "--format=%s").Output()
 	require.NoError(t, err)
 	require.Equal(t, "auto: add file.go\n", string(out))
 }
@@ -360,12 +360,12 @@ func TestAutoCommit_Disabled_NoCommit(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	require.NoError(t, exec.Command("git", "init", tmpDir).Run())
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run())
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "init", tmpDir).Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "config", "user.email", "test@test.com").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "config", "user.name", "Test").Run())
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "file.go"), []byte("package p\n"), 0o644))
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "add", "-A").Run())
-	require.NoError(t, exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "add", "-A").Run())
+	require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", tmpDir, "commit", "-m", "initial").Run())
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "file.go"), []byte("package q\n"), 0o644))
 
@@ -374,7 +374,7 @@ func TestAutoCommit_Disabled_NoCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, hash)
 
-	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%s").Output()
+	out, err := exec.CommandContext(context.Background(), "git", "-C", tmpDir, "log", "-1", "--format=%s").Output()
 	require.NoError(t, err)
 	require.Equal(t, "initial\n", string(out))
 }

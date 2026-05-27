@@ -52,7 +52,7 @@ func BuildAnchorMap(content string, interval int) *AnchorMap {
 
 	var words []wordRef
 	for i, line := range lines {
-		for _, w := range strings.Fields(line) {
+		for w := range strings.FieldsSeq(line) {
 			if strings.TrimSpace(w) == "" {
 				continue
 			}
@@ -99,10 +99,7 @@ func ResolveAnchor(anchor *HashAnchor, content string) (int, error) {
 		}
 	}
 
-	lower := anchor.LineNum - anchorDriftTolerance
-	if lower < 0 {
-		lower = 0
-	}
+	lower := max(anchor.LineNum-anchorDriftTolerance, 0)
 	upper := anchor.LineNum + anchorDriftTolerance
 	if upper >= len(lines) {
 		upper = len(lines) - 1
@@ -119,10 +116,7 @@ func ResolveAnchor(anchor *HashAnchor, content string) (int, error) {
 
 func hashLineWindow(lines []string, lineNum int) uint64 {
 	h := fnv.New64a()
-	start := lineNum - 2
-	if start < 0 {
-		start = 0
-	}
+	start := max(lineNum-2, 0)
 	end := lineNum + 2
 	if end >= len(lines) {
 		end = len(lines) - 1

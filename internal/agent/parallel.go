@@ -112,12 +112,10 @@ func (pc *ParallelController) Submit(ctx context.Context, task Task, focusArea s
 
 	fut := newFuture()
 
-	pc.wg.Add(1)
-	go func() {
-		defer pc.wg.Done()
+	pc.wg.Go(func() {
 		result := pc.executeWithFocusChain(ctx, task, focusArea)
 		fut.complete(result)
-	}()
+	})
 
 	return fut, nil
 }
@@ -143,9 +141,7 @@ func (pc *ParallelController) WaitAll(ctx context.Context) ([]Result, error) {
 // Shutdown cancels all running tasks and prevents new submissions. It blocks
 // until all in-flight tasks have finished.
 func (pc *ParallelController) Shutdown() {
-	if pc.closed.CompareAndSwap(false, true) {
-		// No external cancel func stored since we rely on per-task contexts.
-	}
+	pc.closed.CompareAndSwap(false, true)
 	pc.wg.Wait()
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/ext"
+
 	// Trigger init() registration of all extensions.
 	_ "github.com/charmbracelet/crush/internal/extensions"
 
@@ -363,7 +364,7 @@ func TestNonCGOBuild(t *testing.T) {
 	goBin, err := exec.LookPath("go")
 	require.NoError(t, err)
 
-	cmd := exec.Command(goBin, "build", "./...")
+	cmd := exec.CommandContext(context.Background(), goBin, "build", "./...")
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	cmd.Dir = findModuleRoot(t)
 
@@ -425,7 +426,7 @@ func findModuleRoot(t *testing.T) string {
 		if _, statErr := os.Stat(dir + "/go.mod"); statErr == nil {
 			return dir
 		}
-		abs, err := exec.Command("realpath", dir+"/..").Output()
+		abs, err := exec.CommandContext(context.Background(), "realpath", dir+"/..").Output()
 		if err != nil {
 			t.Fatal("cannot find module root")
 		}

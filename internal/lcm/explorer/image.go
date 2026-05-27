@@ -243,10 +243,7 @@ func parseJPEG(content []byte) imageInfo {
 	}
 
 	// Scan for SOF markers (0xFFC0-0xFFC3) in the first 64 KB.
-	limit := len(content)
-	if limit > 65536 {
-		limit = 65536
-	}
+	limit := min(len(content), 65536)
 
 	offset := 2
 	for offset+2 <= limit {

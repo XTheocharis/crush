@@ -105,10 +105,7 @@ func (rc *ReadCoordinator) Allocate(paths []string, budget int) map[string]int {
 
 	// No priority source: distribute equally.
 	if rc.priority == nil {
-		perFile := budget / len(paths)
-		if perFile < 1 {
-			perFile = 1
-		}
+		perFile := max(budget/len(paths), 1)
 		for _, p := range paths {
 			alloc[p] = perFile
 		}
@@ -130,10 +127,7 @@ func (rc *ReadCoordinator) Allocate(paths []string, budget int) map[string]int {
 
 	// If all priorities are zero, distribute equally.
 	if sum <= 0 {
-		perFile := budget / len(paths)
-		if perFile < 1 {
-			perFile = 1
-		}
+		perFile := max(budget/len(paths), 1)
 		for _, p := range paths {
 			alloc[p] = perFile
 		}
@@ -145,13 +139,10 @@ func (rc *ReadCoordinator) Allocate(paths []string, budget int) map[string]int {
 		if e.pri <= 0 {
 			fileBudget = 1 // Minimum allocation for zero-priority files.
 		} else {
-			fileBudget = int(math.Min(
+			fileBudget = max(int(math.Min(
 				e.pri/sum*float64(budget),
 				float64(PerFileMaxTokens),
-			))
-			if fileBudget < 1 {
-				fileBudget = 1
-			}
+			)), 1)
 		}
 		alloc[e.path] = fileBudget
 	}

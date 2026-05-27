@@ -185,7 +185,7 @@ func collectGoFilePaths(ctx context.Context, workingDir string) []string {
 
 func collectNonEmptyLines(s string) []string {
 	var lines []string
-	for _, l := range strings.Split(s, "\n") {
+	for l := range strings.SplitSeq(s, "\n") {
 		l = strings.TrimSpace(l)
 		if l != "" {
 			lines = append(lines, l)

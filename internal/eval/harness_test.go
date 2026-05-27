@@ -298,7 +298,7 @@ func TestConcurrentRegistration(t *testing.T) {
 	t.Parallel()
 	h := NewEvalHarness()
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

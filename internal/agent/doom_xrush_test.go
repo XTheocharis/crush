@@ -49,10 +49,10 @@ func xrushApplyDoomLoopIntervention(detector *ProductiveLoopDetector, steps []fa
 		return xrushInterventionAction{Type: xrushInterventionNone}
 	}
 
-	switch {
-	case result.Level == EscalationSoft:
+	switch result.Level {
+	case EscalationSoft:
 		return xrushApplySoftIntervention(result, cfg)
-	case result.Level == EscalationMedium:
+	case EscalationMedium:
 		return xrushApplyMediumIntervention(result, cfg)
 	default:
 		return xrushInterventionAction{Type: xrushInterventionNone}

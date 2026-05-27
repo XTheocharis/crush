@@ -1,6 +1,9 @@
 package processor
 
-import "context"
+import (
+	"context"
+	"maps"
+)
 
 // Compile-time interface check.
 var _ Processor = (*BatchParts)(nil)
@@ -69,9 +72,7 @@ func batchMessages(msgs []Message) ([]Message, int) {
 	}
 	if len(msgs[0].Meta) > 0 {
 		cur.Meta = make(map[string]any, len(msgs[0].Meta))
-		for k, v := range msgs[0].Meta {
-			cur.Meta[k] = v
-		}
+		maps.Copy(cur.Meta, msgs[0].Meta)
 	}
 
 	for i := 1; i < len(msgs); i++ {
@@ -81,9 +82,7 @@ func batchMessages(msgs []Message) ([]Message, int) {
 				if cur.Meta == nil {
 					cur.Meta = make(map[string]any)
 				}
-				for k, v := range msgs[i].Meta {
-					cur.Meta[k] = v
-				}
+				maps.Copy(cur.Meta, msgs[i].Meta)
 			}
 			merges++
 		} else {
@@ -94,9 +93,7 @@ func batchMessages(msgs []Message) ([]Message, int) {
 			}
 			if len(msgs[i].Meta) > 0 {
 				cur.Meta = make(map[string]any, len(msgs[i].Meta))
-				for k, v := range msgs[i].Meta {
-					cur.Meta[k] = v
-				}
+				maps.Copy(cur.Meta, msgs[i].Meta)
 			}
 		}
 	}

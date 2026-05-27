@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,6 +41,7 @@ func TestIntegration_LayeredCompaction(t *testing.T) {
 	}
 
 	t.Run("RunLayeredCompaction", func(t *testing.T) {
+		t.Parallel()
 		result, err := mgr.RunLayeredCompaction(ctx, sessionID)
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -48,6 +50,7 @@ func TestIntegration_LayeredCompaction(t *testing.T) {
 	})
 
 	t.Run("InjectCuesIntoPrompt", func(t *testing.T) {
+		t.Parallel()
 		cueInjector := NewCueInjector()
 		cues := []GhostCue{
 			cueInjector.NewCue(CueTypeSummaryID, 10, map[string]string{
@@ -65,28 +68,33 @@ func TestIntegration_LayeredCompaction(t *testing.T) {
 	})
 
 	t.Run("BuildCompactPrompt", func(t *testing.T) {
+		t.Parallel()
 		prompt, err := mgr.BuildCompactPrompt(ctx, sessionID)
 		require.NoError(t, err)
 		require.Contains(t, prompt, "system-instructions")
 	})
 
 	t.Run("PostCompactionHook", func(t *testing.T) {
+		t.Parallel()
 		// Should not panic or error even with no observation data.
 		mgr.PostCompactionHook(ctx, sessionID)
 	})
 
 	t.Run("PostTurnHook", func(t *testing.T) {
+		t.Parallel()
 		// Should be a no-op without operational memory.
 		mgr.PostTurnHook(ctx, sessionID)
 	})
 
 	t.Run("GetPressureTier", func(t *testing.T) {
+		t.Parallel()
 		tier, err := cm.GetPressureTier(ctx, sessionID)
 		require.NoError(t, err)
 		require.Equal(t, PressureLow, tier)
 	})
 
 	t.Run("SetProviderType", func(t *testing.T) {
+		t.Parallel()
 		mgr.SetProviderType("anthropic")
 		// Verify it propagates to layer construction.
 		result, err := mgr.RunLayeredCompaction(ctx, sessionID)
@@ -409,9 +417,7 @@ func (m *mockOperationalMemory) List(_ context.Context, sessionID string) (map[s
 		return map[string]string{}, nil
 	}
 	result := make(map[string]string, len(kv))
-	for k, v := range kv {
-		result[k] = v
-	}
+	maps.Copy(result, kv)
 	return result, nil
 }
 

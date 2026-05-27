@@ -91,10 +91,8 @@ func TestXrushParallelMaxConcurrentLimit(t *testing.T) {
 	futures := make([]*Future, 10)
 
 	for i := range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-		}()
+		wg.Go(func() {
+		})
 		fut, err := pc.Submit(context.Background(), func(ctx context.Context) (any, error) {
 			cur := running.Add(1)
 			for {
@@ -464,7 +462,7 @@ func TestXrushParallel_MultipleTasksAggregate(t *testing.T) {
 		return "ok", nil
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		fut, err := pc.Submit(context.Background(), task, "")
 		require.NoError(t, err)
 		res, err := fut.Await(context.Background())

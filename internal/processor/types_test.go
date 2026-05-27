@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -64,9 +65,7 @@ func TestProcessorContextStateAccumulation(t *testing.T) {
 	for _, p := range processors {
 		result, err := p.ProcessInput(context.Background(), pctx)
 		require.NoError(t, err)
-		for k, v := range result.State {
-			pctx.State[k] = v
-		}
+		maps.Copy(pctx.State, result.State)
 	}
 
 	require.Equal(t, "a", pctx.State["step1"])

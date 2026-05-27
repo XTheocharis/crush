@@ -102,7 +102,7 @@ func (e *PromptAssemblyExtension) onPreparePrompt(_ context.Context, messages []
 	var sb strings.Builder
 	sb.WriteString("<memory>\n")
 	for _, f := range files {
-		sb.WriteString(fmt.Sprintf("<file path=%q>\n%s\n</file>\n", f.Path, f.Content))
+		fmt.Fprintf(&sb, "<file path=%q>\n%s\n</file>\n", f.Path, f.Content)
 	}
 	sb.WriteString("</memory>")
 
@@ -138,7 +138,7 @@ func (e *PromptAssemblyExtension) systemPromptModifier(systemPrompt string) (str
 	sb.WriteString(systemPrompt)
 	sb.WriteString("\n\n")
 	for _, cf := range contextFiles {
-		sb.WriteString(fmt.Sprintf("<context name=%q>\n%s\n</context>\n", cf.Name, cf.Content))
+		fmt.Fprintf(&sb, "<context name=%q>\n%s\n</context>\n", cf.Name, cf.Content)
 	}
 
 	return sb.String(), nil

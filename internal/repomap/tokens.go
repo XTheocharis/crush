@@ -113,10 +113,7 @@ func countWithSampling(
 	}
 
 	numLines := len(lines)
-	step := numLines / 100
-	if step < 1 {
-		step = 1
-	}
+	step := max(numLines/100, 1)
 	var sample strings.Builder
 	for i := 0; i < numLines; i += step {
 		sample.WriteString(lines[i])

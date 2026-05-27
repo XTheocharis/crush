@@ -429,11 +429,9 @@ func (bc *BufferingCoordinator) CurrentInterval(tokenCount int64) int {
 	if intervalSize <= 0 {
 		return -1
 	}
-	idx := int(tokenCount / intervalSize)
-	// Cap at 5 intervals (0..4).
-	if idx > 4 {
-		idx = 4
-	}
+	idx := min(
+		// Cap at 5 intervals (0..4).
+		int(tokenCount/intervalSize), 4)
 	return idx
 }
 

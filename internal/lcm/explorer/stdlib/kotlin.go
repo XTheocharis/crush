@@ -16,6 +16,6 @@ var kotlinPackages = toSet([]string{
 })
 
 func IsKotlinStdlib(packageName string) bool {
-	prefix := strings.Split(packageName, ".")[0]
+	prefix, _, _ := strings.Cut(packageName, ".")
 	return kotlinPackages[prefix] || kotlinPackages[packageName]
 }

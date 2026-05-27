@@ -133,7 +133,7 @@ type Message struct {
 	ID               string
 	Role             MessageRole
 	SessionID        string
-	Seq              int  // XRUSH: message sequence number
+	Seq              int // XRUSH: message sequence number
 	Parts            []ContentPart
 	Model            string
 	Provider         string

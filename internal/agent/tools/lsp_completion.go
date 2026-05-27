@@ -63,11 +63,11 @@ func NewCompletionTool(lspManager *lsp.Manager) fantasy.AgentTool {
 			}
 
 			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("Found %d completion(s):\n\n", len(items)))
+			fmt.Fprintf(&sb, "Found %d completion(s):\n\n", len(items))
 			for i, item := range items {
-				sb.WriteString(fmt.Sprintf("%d. %s", i+1, item.Label))
+				fmt.Fprintf(&sb, "%d. %s", i+1, item.Label)
 				if item.Detail != "" {
-					sb.WriteString(fmt.Sprintf(" — %s", item.Detail))
+					fmt.Fprintf(&sb, " — %s", item.Detail)
 				}
 				sb.WriteString("\n")
 			}

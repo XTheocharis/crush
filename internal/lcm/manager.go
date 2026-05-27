@@ -916,10 +916,7 @@ func (m *compactionManager) runLLMSummarization(ctx context.Context, sessionID s
 		return CompactionResult{}, fmt.Errorf("getting budget: %w", err)
 	}
 
-	tokenCount, err := m.store.GetContextTokenCount(ctx, sessionID)
-	if err != nil {
-		return CompactionResult{}, fmt.Errorf("getting token count: %w", err)
-	}
+	var tokenCount int64
 
 	// Try leaf summarization first.
 	summarized, err := m.trySummarize(ctx, sessionID, budget)
@@ -1154,10 +1151,10 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 	})
 
 	postCompactCleaner := NewPostCompactCleaner(PostCompactCleanerConfig{
-		Store:                 m.preservedContextStore,
-		SessionID:             sessionID,
-		AgentConfigRestorer:   m.agentConfigRestorer,
-		OMStore:               m.opMemory,
+		Store:               m.preservedContextStore,
+		SessionID:           sessionID,
+		AgentConfigRestorer: m.agentConfigRestorer,
+		OMStore:             m.opMemory,
 	})
 
 	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
@@ -1286,10 +1283,10 @@ func (m *compactionManager) PostCompactionHook(ctx context.Context, sessionID st
 	// Step 3: Run post-compact restore (Layer 4) if preserved context exists.
 	if m.preservedContextStore != nil {
 		cleaner := NewPostCompactCleaner(PostCompactCleanerConfig{
-			Store:                 m.preservedContextStore,
-			SessionID:             sessionID,
-			AgentConfigRestorer:   m.agentConfigRestorer,
-			OMStore:               m.opMemory,
+			Store:               m.preservedContextStore,
+			SessionID:           sessionID,
+			AgentConfigRestorer: m.agentConfigRestorer,
+			OMStore:             m.opMemory,
 		})
 		budget, err := m.GetBudget(ctx, sessionID)
 		if err != nil {

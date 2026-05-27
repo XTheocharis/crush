@@ -63,6 +63,6 @@ func IsCSharpStdlib(namespace string) bool {
 	if csharpNamespaces[namespace] {
 		return true
 	}
-	prefix := strings.Split(namespace, ".")[0]
+	prefix, _, _ := strings.Cut(namespace, ".")
 	return csharpNamespaces[prefix+"."] || csharpNamespaces[prefix]
 }

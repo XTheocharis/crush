@@ -191,7 +191,7 @@ func runGitCommand(ctx context.Context, rootDir string, args ...string) ([]byte,
 
 func parseDiffOutput(data []byte) map[string]struct{} {
 	result := make(map[string]struct{})
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

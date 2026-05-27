@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"slices"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -114,10 +115,10 @@ func (m *UI) handleXrushDialogMsg(action tea.Msg) tea.Cmd {
 			if seq == 0 && m.hasSession() {
 				msgs, err := m.com.Workspace.ListMessages(context.Background(), msg.SessionID)
 				if err == nil {
-					for i := len(msgs) - 1; i >= 0; i-- {
-						if msgs[i].Role == message.User {
-							seq = msgs[i].Seq
-							messageID = msgs[i].ID
+					for _, msg := range slices.Backward(msgs) {
+						if msg.Role == message.User {
+							seq = msg.Seq
+							messageID = msg.ID
 							break
 						}
 					}

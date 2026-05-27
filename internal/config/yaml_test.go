@@ -340,6 +340,8 @@ func TestIsYAMLFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+
 			got := isYAMLFile(tt.path)
 			require.Equal(t, tt.want, got)
 		})

@@ -302,7 +302,7 @@ func TestEachScorerProducesUniquePrompt(t *testing.T) {
 
 	unique := make(map[string]bool)
 	for _, p := range prompts {
-		firstLine := strings.Split(p, "\n")[0]
+		firstLine, _, _ := strings.Cut(p, "\n")
 		unique[firstLine] = true
 	}
 	require.GreaterOrEqual(t, len(unique), 10,

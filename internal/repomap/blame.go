@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,6 @@ func GetBlameInfo(ctx context.Context, repoPath string, filePaths []string) (map
 	g.SetLimit(8)
 
 	for _, fp := range filePaths {
-		fp := fp
 		g.Go(func() error {
 			if gCtx.Err() != nil {
 				return gCtx.Err()
@@ -131,10 +131,7 @@ func parseGitLogOutput(data []byte, now time.Time) (*BlameInfo, error) {
 	}
 	if haveDate {
 		info.LastCommit = lastDate
-		info.Age = now.Sub(lastDate)
-		if info.Age < 0 {
-			info.Age = 0
-		}
+		info.Age = max(now.Sub(lastDate), 0)
 	}
 	return info, nil
 }
@@ -161,9 +158,7 @@ func BlendBlamePersonalization(
 	}
 
 	result := make(map[string]float64, len(personalization))
-	for k, v := range personalization {
-		result[k] = v
-	}
+	maps.Copy(result, personalization)
 
 	halfSec := halfLife.Seconds()
 	if halfSec <= 0 {

@@ -265,7 +265,7 @@ func (m *mockQuerier) GetLatestUserMessage(ctx context.Context, sessionID string
 	return zero, args.Error(1)
 }
 
-func (m *mockQuerier) GetLcmContextTokenCount(ctx context.Context, sessionID string) (interface{}, error) {
+func (m *mockQuerier) GetLcmContextTokenCount(ctx context.Context, sessionID string) (any, error) {
 	args := m.Called(ctx, sessionID)
 	return args.Get(0), args.Error(1)
 }

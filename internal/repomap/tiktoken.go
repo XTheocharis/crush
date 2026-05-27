@@ -122,7 +122,7 @@ func (l *crushBpeLoader) o200kCachePath() string {
 // base64-encoded token followed by a space and integer rank.
 func parseBpeRanks(data []byte) (map[string]int, error) {
 	ranks := make(map[string]int, 100000)
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if line == "" {
 			continue
 		}

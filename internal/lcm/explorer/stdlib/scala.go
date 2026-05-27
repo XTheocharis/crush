@@ -16,6 +16,6 @@ var scalaPackages = toSet([]string{
 })
 
 func IsScalaStdlib(packageName string) bool {
-	prefix := strings.Split(packageName, ".")[0]
+	prefix, _, _ := strings.Cut(packageName, ".")
 	return scalaPackages[prefix] || scalaPackages[packageName]
 }

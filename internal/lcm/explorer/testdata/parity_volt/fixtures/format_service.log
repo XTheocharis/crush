@@ -1,0 +1,15 @@
+2024-01-15 10:30:45.123 [ERROR] Failed to connect to database: connection timeout
+2024-01-15 10:30:46.456 [INFO] Starting application server on port 8080
+2024-01-15 10:30:47.789 [WARN] Memory usage at 80%, approaching limit
+2024-01-15 10:30:48.012 [DEBUG] Processing request ID: abc123-def456
+2024-01-15 10:30:49.345 [ERROR] Authentication failed for user: admin
+2024-01-15 10:30:50.678 [INFO] Request completed successfully in 45ms
+2024-01-15 10:30:51.901 [TRACE] Entering function processData()
+2024-01-15 10:30:52.234 [DEBUG] Cache hit for key: user_profile_123
+2024-01-15 10:30:53.567 [WARN] Slow query detected: SELECT * FROM large_table (250ms)
+2024-01-15 10:30:54.890 [ERROR] Failed to parse JSON response: invalid token at position 42
+2024-01-15T10:30:55Z [INFO] RFC3339 timestamp format example
+2024-01-15 10:30:56.111 [DEBUG] Response size: 1024 bytes
+Jan 15 10:30:57 hostname service[1234]: [WARN] Syslog formatted warning message
+15/Jan/2024:10:30:58 +0000 [ERROR] Common log format error message
+2024-01-15 10:30:59.999 [INFO] Background job started: cleanup_task

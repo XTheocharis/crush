@@ -352,7 +352,7 @@ func ParseGoTestOutput(output string) []TestFailure {
 	var failures []TestFailure
 	lines := strings.Split(output, "\n")
 
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		line := lines[i]
 		m := goTestFailPattern.FindStringSubmatch(line)
 		if m == nil {

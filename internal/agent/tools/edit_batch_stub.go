@@ -5,6 +5,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 )
 
@@ -39,9 +40,7 @@ type MapContentStore struct {
 
 func NewMapContentStore(initial map[string]string) *MapContentStore {
 	data := make(map[string]string, len(initial))
-	for k, v := range initial {
-		data[k] = v
-	}
+	maps.Copy(data, initial)
 	return &MapContentStore{data: data}
 }
 
@@ -56,9 +55,7 @@ func (s *MapContentStore) Set(filePath string, content string) {
 
 func (s *MapContentStore) Snapshot() map[string]string {
 	out := make(map[string]string, len(s.data))
-	for k, v := range s.data {
-		out[k] = v
-	}
+	maps.Copy(out, s.data)
 	return out
 }
 
@@ -67,7 +64,7 @@ type BatchProcessor struct {
 	anchorInterval int
 }
 
-func NewBatchProcessor(store ContentStore, _ interface{}, anchorInterval int) *BatchProcessor {
+func NewBatchProcessor(store ContentStore, _ any, anchorInterval int) *BatchProcessor {
 	return &BatchProcessor{
 		store:          store,
 		anchorInterval: anchorInterval,
@@ -155,7 +152,7 @@ func (bp *BatchProcessor) restoreSnapshot(snap map[string]string) {
 
 type ASTAnchorBridge struct{}
 
-func NewASTAnchorBridge(_ interface{}) *ASTAnchorBridge {
+func NewASTAnchorBridge(_ any) *ASTAnchorBridge {
 	return &ASTAnchorBridge{}
 }
 

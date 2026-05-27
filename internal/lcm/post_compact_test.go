@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"testing"
 
@@ -831,9 +832,7 @@ func (m *mockAgentConfigRestorer) RestoreAgentConfig(_ context.Context, payload 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cp := make(map[string][]string)
-	for k, v := range payload {
-		cp[k] = v
-	}
+	maps.Copy(cp, payload)
 	m.calls = append(m.calls, cp)
 	return m.lastErr
 }
@@ -844,9 +843,7 @@ func (m *mockAgentConfigRestorer) getCalls() []map[string][]string {
 	out := make([]map[string][]string, len(m.calls))
 	for i, c := range m.calls {
 		out[i] = make(map[string][]string)
-		for k, v := range c {
-			out[i][k] = v
-		}
+		maps.Copy(out[i], c)
 	}
 	return out
 }

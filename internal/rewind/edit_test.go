@@ -155,7 +155,7 @@ func (m *editMockQuerier) GetLatestUserMessage(ctx context.Context, id string) (
 	return db.Message{}, nil
 }
 
-func (m *editMockQuerier) GetLcmContextTokenCount(ctx context.Context, id string) (interface{}, error) {
+func (m *editMockQuerier) GetLcmContextTokenCount(ctx context.Context, id string) (any, error) {
 	return nil, nil
 }
 
@@ -424,17 +424,17 @@ func (m *editMockQuerier) ListRecentReadFiles(ctx context.Context, readAt int64)
 // produces for text-only content.
 func marshalTextParts(t *testing.T, texts ...string) string {
 	t.Helper()
-	wrappers := make([]map[string]interface{}, 0, len(texts)+1)
+	wrappers := make([]map[string]any, 0, len(texts)+1)
 	for _, txt := range texts {
-		wrappers = append(wrappers, map[string]interface{}{
+		wrappers = append(wrappers, map[string]any{
 			"type": "text",
 			"data": map[string]string{"text": txt},
 		})
 	}
 	// Messages created via message.Service always append a Finish part.
-	wrappers = append(wrappers, map[string]interface{}{
+	wrappers = append(wrappers, map[string]any{
 		"type": "finish",
-		"data": map[string]interface{}{
+		"data": map[string]any{
 			"reason":  "stop",
 			"time":    float64(0),
 			"message": "",
@@ -542,10 +542,10 @@ func TestEditMessage_NoTextContent(t *testing.T) {
 	seq := 2
 	msgID := "msg-notext"
 
-	wrappers := []map[string]interface{}{
+	wrappers := []map[string]any{
 		{
 			"type": "finish",
-			"data": map[string]interface{}{"reason": "stop", "time": float64(0)},
+			"data": map[string]any{"reason": "stop", "time": float64(0)},
 		},
 	}
 	parts, err := json.Marshal(wrappers)

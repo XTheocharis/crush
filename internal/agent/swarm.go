@@ -102,7 +102,6 @@ func (s *SwarmPattern) Execute(ctx context.Context, parentSessionID, task string
 	results := make([]StructuredResponse, len(subtasks))
 
 	for i, sub := range subtasks {
-		i, sub := i, sub
 		focusArea := fmt.Sprintf("swarm:%s:%d", parentSessionID, i)
 		_, err := s.par.Submit(ctx, func(ctx context.Context) (any, error) {
 			subagent, err := s.factory.NewStructuredSubagent(ctx, parentSessionID)

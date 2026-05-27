@@ -137,9 +137,9 @@ func TestNewDiagnosticGate_NilManager(t *testing.T) {
 func TestDiagnosticGate_NilManager_CaptureAndCompare(t *testing.T) {
 	gate := NewDiagnosticGate(nil)
 
-	gate.CaptureBaseline(nil, []string{"foo.go"})
+	gate.CaptureBaseline(context.TODO(), []string{"foo.go"})
 
-	result := gate.Compare(nil, []string{"foo.go"})
+	result := gate.Compare(context.TODO(), []string{"foo.go"})
 	require.True(t, result.Pass)
 	require.True(t, result.NoLSP)
 	require.Empty(t, result.NewErrors)

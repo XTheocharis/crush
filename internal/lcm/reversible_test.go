@@ -296,11 +296,9 @@ func TestBlockIDTracker_ConcurrentSafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ids <- tracker.NextBlockID()
-		}()
+		})
 	}
 	wg.Wait()
 	close(ids)

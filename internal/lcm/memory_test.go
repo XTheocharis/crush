@@ -765,6 +765,7 @@ func TestAutoMemoryPriorityRoundTrip(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			sid := sessionID + "_" + tc.name
 			createTestSession(t, queries, sid)
 

@@ -163,7 +163,7 @@ If read_only is true, the sub-agent will not have access to write, edit, or bash
 func processAgenticMapItem(ctx context.Context, input json.RawMessage, prompt string, schemaStr string, readOnly bool, maxAttempts int, subAgentRun SubAgentRunFunc) jsonlResult {
 	task := buildAgenticTask(prompt, input)
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		select {
 		case <-ctx.Done():
 			errMsg := ctx.Err().Error()

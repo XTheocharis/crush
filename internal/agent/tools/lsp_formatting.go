@@ -55,13 +55,13 @@ func NewFormattingTool(lspManager *lsp.Manager) fantasy.AgentTool {
 			}
 
 			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("Formatting returned %d edit(s):\n\n", len(edits)))
+			fmt.Fprintf(&sb, "Formatting returned %d edit(s):\n\n", len(edits))
 			for i, edit := range edits {
-				sb.WriteString(fmt.Sprintf("Edit %d: line %d:%d -> %d:%d\n", i+1,
+				fmt.Fprintf(&sb, "Edit %d: line %d:%d -> %d:%d\n", i+1,
 					edit.Range.Start.Line+1, edit.Range.Start.Character+1,
-					edit.Range.End.Line+1, edit.Range.End.Character+1))
+					edit.Range.End.Line+1, edit.Range.End.Character+1)
 				if edit.NewText != "" {
-					sb.WriteString(fmt.Sprintf("  New text: %q\n", edit.NewText))
+					fmt.Fprintf(&sb, "  New text: %q\n", edit.NewText)
 				}
 			}
 			return fantasy.NewTextResponse(sb.String()), nil

@@ -25,10 +25,10 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/home"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
+
 	// XRUSH: removed go-jsons import (replaced by merge-based loadFromBytes)
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-
 )
 
 const defaultCatwalkURL = "https://catwalk.charm.land"

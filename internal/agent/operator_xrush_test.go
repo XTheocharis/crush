@@ -46,7 +46,8 @@ func xrushStubExecutor(responses ...StructuredResponse) SubagentExecutor {
 	return rec.exec
 }
 
-func xrushPtrBool(b bool) *bool { return &b }
+//go:fix inline
+func xrushPtrBool(b bool) *bool { return new(b) }
 
 // Tests from operator_test.go
 
@@ -69,7 +70,7 @@ func TestXrushOperatorLLMMapRunsInParallel(t *testing.T) {
 		},
 	}
 
-	op := NewOperator(OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: xrushPtrBool(false)}, rec.exec, decomp)
+	op := NewOperator(OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: new(false)}, rec.exec, decomp)
 	result := op.Run(t.Context(), "decompose this task into three parts", nil)
 
 	require.True(t, result.Success)
@@ -696,7 +697,7 @@ func TestXrushOperatorIntegration_DecomposeUsingStrategy(t *testing.T) {
 
 			cfg := OperatorConfig{Strategy: strategy}
 			if strategy == StrategyLLMMap {
-				cfg.AutoSelect = xrushPtrBool(false)
+				cfg.AutoSelect = new(false)
 			}
 
 			op := NewOperator(cfg, rec.exec, decomp)
@@ -778,7 +779,7 @@ func TestXrushOperatorIntegration_ResultAggregation(t *testing.T) {
 	}
 
 	op := NewOperator(
-		OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: xrushPtrBool(false)},
+		OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: new(false)},
 		rec.exec,
 		decomp,
 	)
@@ -817,7 +818,7 @@ func TestXrushOperatorIntegration_PartialFailureAggregation(t *testing.T) {
 	}
 
 	op := NewOperator(
-		OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: xrushPtrBool(false)},
+		OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: new(false)},
 		rec.exec,
 		decomp,
 	)
@@ -895,7 +896,7 @@ func TestXrushE2EDecomposition_ParallelStrategy(t *testing.T) {
 	}
 
 	op := NewOperator(
-		OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: xrushPtrBool(false)},
+		OperatorConfig{Strategy: StrategyLLMMap, AutoSelect: new(false)},
 		rec.exec,
 		decomp,
 	)

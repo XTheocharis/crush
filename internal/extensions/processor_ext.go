@@ -3,6 +3,8 @@ package extensions
 import (
 	"context"
 	"log/slog"
+	"slices"
+	"strings"
 	"sync"
 
 	"charm.land/fantasy"
@@ -255,11 +257,12 @@ func extractFantasyMessageText(msg fantasy.Message) string {
 	if len(texts) == 1 {
 		return texts[0]
 	}
-	combined := texts[0]
+	var combined strings.Builder
+	combined.WriteString(texts[0])
 	for _, t := range texts[1:] {
-		combined += "\n" + t
+		combined.WriteString("\n" + t)
 	}
-	return combined
+	return combined.String()
 }
 
 func extractStepText(step fantasy.StepResult) string {
@@ -267,9 +270,9 @@ func extractStepText(step fantasy.StepResult) string {
 		return ""
 	}
 	// Use the last assistant message as the step output.
-	for i := len(step.Messages) - 1; i >= 0; i-- {
-		if step.Messages[i].Role == fantasy.MessageRoleAssistant {
-			return extractFantasyMessageText(step.Messages[i])
+	for _, v := range slices.Backward(step.Messages) {
+		if v.Role == fantasy.MessageRoleAssistant {
+			return extractFantasyMessageText(v)
 		}
 	}
 	return extractFantasyMessageText(step.Messages[len(step.Messages)-1])

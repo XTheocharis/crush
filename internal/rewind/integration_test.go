@@ -79,11 +79,11 @@ func (e *testEnv) createSession(t *testing.T, ctx context.Context, title string)
 	return sess.ID
 }
 
-var integrationMsgSeq uint64
+var integrationMsgSeq atomic.Uint64
 
 func (e *testEnv) insertMessage(t *testing.T, ctx context.Context, sessionID, role, parts string) string {
 	t.Helper()
-	n := atomic.AddUint64(&integrationMsgSeq, 1)
+	n := integrationMsgSeq.Add(1)
 	msgID := fmt.Sprintf("msg-%d-%s-%d", os.Getpid(), role, n)
 	var id string
 	err := e.sqlDB.QueryRowContext(ctx,
@@ -98,11 +98,11 @@ func (e *testEnv) insertMessage(t *testing.T, ctx context.Context, sessionID, ro
 	return id
 }
 
-var integrationFileSeq uint64
+var integrationFileSeq atomic.Uint64
 
 func (e *testEnv) insertFile(t *testing.T, ctx context.Context, sessionID, path, content string, version int) {
 	t.Helper()
-	n := atomic.AddUint64(&integrationFileSeq, 1)
+	n := integrationFileSeq.Add(1)
 	id := fmt.Sprintf("file-%d-%s-v%d", n, filepath.Base(path), version)
 	_, err := e.sqlDB.ExecContext(ctx,
 		`INSERT INTO files (id, session_id, path, content, version, created_at, updated_at)
@@ -294,7 +294,7 @@ func TestIntegration_CleanupRetention(t *testing.T) {
 	ctx := context.Background()
 	sid := env.createSession(t, ctx, "cleanup")
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		env.insertMessage(t, ctx, sid, "user", textParts(fmt.Sprintf("msg %d", i)))
 		env.insertFile(t, ctx, sid, "file.txt", fmt.Sprintf("content v%d", i), i+1)
 		require.NoError(t, env.svc.CaptureSnapshot(ctx, sid, i))

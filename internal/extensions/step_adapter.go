@@ -69,7 +69,6 @@ func (e *StepAdapter) StepHooks() []ext.StepHook {
 
 	hooks := make([]ext.StepHook, len(mutators))
 	for i, m := range mutators {
-		m := m
 		hooks[i] = ext.StepHook{
 			Name: "step-adapter-mutator",
 			OnPrepareStep: func(ctx context.Context, sessionID string, messages []fantasy.Message) ([]fantasy.Message, error) {

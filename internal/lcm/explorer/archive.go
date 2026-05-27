@@ -351,8 +351,8 @@ func (e *ArchiveExplorer) exploreZIP(input ExploreInput, family string) (Explore
 	// JAR manifest.
 	if manifestContent != "" {
 		summary.WriteString("\nMANIFEST.MF:\n")
-		lines := strings.Split(manifestContent, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(manifestContent, "\n")
+		for line := range lines {
 			line = strings.TrimSpace(line)
 			if line != "" {
 				fmt.Fprintf(&summary, "  %s\n", line)

@@ -106,7 +106,7 @@ func (s *Summarizer) Summarize(ctx context.Context, input SummaryInput) (string,
 	result := ""
 	tokens := int64(0)
 
-	for lvl := CompressionLevel(0); lvl < LevelDeterministic; lvl++ {
+	for lvl := range LevelDeterministic {
 		prompt := summarizePrompt(lvl)
 		resp, err := llm.Complete(ctx, prompt, userPrompt)
 		if err != nil {
@@ -142,7 +142,7 @@ func (s *Summarizer) Condense(ctx context.Context, summaries []ContextEntry) (st
 	result := ""
 	tokens := int64(0)
 
-	for lvl := CompressionLevel(0); lvl < LevelDeterministic; lvl++ {
+	for lvl := range LevelDeterministic {
 		prompt := condensePrompt(lvl)
 		resp, err := llm.Complete(ctx, prompt, userPrompt)
 		if err != nil {

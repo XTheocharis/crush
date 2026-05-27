@@ -168,10 +168,11 @@ func TestReflectorAgent_Reflect_MarksObservationsReflected(t *testing.T) {
 		sessionID,
 	)
 	require.NoError(t, err)
+	defer unreflected.Close()
 	var count int
 	require.True(t, unreflected.Next())
 	require.NoError(t, unreflected.Scan(&count))
-	unreflected.Close()
+	require.NoError(t, unreflected.Err())
 	require.Equal(t, 1, count)
 
 	// Reflect.
@@ -188,9 +189,10 @@ func TestReflectorAgent_Reflect_MarksObservationsReflected(t *testing.T) {
 		sessionID,
 	)
 	require.NoError(t, err)
+	defer unreflected.Close()
 	require.True(t, unreflected.Next())
 	require.NoError(t, unreflected.Scan(&count))
-	unreflected.Close()
+	require.NoError(t, unreflected.Err())
 	require.Equal(t, 0, count, "observations should be marked as reflected")
 }
 
@@ -226,10 +228,11 @@ func TestReflectorAgent_Reflect_DoesNotDiscardObservations(t *testing.T) {
 		sessionID,
 	)
 	require.NoError(t, err)
+	defer total.Close()
 	var count int
 	require.True(t, total.Next())
 	require.NoError(t, total.Scan(&count))
-	total.Close()
+	require.NoError(t, total.Err())
 	require.Equal(t, 2, count, "should have 1 observation (marked insight) + 1 reflection")
 }
 

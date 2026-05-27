@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"sync"
 )
@@ -225,10 +226,7 @@ func (op *Operator) runAgenticMap(ctx context.Context, subtasks []Subtask, depth
 }
 
 func (op *Operator) runParallel(ctx context.Context, subtasks []Subtask, depth int, contextFn func(Subtask) map[string]string) OperatorResult {
-	workers := op.cfg.MaxWorkers
-	if len(subtasks) < workers {
-		workers = len(subtasks)
-	}
+	workers := min(len(subtasks), op.cfg.MaxWorkers)
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, workers)
@@ -262,9 +260,7 @@ func (op *Operator) runParallel(ctx context.Context, subtasks []Subtask, depth i
 
 func (op *Operator) runBatch(ctx context.Context, subtasks []Subtask, depth int) OperatorResult {
 	sharedContext := make(map[string]string)
-	for k, v := range subtasks[0].Context {
-		sharedContext[k] = v
-	}
+	maps.Copy(sharedContext, subtasks[0].Context)
 
 	var subResults []StructuredResponse
 	for _, st := range subtasks {
@@ -304,9 +300,7 @@ func (op *Operator) runSequential(ctx context.Context, subtasks []Subtask, depth
 
 	for i, st := range subtasks {
 		subCtx := make(map[string]string)
-		for k, v := range st.Context {
-			subCtx[k] = v
-		}
+		maps.Copy(subCtx, st.Context)
 		if prevOutput != "" {
 			subCtx["previous_output"] = prevOutput
 		}

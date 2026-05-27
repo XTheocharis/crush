@@ -258,21 +258,21 @@ func (e *MarkdownExplorer) extractHeadings(content string) []heading {
 						isValid = false
 					} else {
 						// Has space - check if first word looks hashtag-like
-						firstWord := ""
+						var firstWord strings.Builder
 						for j := 0; j < len(rest); j++ {
 							if rest[j] == ' ' {
 								break
 							}
-							firstWord += string(rest[j])
+							firstWord.WriteString(string(rest[j]))
 						}
 						// If first word is all lowercase and simple, treat as hashtag
 						// But if it starts with capital letter or contains special chars, treat as heading
 						looksLikeHeading := false
-						if len(firstWord) == 0 {
+						if len(firstWord.String()) == 0 {
 							looksLikeHeading = false
 						} else {
 							// Check if first character is uppercase
-							if firstWord[0] >= 'A' && firstWord[0] <= 'Z' {
+							if firstWord.String()[0] >= 'A' && firstWord.String()[0] <= 'Z' {
 								looksLikeHeading = true
 							} else {
 								// Check if the line looks more like a heading (more complexity)

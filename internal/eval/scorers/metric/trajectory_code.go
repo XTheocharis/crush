@@ -59,7 +59,7 @@ func extractToolCalls(msgs []eval.Message, role string) []string {
 		if msg.Role != role {
 			continue
 		}
-		for _, line := range strings.Split(msg.Content, "\n") {
+		for line := range strings.SplitSeq(msg.Content, "\n") {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "tool:") || strings.HasPrefix(line, "call:") {
 				calls = append(calls, line)

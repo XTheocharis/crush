@@ -1,5 +1,4 @@
 //go:build !treesitter
-// +build !treesitter
 
 package repomap
 

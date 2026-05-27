@@ -5,6 +5,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"slices"
 )
 
 type StageStatus string
@@ -63,16 +64,11 @@ type ValidationStage interface {
 type PipelineConfig struct {
 	SkipStages   []string
 	FailFast     bool
-	StageTimeout interface{}
+	StageTimeout any
 }
 
 func (c *PipelineConfig) shouldSkip(name string) bool {
-	for _, s := range c.SkipStages {
-		if s == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.SkipStages, name)
 }
 
 // stubPipeline is returned by NewValidationPipeline when treesitter is not
@@ -81,7 +77,7 @@ type stubPipeline struct{}
 
 // NewValidationPipeline returns a stub pipeline when treesitter is not
 // available.
-func NewValidationPipeline(_ interface{}) *stubPipeline {
+func NewValidationPipeline(_ any) *stubPipeline {
 	return &stubPipeline{}
 }
 
@@ -103,7 +99,7 @@ func (p *stubPipeline) Run(_ context.Context, _ *ValidationInput) *PipelineResul
 }
 
 func (p *stubPipeline) RunWithConfig(_ context.Context, _ *ValidationInput, _ PipelineConfig) *PipelineResult {
-	return p.Run(nil, nil)
+	return p.Run(context.TODO(), nil)
 }
 
 // ValidationHandler stub — returns "not available" errors when treesitter is
@@ -135,7 +131,7 @@ type ValidationHandler struct {
 // NewValidationHandler creates a stub ValidationHandler when treesitter is not
 // available.
 func NewValidationHandler(
-	_ interface{},
+	_ any,
 	_ *DiagnosticGate,
 	cfg ValidationHandlerConfig,
 ) *ValidationHandler {

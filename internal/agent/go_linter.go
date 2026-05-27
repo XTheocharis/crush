@@ -128,7 +128,7 @@ func (t *GoTester) RunTests(ctx context.Context) ([]string, error) {
 
 func parseTestFailures(output string) []string {
 	var failures []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "--- FAIL:") {
 			failures = append(failures, line)
@@ -144,7 +144,7 @@ func filterLintLines(raw string, filePaths []string) []string {
 	}
 
 	var result []string
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

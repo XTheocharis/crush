@@ -27,8 +27,8 @@ type Prompt struct {
 	platform   string
 	workingDir string
 
-	extraContextFiles []ContextFile  // XRUSH: extra context file support
-	cache             *ContextCache  // XRUSH: context caching
+	extraContextFiles []ContextFile // XRUSH: extra context file support
+	cache             *ContextCache // XRUSH: context caching
 }
 
 type PromptDat struct {

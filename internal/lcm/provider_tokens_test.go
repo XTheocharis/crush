@@ -67,11 +67,9 @@ func TestProviderTokensConcurrentPendingAdds(t *testing.T) {
 	// Concurrently add pending tokens from multiple goroutines.
 	var wg sync.WaitGroup
 	for i := range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			mgr.AddPendingItemTokens(sessionID, int64(i+1))
-		}()
+		})
 	}
 	wg.Wait()
 

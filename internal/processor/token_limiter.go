@@ -30,10 +30,7 @@ func (tl *TokenLimiter) ProcessInput(_ context.Context, pctx ProcessorContext) (
 	}
 
 	if len(trimmed) == 1 && countTokens(trimmed) > tl.Budget {
-		maxChars := tl.Budget * charsPerToken
-		if maxChars < 0 {
-			maxChars = 0
-		}
+		maxChars := max(tl.Budget*charsPerToken, 0)
 		trimmed[0] = Message{
 			Role:    trimmed[0].Role,
 			Content: truncateString(trimmed[0].Content, maxChars),

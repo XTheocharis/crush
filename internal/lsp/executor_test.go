@@ -32,9 +32,7 @@ func TestTaskExecutorSerialization(t *testing.T) {
 	)
 
 	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			err := e.Submit(context.Background(), "server-a", func() error {
 				cur := running.Add(1)
 				if cur > maxConc.Load() {
@@ -45,7 +43,7 @@ func TestTaskExecutorSerialization(t *testing.T) {
 				return nil
 			})
 			require.NoError(t, err)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -86,14 +84,12 @@ func TestTaskExecutorQueueOverflowReturnsError(t *testing.T) {
 
 	// Submit a blocking task to "srv" — it occupies the executor goroutine.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_ = e.Submit(context.Background(), "srv", func() error {
 			<-blocker
 			return nil
 		})
-	}()
+	})
 	time.Sleep(50 * time.Millisecond)
 
 	// Fill the queue to capacity with tasks that also block.
@@ -101,14 +97,12 @@ func TestTaskExecutorQueueOverflowReturnsError(t *testing.T) {
 	for i := range drainBlockers {
 		drainBlockers[i] = make(chan struct{})
 		ch := drainBlockers[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = e.Submit(context.Background(), "srv", func() error {
 				<-ch
 				return nil
 			})
-		}()
+		})
 	}
 	time.Sleep(50 * time.Millisecond)
 

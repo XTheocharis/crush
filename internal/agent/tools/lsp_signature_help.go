@@ -75,16 +75,16 @@ func formatSignatureHelp(help *protocol.SignatureHelp) string {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(fmt.Sprintf("Signature: %s\n", sig.Label))
+		fmt.Fprintf(&sb, "Signature: %s\n", sig.Label)
 		for j, param := range sig.Parameters {
-			sb.WriteString(fmt.Sprintf("  Param %d: %v\n", j+1, param.Label.Value))
+			fmt.Fprintf(&sb, "  Param %d: %v\n", j+1, param.Label.Value)
 		}
 	}
 	if help.ActiveSignature < uint32(len(help.Signatures)) {
-		sb.WriteString(fmt.Sprintf("\nActive signature: %d\n", help.ActiveSignature))
+		fmt.Fprintf(&sb, "\nActive signature: %d\n", help.ActiveSignature)
 	}
 	if help.ActiveParameter > 0 {
-		sb.WriteString(fmt.Sprintf("Active parameter: %d\n", help.ActiveParameter))
+		fmt.Fprintf(&sb, "Active parameter: %d\n", help.ActiveParameter)
 	}
 	return sb.String()
 }

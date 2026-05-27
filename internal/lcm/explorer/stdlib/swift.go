@@ -34,6 +34,6 @@ func IsSwiftStdlib(module string) bool {
 	if swiftModules[module] {
 		return true
 	}
-	prefix := strings.Split(module, ".")[0]
+	prefix, _, _ := strings.Cut(module, ".")
 	return swiftModules[prefix]
 }

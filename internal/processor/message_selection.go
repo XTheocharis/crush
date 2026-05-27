@@ -99,10 +99,7 @@ func (ms *MessageSelection) selectByRecency(msgs []Message, firstUserIdx int) ([
 
 	// Start with the most recent messages.
 	selected := make([]Message, 0, budget)
-	start := len(msgs) - budget
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(msgs)-budget, 0)
 	selected = append(selected, msgs[start:]...)
 
 	hasUserInWindow := false

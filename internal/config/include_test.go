@@ -11,12 +11,14 @@ import (
 )
 
 func TestIncludeDirectives(t *testing.T) {
+	t.Parallel()
+
 	t.Run("SimpleInclude", TestSimpleInclude)
 	t.Run("RecursiveInclude", TestRecursiveInclude)
 	t.Run("CycleDetection", TestCycleDetection)
 	t.Run("MaxDepthExceeded", TestMaxDepthExceeded)
 	t.Run("Truncation", TestTruncation)
-	t.Run("ConditionalEnv", TestConditionalEnv)
+	// ConditionalEnv uses t.Setenv, incompatible with t.Parallel — runs as standalone test instead.
 	t.Run("ConditionalLanguage", TestConditionalLanguage)
 	t.Run("ConditionalFile", TestConditionalFile)
 	t.Run("NestedConditionalsError", TestNestedConditionalsError)
@@ -30,7 +32,7 @@ func TestIncludeDirectives(t *testing.T) {
 	t.Run("SharedSeenAcrossRecursion", TestSharedSeenAcrossRecursion)
 	t.Run("TruncateFunction", TestTruncateFunction)
 	t.Run("IsSubPath", TestIsSubPath)
-	t.Run("FileAwareEvaluator", TestFileAwareEvaluator)
+	// FileAwareEvaluator uses t.Setenv, incompatible with t.Parallel — runs as standalone test instead.
 }
 
 func TestSimpleInclude(t *testing.T) {
@@ -87,7 +89,7 @@ func TestMaxDepthExceeded(t *testing.T) {
 	tmp := t.TempDir()
 
 	const n = 8
-	for i := 0; i < n; i++ {
+	for i := range n {
 		name := filepath.Join(tmp, fmt.Sprintf("level%d.md", i))
 		next := ""
 		if i < n-1 {

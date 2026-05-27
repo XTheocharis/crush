@@ -1,0 +1,2 @@
+# Allow test fixture log files despite root *.log gitignore
+!*.log

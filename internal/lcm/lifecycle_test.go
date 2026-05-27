@@ -2,6 +2,7 @@ package lcm
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"testing"
 
@@ -56,9 +57,7 @@ func (m *mockOMStore) List(_ context.Context, sessionID string) (map[string]stri
 		return map[string]string{}, nil
 	}
 	cp := make(map[string]string, len(sess))
-	for k, v := range sess {
-		cp[k] = v
-	}
+	maps.Copy(cp, sess)
 	return cp, nil
 }
 

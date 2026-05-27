@@ -441,7 +441,7 @@ func runTool(ctx context.Context, name string, args ...string) string {
 // parseELFDeps extracts NEEDED shared library names from readelf -d output.
 func parseELFDeps(output string) []string {
 	var deps []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if !strings.Contains(line, "NEEDED") {
 			continue
 		}
@@ -461,7 +461,7 @@ func parseELFDeps(output string) []string {
 // parseLddDeps extracts library names from ldd output.
 func parseLddDeps(output string) []string {
 	var deps []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -514,10 +514,10 @@ func parseMachODeps(output string) []string {
 // parsePEDeps extracts DLL names from objdump -p output.
 func parsePEDeps(output string) []string {
 	var deps []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "DLL Name:") {
-			name := strings.TrimSpace(strings.TrimPrefix(line, "DLL Name:"))
+		if after, ok := strings.CutPrefix(line, "DLL Name:"); ok {
+			name := strings.TrimSpace(after)
 			if name != "" {
 				deps = append(deps, name)
 			}
@@ -533,7 +533,7 @@ func parsePEDeps(output string) []string {
 // Exported symbols have types T, D, B, R, etc. (uppercase).
 // Imported/undefined symbols have type U.
 func parseNmSymbols(output string) (exported, imported []string) {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -568,7 +568,7 @@ var elfSectionRe = regexp.MustCompile(`\[\s*\d+\]\s+(\S+)\s+(\S+)`)
 
 func parseELFSections(output string) []string {
 	var sections []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		matches := elfSectionRe.FindStringSubmatch(line)
 		if len(matches) < 3 {
 			continue
@@ -586,7 +586,7 @@ func parseELFSections(output string) []string {
 // parseMachOSections extracts section names from otool -l output.
 func parseMachOSections(output string) []string {
 	var sections []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "sectname ") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "sectname"))
@@ -611,7 +611,7 @@ var interestingStringPatterns = []*regexp.Regexp{
 // and version strings, returning at most limit entries.
 func filterInterestingStrings(output string, limit int) []string {
 	var result []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || len(line) > maxStringLineLen {
 			continue
