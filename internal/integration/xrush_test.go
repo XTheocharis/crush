@@ -355,8 +355,8 @@ func TestDBMigrationCount(t *testing.T) {
 	require.NoError(t, db.Release(dataDir))
 }
 
-// TestNonCGOBuild verifies CGO_ENABLED=0 go build ./... succeeds.
-func TestNonCGOBuild(t *testing.T) {
+// TestCGOBuild verifies CGO_ENABLED=1 go build ./... succeeds.
+func TestCGOBuild(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skipf("skipping CGO build test on %s", runtime.GOOS)
 	}
@@ -365,12 +365,12 @@ func TestNonCGOBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	cmd := exec.CommandContext(context.Background(), goBin, "build", "./...")
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	cmd.Dir = findModuleRoot(t)
 
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err,
-		"CGO_ENABLED=0 go build ./... should succeed.\nOutput: %s", string(output))
+		"CGO_ENABLED=1 go build ./... should succeed.\nOutput: %s", string(output))
 }
 
 // TestRaceDetector verifies extension host concurrent reads under -race.

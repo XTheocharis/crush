@@ -300,10 +300,9 @@ func buildCrushBinary(t *testing.T, repoRoot string) string {
 
 	cmd := exec.CommandContext(ctx, "go", "build", "-o", binPath, ".")
 	cmd.Dir = repoRoot
-	// Match the project's standard build flags. CGO_ENABLED=0 keeps
-	// the binary statically linked and avoids surprising the test on
-	// hosts without a C toolchain.
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	// Match the project's standard build flags. CGO_ENABLED=1 is
+	// required for tree-sitter support.
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go build crush: %v\n%s", err, out)

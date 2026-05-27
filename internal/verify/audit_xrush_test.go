@@ -667,7 +667,7 @@ func specGapComponents() []component {
 		},
 		// T10 — GC tuning via Taskfile build environment.
 		// Dream: debug.SetMemoryLimit in main.go.
-		// Clean: GOEXPERIMENT=greenteagc + CGO_ENABLED=0 in Taskfile.yaml.
+		// Clean: GOEXPERIMENT=greenteagc + CGO_ENABLED=1 in Taskfile.yaml.
 		{
 			ID:   "T.10",
 			Name: "GC tuning (build environment)",

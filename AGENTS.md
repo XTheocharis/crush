@@ -81,7 +81,7 @@ internal/
   `hookedTool` decorator in `internal/agent/hooked_tool.go` wraps tools at
   the coordinator level. Hooks run before permission checks. See
   `HOOKS.md` for the user-facing protocol.
-- **CGO disabled**: builds with `CGO_ENABLED=0` and
+- **CGO disabled**: builds with `CGO_ENABLED=1` and
   `GOEXPERIMENT=greenteagc`.
 
 ## Build/Test/Lint Commands
