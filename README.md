@@ -21,6 +21,48 @@
 - **Works Everywhere:** first-class support in every terminal on macOS, Linux, Windows (PowerShell and WSL), Android, FreeBSD, OpenBSD, and NetBSD
 - **Industrial Grade:** built on the Charm ecosystem, powering 25k+ applications, from leading open source projects to business-critical infrastructure
 
+## Fork Features
+
+In addition to upstream Crush, this fork adds:
+
+### Context & Intelligence
+
+- **Lossless Context Management (LCM)**: automatically summarizes and compacts conversation history through an 8-layer pipeline without losing information, keeping context within token budgets
+- **Repository Map**: generates scope-aware code outlines ranked by PageRank, giving the LLM project-wide understanding without reading every file
+- **Tree-sitter Integration**: fast, accurate code parsing across 28 languages for structural analysis, symbol extraction, and query-based code intelligence
+
+### Multi-Agent Orchestration
+
+- **Operator Pattern**: recursively decomposes tasks into subtasks using four strategies (LLM-map, agentic-map, batch, sequential) with configurable depth limits, cycle detection, and up to 16 parallel workers
+- **Parallel Execution**: concurrent task controller with bounded semaphores, focus-area serialization, resource usage tracking, and future-based result collection
+- **Swarm Coordination**: decomposes a task across multiple subagents that run in parallel, then synthesizes results into a single answer using shared caching
+- **Structured Subagents**: forked child agents with their own message history, mailbox-based inter-agent communication, and per-agent tool permissions
+
+### Developer Experience
+
+- **Auto-fix Diagnostics**: iterative lint → fix → test → reflect loop that automatically resolves diagnostic errors with rollback on failure
+- **Batch Editing**: apply multiple string-replacement operations across files in a single atomic batch with automatic rollback on parse errors
+- **Anchor-based Edits**: content-addressed hash anchors for drift-tolerant, precise edit targeting that survives minor file changes
+- **Model Router**: automatically routes requests to the appropriate model based on token count — smaller inputs to the editor model, larger ones to the architect model
+- **Resource Limits & Rate Limiting**: configurable concurrency caps, token budgets, and doom-loop detection with soft/medium/hard escalation levels
+- **Turn Rewind**: snapshot-based undo that lets you rewind code, conversation, or both to any previous agent turn
+
+### Evaluation & Quality
+
+- **Agent Evaluation**: scoring harness with metric, LLM-judge, and pipeline scorers to assess agent output quality across dimensions like build success, test pass rate, and code quality
+- **Processor Pipeline**: four-phase message processing pipeline (input, output stream, output result, API error) with token limiting and PII detection
+
+### New Tools
+
+- `agentic_map`, `llm_map`, `map_refresh` — repository map generation and refresh
+- `lcm_describe`, `lcm_expand`, `lcm_grep` — LCM context retrieval and search
+- `diag_autofix`, `diag_gate` — diagnostic auto-fix and quality gating
+- `send_message` — inter-agent mailbox messaging
+- `synthetic_output` — structured synthetic output generation for testing
+- `task_stop` — stop a running forked sub-agent
+- `team_create`, `team_delete` — multi-agent team management
+- `crush_logs` — inspect Crush internal logs from within a session
+
 ## Installation
 
 Use a package manager:

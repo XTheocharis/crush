@@ -22,14 +22,102 @@ internal/
     config.go                      Config struct, context file paths, agent definitions
     load.go                        crush.json loading and validation
     provider.go                    Provider configuration and model resolution
-  agent/
+  agent/                           (see internal/agent/AGENTS.md)
     agent.go                       SessionAgent: runs LLM conversations per session
     coordinator.go                 Coordinator: manages named agents ("coder", "task")
+    coordinator_xrush_recovery.go  Recover from interrupted streaming LLM responses
+    coordinator_xrush_repomap.go   Inject repo-map context into coordinator loop
     hooked_tool.go                 Decorator that runs PreToolUse hooks before tool execution
     prompts.go                     Loads Go-template system prompts
-    templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
-    tools/                         All built-in tools (bash, edit, view, grep, glob, etc.)
+    operator.go                    Operator: recursive task decomposition via DAG
+    parallel.go                    Parallel: bounded fan-out concurrent execution
+    swarm.go                       Swarm: multi-agent parallel coordination
+    productive.go                  Productive: constrained high-output agent loop
+    doom.go                        Doom-loop detection and auto-recovery
+    architect_plan.go              Structured planning before code changes
+    autofix.go                     Iterative lint → fix → test → reflect cycle
+    go_linter.go                   Go-specific vet/staticcheck integration
+    model_router.go                Route requests to model by token count/tier
+    router_tier.go                 Tier definitions for model routing
+    ratelimit.go                   Token-rate and request-rate limiting
+    resource_limits.go             Concurrency caps, token budgets, escalation
+    cache_share.go                 Cross-agent cache sharing via content-addressed keys
+    config_loader.go               Dynamic agent configuration from crush.json
+    prompt_assembly.go             Compose system prompts at runtime
+    structured_subagent.go         Typed-output forked child agents
+    structured_types.go            Shared types for structured sub-agents
+    forked.go                      Forked session support for parallel branches
+    tool_surface.go                Tool registry and surface description for prompts
+    ext_hooks.go                   External lifecycle hook callbacks
+    lcm_client.go                  LCM adapter for agent-level integration
+    loop_detection.go              Repetition detection in agent tool calls
+    prompt/                        Prompt assembly sub-package
+      context.go                   Context file loading (AGENTS.md, CRUSH.md, etc.)
+      prompt.go                    Prompt construction and template execution
+      prompt_extra.go              Extra prompt assembly helpers
+    templates/                     System prompt templates (*.md.tpl)
+    tools/                         Built-in tools
       mcp/                         MCP client integration
+      agentic_map.go               Sub-agent on each JSONL item, write results
+      llm_map.go                   LLM transformation on each JSONL item (read-only)
+      map_refresh.go               Force repo-map cache invalidation
+      lcm_describe.go              Describe file/summary by LCM identifier
+      lcm_expand.go                Expand LCM summary to original messages
+      lcm_grep.go                  Search conversation history (full-text/regex)
+      diag_autofix.go              Iterative diagnostic auto-fix
+      diag_gate.go                 Quality gate via LSP diagnostics
+      edit_batch_tool.go           Atomic multi-file batch edits with rollback
+      edit_anchors.go              Content-addressed hash anchors for drift-tolerant edits
+      edit_anchor_ops.go           Anchor operations (insert_before, replace_range, etc.)
+      edit_anchors_cache.go        Anchor hash map cache
+      edit_fuzzy.go                Fuzzy string matching for approximate edit targets
+      orchestration_types.go       Shared types for operator/parallel/swarm
+      send_message.go              Inter-agent mailbox messaging
+      task_stop.go                 Stop a running forked sub-agent
+      team_create.go               Create named agent team
+      team_delete.go               Delete team and stop members
+      synthetic_output.go          Synthetic output for testing/simulation
+      crush_logs.go                Read Crush internal logs from session
+      view_xrush.go                Enhanced view with LCM context awareness
+      rollback.go                  Revert files to prior state on failure
+      validate.go                  Tree-sitter validation (build tag: treesitter)
+      validate_stub.go             No-op validation fallback
+      validation_handler.go        Post-edit validation pipeline
+  lcm/                             Lossless Context Management (see internal/lcm/AGENTS.md)
+    manager.go                     Manager: LCM lifecycle, 37 methods
+    compactor.go                   Core compaction logic
+    store.go                       LCM persistent storage (SQLite-backed)
+    compaction_layers.go           8-layer compaction pipeline
+    summarizer.go                  LLM-powered conversation summarization
+    memory.go                      Auto-memory: persist insights across sessions
+    explorer/                      File-type exploration (see internal/lcm/explorer/AGENTS.md)
+      explorer.go                  Explorer interface, Registry, dispatch
+      code_treesitter.go           Tree-sitter code explorer
+      stdlib/                      Per-language stdlib membership (15 languages)
+  repomap/                         Repository map (see internal/repomap/AGENTS.md)
+    repomap.go                     Service struct, lifecycle, Generate(), PreIndex
+    tags.go                        Tree-sitter tag extraction with DB caching
+    graph.go                       FileGraph from def/ref/import edges
+    pagerank.go                    PageRank over FileGraph with personalization
+    render.go                      RenderRepoMap: scope-aware tree-context rendering
+    tiktoken.go                    cl100k_base BPE tokenizer (embedded ~1.6 MB)
+  treesitter/                      Tree-sitter integration (CGO, see internal/treesitter/AGENTS.md)
+    treesitter.go                  Core types: Tag, SymbolInfo, FileAnalysis, Parser
+    parser.go                      ParserPool (channel-based), Analyze(), ParseTree()
+    query.go                       QueryLoader: compiles and caches .scm queries
+    languages.go                   Extension-to-language mapping (28 languages)
+    imports.go                     Per-language import extraction
+  processor/                       Message intercept pipeline (see internal/processor/AGENTS.md)
+    types.go                       Processor interface, ProcessorPhase, ProcessorContext
+    runner.go                      ProcessorRunner: chains processors per phase
+  eval/                            Agent evaluation harness (see internal/eval/AGENTS.md)
+    harness.go                     EvalHarness: parallel scorer registration and execution
+    runner.go                      EvalRunner: loads JSON datasets, runs through harness
+    scorers/                       Scorer sub-packages (metric, judge, mastra)
+  rewind/                          Turn-based snapshot and rewind (see internal/rewind/AGENTS.md)
+    snapshot.go                    Snapshotter: capture and retrieve turn snapshots
+    rewind.go                      Rewinder: rewind code, conversation, or both
+    service.go                     Service composing Snapshotter + Rewinder + Forker + Editor
   hooks/                           Hook engine: runs user shell commands on hook events
     hooks.go                       Decision types, aggregation logic, event constants
     runner.go                      Parallel hook execution, timeout, dedup
@@ -38,7 +126,7 @@ internal/
   message/                         Message model and content types
   db/                              SQLite via sqlc, with migrations
     sql/                           Raw SQL queries (consumed by sqlc)
-    migrations/                    Schema migrations
+    migrations/                    Schema migrations (lcm, repo_map, xrush_dag, turn_snapshots, etc.)
   lsp/                             LSP client manager, auto-discovery, on-demand startup
   ui/                              Bubble Tea v2 TUI (see internal/ui/AGENTS.md)
   permission/                      Tool permission checking and allow-lists
@@ -81,6 +169,32 @@ internal/
   `hookedTool` decorator in `internal/agent/hooked_tool.go` wraps tools at
   the coordinator level. Hooks run before permission checks. See
   `HOOKS.md` for the user-facing protocol.
+- **LCM (Lossless Context Management)**: conversation summarization and
+  compaction via an 8-layer pipeline. Manages token budgets, large-output
+  storage, and auto-memory across sessions. See `internal/lcm/AGENTS.md`.
+- **Repository Map**: scope-aware code outlines for LLM context. Uses
+  PageRank over a def/ref/import graph, rendered within a token budget.
+  See `internal/repomap/AGENTS.md`.
+- **Tree-sitter**: code parsing and analysis via a channel-based parser
+  pool with 28 grammars. Provides tag extraction, import resolution, and
+  AST scope walking. Requires `CGO_ENABLED=1`.
+  See `internal/treesitter/AGENTS.md`.
+- **Processor Pipeline**: message intercept pipeline with four sequential
+  phases (input, output stream, output result, API error). 16 processor
+  implementations; 3 active in production.
+  See `internal/processor/AGENTS.md`.
+- **Eval**: agent evaluation harness. Scorers assess output quality across
+  metric, LLM-judge, and Mastra dimensions. Invoked via
+  `crush eval --dataset <path> --scorer <name>`.
+  See `internal/eval/AGENTS.md`.
+- **Rewind**: turn-based snapshot and rewind. After each agent turn, files
+  are snapshotted so users can rewind to any previous state. Supports
+  code-only, conversation-only, or combined rewind modes.
+  See `internal/rewind/AGENTS.md`.
+- **Orchestration**: multi-agent coordination via operator, parallel, and
+  swarm modes. Operator orchestrates sub-agents through a DAG. Parallel
+  fans out concurrent execution. Swarm coordinates multiple agents toward
+  a shared goal. See `internal/agent/AGENTS.md`.
 - **CGO disabled**: builds with `CGO_ENABLED=1` and
   `GOEXPERIMENT=greenteagc`.
 
