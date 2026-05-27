@@ -3,6 +3,7 @@ package agent
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"sort"
 
@@ -43,7 +44,8 @@ func NewProductiveLoopDetector(d *DoomLoopDetector) *ProductiveLoopDetector {
 // two passes: first the underlying DoomLoopDetector to classify the loop, then
 // an independent output-diversity scan. If any tool appears frequently enough
 // to meet the soft threshold AND produces diverse outputs (>=50% unique hashes),
-// the loop is considered productive and escalation is suppressed.
+// the loop is considered productive: hard escalation is downgraded to medium
+// (execution continues) while soft/medium warnings still reach the LLM.
 func (p *ProductiveLoopDetector) Detect(steps []fantasy.StepResult) ProductiveLoopResult {
 	doomResult := p.DoomLoopDetector.Detect(steps)
 
@@ -60,12 +62,20 @@ func (p *ProductiveLoopDetector) Detect(steps []fantasy.StepResult) ProductiveLo
 		}
 		uniqueOutputs := len(g.hashes)
 		if uniqueOutputs > 1 && float64(uniqueOutputs)/float64(g.count) >= 0.5 {
+			level, msg := p.classify(g.count, g.tool)
+			if level == EscalationHard {
+				level = EscalationMedium
+				msg = fmt.Sprintf(
+					"PRODUCTIVE LOOP: Tool %q repeated %d times (%d unique outputs). Progress detected but consider consolidating your approach.",
+					g.tool, g.count, uniqueOutputs,
+				)
+			}
 			return ProductiveLoopResult{
 				DoomLoopResult: DoomLoopResult{
-					Level:       EscalationNone,
+					Level:       level,
 					RepeatCount: g.count,
 					ToolName:    g.tool,
-					Message:     "",
+					Message:     msg,
 					Pattern:     g.pattern,
 				},
 				IsProductive:    true,

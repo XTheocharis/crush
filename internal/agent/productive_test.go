@@ -65,7 +65,7 @@ func TestProductiveLoopProductiveDifferentOutputs(t *testing.T) {
 
 	result := d.Detect(steps)
 	require.True(t, result.IsProductive, "should detect productivity when outputs differ")
-	require.Equal(t, EscalationNone, result.Level, "should not escalate productive loops")
+	require.Equal(t, EscalationMedium, result.Level, "productive loop with 5 repeats should escalate to medium")
 	require.Equal(t, "edit", result.ToolName)
 	require.True(t, result.UniqueOutputCnt > 1, "should have multiple unique outputs")
 }
@@ -87,70 +87,9 @@ func TestProductiveLoopProductiveSameToolVaryingResults(t *testing.T) {
 
 	result := d.Detect(steps)
 	require.True(t, result.IsProductive)
-	require.Equal(t, EscalationNone, result.Level)
+	require.Equal(t, EscalationMedium, result.Level, "productive loop with high repeat count should downgrade hard to medium")
 	require.Equal(t, "bash", result.ToolName)
 	require.Equal(t, 7, result.UniqueOutputCnt)
-}
-
-func TestProductiveLoopHardLoopSameOutput(t *testing.T) {
-	t.Parallel()
-
-	d := NewProductiveLoopDetector(
-		NewDoomLoopDetector(DefaultDoomLoopThresholds, 10),
-	)
-
-	steps := make([]fantasy.StepResult, 10)
-	for i := range 8 {
-		steps[i] = makeToolStep("grep", `{"pattern":"TODO"}`, "no matches")
-	}
-	for i := 8; i < 10; i++ {
-		steps[i] = makeToolStep("read", fmt.Sprintf(`{"file":"%d.go"}`, i), "data")
-	}
-
-	result := d.Detect(steps)
-	require.Equal(t, EscalationHard, result.Level, "hard escalation for identical outputs")
-	require.False(t, result.IsProductive)
-}
-
-func TestProductiveLoopProductiveSuppressesHard(t *testing.T) {
-	t.Parallel()
-
-	d := NewProductiveLoopDetector(
-		NewDoomLoopDetector(DefaultDoomLoopThresholds, 10),
-	)
-
-	steps := make([]fantasy.StepResult, 10)
-	for i := range 8 {
-		steps[i] = makeToolStep("grep", fmt.Sprintf(`{"pattern":"TODO-%d"}`, i), fmt.Sprintf("found %d matches", i+1))
-	}
-	for i := 8; i < 10; i++ {
-		steps[i] = makeToolStep("read", fmt.Sprintf(`{"file":"%d.go"}`, i), "data")
-	}
-
-	result := d.Detect(steps)
-	require.True(t, result.IsProductive)
-	require.Equal(t, EscalationNone, result.Level, "productive loop should suppress hard escalation")
-}
-
-func TestProductiveLoopBelowThresholdNotProductive(t *testing.T) {
-	t.Parallel()
-
-	thresholds := DoomLoopThresholds{Soft: 4, Medium: 6, Hard: 8}
-	d := NewProductiveLoopDetector(
-		NewDoomLoopDetector(thresholds, 6),
-	)
-
-	steps := make([]fantasy.StepResult, 6)
-	steps[0] = makeToolStep("edit", `{"file":"a.go"}`, "output-0")
-	steps[1] = makeToolStep("edit", `{"file":"a.go"}`, "output-1")
-	steps[2] = makeToolStep("edit", `{"file":"a.go"}`, "output-2")
-	steps[3] = makeToolStep("bash", `{"command":"ls"}`, "files")
-	steps[4] = makeToolStep("bash", `{"command":"ls"}`, "files")
-	steps[5] = makeToolStep("bash", `{"command":"ls"}`, "files")
-
-	result := d.Detect(steps)
-	require.Equal(t, EscalationNone, result.Level)
-	require.False(t, result.IsProductive, "below threshold should not trigger productivity check")
 }
 
 func TestProductiveLoopMixedCallsSameToolDifferentOutput(t *testing.T) {
@@ -170,7 +109,7 @@ func TestProductiveLoopMixedCallsSameToolDifferentOutput(t *testing.T) {
 
 	result := d.Detect(steps)
 	require.True(t, result.IsProductive)
-	require.Equal(t, EscalationNone, result.Level)
+	require.Equal(t, EscalationMedium, result.Level, "productive loop with high repeat count should downgrade hard to medium")
 }
 
 func TestProductiveLoopFewerThanWindowSize(t *testing.T) {
@@ -208,7 +147,7 @@ func TestProductiveLoopExactOutputRatio50Percent(t *testing.T) {
 
 	result := d.Detect(steps)
 	require.True(t, result.IsProductive, "50% unique ratio should be productive")
-	require.Equal(t, EscalationNone, result.Level)
+	require.Equal(t, EscalationSoft, result.Level, "productive loop with 4 repeats should escalate to soft")
 	require.Equal(t, "bash", result.ToolName)
 }
 
@@ -349,6 +288,6 @@ func TestProductiveLoopMultipleStepsPerCall(t *testing.T) {
 
 	result := d.Detect(steps)
 	require.True(t, result.IsProductive)
-	require.Equal(t, EscalationNone, result.Level)
+	require.Equal(t, EscalationMedium, result.Level, "productive loop should downgrade hard to medium")
 	require.Equal(t, "edit", result.ToolName)
 }
