@@ -86,17 +86,6 @@ func (e *PromptAssemblyExtension) onPreparePrompt(_ context.Context, messages []
 		return defensiveCopyMessages(messages), nil
 	}
 
-	// Only inject memory on the first step. Once the LLM has responded
-	// (assistant messages exist), the memory is already part of the
-	// conversation history. Re-injecting as a trailing user message every
-	// step causes the LLM to interpret it as a new request, triggering
-	// infinite tool-call loops.
-	for _, msg := range messages {
-		if msg.Role == fantasy.MessageRoleAssistant {
-			return defensiveCopyMessages(messages), nil
-		}
-	}
-
 	workingDir := e.host.WorkingDir()
 	var files []prompt.ContextFile
 
