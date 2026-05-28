@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/crush/internal/extensions"
 	"github.com/charmbracelet/crush/internal/hooks"
 	"github.com/charmbracelet/crush/internal/lcm"
+	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/stretchr/testify/require"
 )
@@ -307,6 +308,104 @@ func TestLCMExtensionWiredToPromptAssembly(t *testing.T) {
 		"Modified prompt should contain the original base prompt")
 }
 
+func TestRepoMapPromptInjectionWiring(t *testing.T) {
+	origLCM := extensions.TheLCMExtension
+	origRepomap := extensions.TheRepomapExtension
+	t.Cleanup(func() {
+		extensions.TheLCMExtension = origLCM
+		extensions.TheRepomapExtension = origRepomap
+	})
+
+	freshLCM := &extensions.LCMExtension{}
+	freshRepomap := &extensions.RepomapExtension{}
+	extensions.TheLCMExtension = freshLCM
+	extensions.TheRepomapExtension = freshRepomap
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshLCM)
+	ext.RegisterExtension(freshRepomap)
+	ext.RegisterExtension(&extensions.PromptAssemblyExtension{})
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{LCM: &config.LCMOptions{}},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
+
+	raw := app.ExtHost.ExtensionByName("prompt-assembly")
+	require.NotNil(t, raw, "prompt-assembly extension should be registered")
+
+	hook := raw.(interface{ PromptHook() *ext.PromptHook }).PromptHook()
+	require.NotNil(t, hook, "PromptHook should be non-nil")
+
+	// Verify no panic when calling SystemPromptModifier without cached map.
+	modified, err := hook.SystemPromptModifier(t.Context(), "test-session", "base-prompt")
+	require.NoError(t, err)
+	require.Contains(t, modified, "base-prompt",
+		"SystemPromptModifier should not corrupt prompt when no cached map exists")
+
+	// Verify ShouldInjectMap returns false without run key in context.
+	_, tokenCount := extensions.TheRepomapExtension.LoadCachedMap("test-session")
+	require.Equal(t, 0, tokenCount,
+		"LoadCachedMap should return 0 tokens for session with no cached map")
+}
+
+func TestRepoMapPromptInjectionNoPanicWithoutRepomap(t *testing.T) {
+	origLCM := extensions.TheLCMExtension
+	t.Cleanup(func() { extensions.TheLCMExtension = origLCM })
+
+	freshLCM := &extensions.LCMExtension{}
+	extensions.TheLCMExtension = freshLCM
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshLCM)
+	ext.RegisterExtension(&extensions.PromptAssemblyExtension{})
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{LCM: &config.LCMOptions{}},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	require.NotPanics(t, func() {
+		setupExtensions(t.Context(), app, conn, q, nil, nil, store)
+	}, "setupExtensions should not panic when RepomapExtension is nil")
+}
+
 func TestWireOrchestrationNilSafe(t *testing.T) {
 	origXrush := extensions.TheXrushExtension
 	origOrch := extensions.TheOrchestrationExtension
@@ -337,3 +436,71 @@ type stubMailbox struct{}
 
 func (stubMailbox) Send(tools.MailboxMessage) error { return nil }
 func (stubMailbox) HasInbox(string) bool            { return false }
+
+func TestMessageDecoratorWired(t *testing.T) {
+	origLCM := extensions.TheLCMExtension
+	t.Cleanup(func() { extensions.TheLCMExtension = origLCM })
+	freshLCM := &extensions.LCMExtension{}
+	extensions.TheLCMExtension = freshLCM
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshLCM)
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+	msgSvc := message.NewService(q)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options: &config.Options{
+			LCM: &config.LCMOptions{},
+		},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		Messages:        msgSvc,
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	setupExtensions(t.Context(), app, conn, q, nil, msgSvc, store)
+
+	mgr := extensions.TheLCMExtension.Manager()
+	require.NotNil(t, mgr, "LCM manager should be initialized after setupExtensions")
+	require.NotNil(t, app.Messages, "app.Messages should be non-nil after wiring")
+
+	msgs, err := app.Messages.List(t.Context(), "nonexistent-session")
+	require.NoError(t, err, "decorated message service List should not error")
+	require.Empty(t, msgs, "List for nonexistent session should return empty")
+}
+
+func TestMessageDecoratorNilSafe(t *testing.T) {
+	origLCM := extensions.TheLCMExtension
+	t.Cleanup(func() { extensions.TheLCMExtension = origLCM })
+	extensions.TheLCMExtension = &extensions.LCMExtension{}
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+	msgSvc := message.NewService(q)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+	}
+	store := config.NewTestStore(cfg)
+
+	require.NotPanics(t, func() {
+		wireMessageDecorator(&App{Messages: msgSvc}, q, conn, store)
+	}, "wireMessageDecorator should not panic when LCM manager is nil")
+}

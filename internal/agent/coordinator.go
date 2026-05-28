@@ -92,6 +92,8 @@ type Coordinator interface {
 	RepoMapRefresh(ctx context.Context, sessionID string) error
 	// XRUSH: restore checkpointed agent config after compaction
 	RestoreAgentConfig(ctx context.Context, payload map[string][]string) error
+	// XRUSH: expose structured subagent factory for swarm wiring
+	StructuredSubagentFactory() StructuredSubagentFactory
 }
 
 type coordinator struct {
@@ -1312,4 +1314,8 @@ func logDiscoveryStats(
 		"prompt_tok_est", skills.ApproxTokenCount(xml),
 		"active_names", activeNames,
 	)
+}
+
+func (c *coordinator) StructuredSubagentFactory() StructuredSubagentFactory {
+	return c.structuredSubagentFactory
 }

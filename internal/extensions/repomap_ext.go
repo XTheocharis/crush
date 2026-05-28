@@ -16,12 +16,14 @@ var TheRepomapExtension = &RepomapExtension{}
 // RepomapExtension wraps the repository map subsystem as a ToolProvider and
 // RunHookProvider.
 type RepomapExtension struct {
-	mu           sync.RWMutex
-	host         ext.HostContext
-	tools        []fantasy.AgentTool
-	names        []string
-	active       bool
-	asyncRefresh func(ctx context.Context, sessionID string) error
+	mu              sync.RWMutex
+	host            ext.HostContext
+	tools           []fantasy.AgentTool
+	names           []string
+	active          bool
+	asyncRefresh    func(ctx context.Context, sessionID string) error
+	loadCachedMap   func(sessionID string) (string, int)
+	shouldInjectMap func(ctx context.Context, sessionID string) bool
 }
 
 func (e *RepomapExtension) Name() string { return "repomap" }
@@ -50,6 +52,8 @@ func (e *RepomapExtension) Shutdown(_ context.Context) error {
 	e.tools = nil
 	e.names = nil
 	e.active = false
+	e.loadCachedMap = nil
+	e.shouldInjectMap = nil
 	return nil
 }
 
@@ -98,6 +102,31 @@ func (e *RepomapExtension) RunHooks() []ext.RunHook {
 			},
 		},
 	}
+}
+
+// LoadCachedMap returns the cached repo map for the given session. Returns
+// empty string and 0 when the service is unavailable or no map is cached.
+func (e *RepomapExtension) LoadCachedMap(sessionID string) (string, int) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.loadCachedMap == nil {
+		return "", 0
+	}
+	return e.loadCachedMap(sessionID)
+}
+
+// ShouldInjectMap reports whether the repo map should be injected for this
+// session. It uses the repomap.Service.ShouldInject mechanism when a
+// RunInjectionKey is available in context. Returns false when the service is
+// unavailable or no run key is present.
+func (e *RepomapExtension) ShouldInjectMap(ctx context.Context, sessionID string) bool {
+	e.mu.RLock()
+	fn := e.shouldInjectMap
+	e.mu.RUnlock()
+	if fn == nil {
+		return false
+	}
+	return fn(ctx, sessionID)
 }
 
 var (

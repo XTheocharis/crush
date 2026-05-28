@@ -47,6 +47,7 @@ func (s *stubCoordinator) UpdateModels(context.Context) error                   
 func (s *stubCoordinator) RecoverSession(context.Context, string) error                  { return nil } // XRUSH: session recovery
 func (s *stubCoordinator) RepoMapRefresh(context.Context, string) error                  { return nil } // XRUSH: repomap refresh
 func (s *stubCoordinator) RestoreAgentConfig(context.Context, map[string][]string) error { return nil } // XRUSH: agent config restore
+func (s *stubCoordinator) StructuredSubagentFactory() agent.StructuredSubagentFactory    { return nil } // XRUSH: swarm factory accessor
 
 // stubSessions is a minimal session.Service that returns a fixed list
 // (and supports Get by ID). All other methods return zero values; the

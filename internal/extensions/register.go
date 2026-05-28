@@ -15,7 +15,7 @@ func init() {
 	ext.RegisterExtension(&RewindExtension{})
 	ext.RegisterExtension(&DoomExtension{})
 	ext.RegisterExtension(&OperatorExtension{})
-	ext.RegisterExtension(&SwarmExtension{})
+	ext.RegisterExtension(TheSwarmExtension)
 	ext.RegisterExtension(&ToolSurfaceExtension{})
 	ext.RegisterExtension(&ResourceLimitsExtension{})
 	ext.RegisterExtension(TheXrushExtension)

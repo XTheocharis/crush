@@ -34,8 +34,8 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
-	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/rewind" // XRUSH: RewindService field type on App struct
+	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/skills"
 	"github.com/charmbracelet/crush/internal/ui/anim"
@@ -558,6 +558,7 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 	}
 
 	wireAgentConfigRestorer(app.AgentCoordinator) // XRUSH: post-compaction skill restoration
+	wireSwarmFactory(app.AgentCoordinator)        // XRUSH: swarm factory wiring
 
 	return nil
 }
@@ -666,4 +667,3 @@ func (app *App) checkForUpdates(ctx context.Context) {
 		IsDevelopment:  info.IsDevelopment(),
 	})
 }
-

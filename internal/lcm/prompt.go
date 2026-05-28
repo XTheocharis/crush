@@ -161,7 +161,7 @@ Both tools process JSONL input files and produce JSONL output files with results
 `
 
 // GetSystemPromptFile returns the LCM system prompt as a ContextFile for injection
-// into the coder prompt via prompt.WithExtraContextFiles.
+// into the system prompt via the PromptAssemblyExtension.
 func GetSystemPromptFile() ContextFile {
 	return ContextFile{
 		Name:    "LCM Instructions",

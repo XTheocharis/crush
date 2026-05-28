@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/charmbracelet/crush/internal/extensions"
 	"github.com/charmbracelet/crush/internal/hooks"
 	"github.com/charmbracelet/crush/internal/lcm"
+	"github.com/charmbracelet/crush/internal/lcm/explorer"
 	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/charmbracelet/crush/internal/session"
 )
@@ -227,6 +229,65 @@ func wireOrchestration() {
 	slog.Info("Orchestration tools wired with registry and mailbox")
 }
 
+// [XRUSH: begin: wireSwarm]
+// wireSwarm connects the XrushExtension's registry and mailbox to the
+// SwarmExtension for future teammate tool support.
+func wireSwarm() {
+	xrush := extensions.TheXrushExtension
+	if xrush == nil {
+		slog.Warn("XrushExtension singleton is nil, skipping swarm wiring")
+		return
+	}
+
+	registry := xrush.Registry()
+	if registry == nil {
+		slog.Warn("XrushExtension registry is nil, skipping swarm wiring")
+		return
+	}
+
+	mailbox := xrush.Mailbox()
+	if mailbox == nil {
+		slog.Warn("XrushExtension mailbox is nil, skipping swarm wiring")
+		return
+	}
+
+	swarm := extensions.TheSwarmExtension
+	if swarm == nil {
+		slog.Warn("SwarmExtension singleton is nil, skipping swarm wiring")
+		return
+	}
+
+	swarm.SetRegistry(registry)
+	swarm.SetMailbox(mailbox)
+	slog.Info("Swarm registry and mailbox wired")
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireSwarmFactory]
+// wireSwarmFactory extracts the StructuredSubagentFactory from the coordinator
+// and wires it into the SwarmExtension, then rebuilds tools so swarm_execute
+// becomes available.
+func wireSwarmFactory(coord agent.Coordinator) {
+	swarm := extensions.TheSwarmExtension
+	if swarm == nil {
+		slog.Warn("SwarmExtension singleton is nil, skipping factory wiring")
+		return
+	}
+
+	factory := coord.StructuredSubagentFactory()
+	if factory == nil {
+		slog.Warn("Coordinator StructuredSubagentFactory is nil, skipping swarm factory wiring")
+		return
+	}
+
+	swarm.SetFactory(factory)
+	swarm.RebuildTools()
+	slog.Info("Swarm factory wired and tools rebuilt")
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wirePromptAssembly]
 // wirePromptAssembly connects the LCM extension to the PromptAssemblyExtension
 // so that the system prompt modifier can inject LCM context files.
@@ -255,6 +316,74 @@ func wirePromptAssembly(extHost *ext.ExtensionHost) {
 
 	pa.SetLCMExtension(extensions.TheLCMExtension)
 	slog.Info("PromptAssemblyExtension wired with LCM extension")
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireRepoMapPromptInjection]
+// wireRepoMapPromptInjection connects the RepomapExtension to the
+// PromptAssemblyExtension so that the cached repo map can be injected into
+// the system prompt when ShouldInject returns true.
+func wireRepoMapPromptInjection(extHost *ext.ExtensionHost) {
+	if extHost == nil {
+		slog.Warn("Extension host is nil, skipping repo map prompt injection wiring")
+		return
+	}
+
+	raw := extHost.ExtensionByName("prompt-assembly")
+	if raw == nil {
+		slog.Warn("PromptAssemblyExtension not found, skipping repo map wiring")
+		return
+	}
+
+	pa, ok := raw.(*extensions.PromptAssemblyExtension)
+	if !ok {
+		slog.Warn("ExtensionByName(\"prompt-assembly\") returned unexpected type", "type", fmt.Sprintf("%T", raw))
+		return
+	}
+
+	if extensions.TheRepomapExtension == nil {
+		slog.Warn("RepomapExtension singleton is nil, skipping repo map prompt wiring")
+		return
+	}
+
+	pa.SetRepomapExtension(extensions.TheRepomapExtension)
+	slog.Info("PromptAssemblyExtension wired with repo map extension")
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireMessageDecorator]
+// wireMessageDecorator wraps the raw message service with LCM-aware behaviour
+// (large-output storage, token tracking, compaction scheduling, summary
+// injection). When the LCM manager is nil the function logs and returns without
+// error so that non-LCM builds remain unaffected.
+func wireMessageDecorator(app *App, q db.Querier, conn *sql.DB, store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		slog.Warn("LCM manager is nil, skipping message decorator wiring")
+		return
+	}
+
+	queries, ok := q.(*db.Queries)
+	if !ok {
+		slog.Warn("db.Querier is not *db.Queries, skipping message decorator wiring")
+		return
+	}
+
+	cfg := store.Config()
+
+	decoratorCfg := lcm.MessageDecoratorConfig{}
+	if cfg.Options != nil && cfg.Options.LCM != nil {
+		decoratorCfg.DisableLargeToolOutput = cfg.Options.LCM.DisableLargeToolOutput
+		decoratorCfg.LargeToolOutputTokenThreshold = cfg.Options.LCM.LargeToolOutputTokenThreshold
+		if cfg.Options.LCM.ExplorerOutputProfile != "" {
+			decoratorCfg.ExplorerOutputProfile = explorer.OutputProfile(cfg.Options.LCM.ExplorerOutputProfile)
+		}
+	}
+
+	app.Messages = lcm.NewMessageDecorator(app.Messages, mgr, queries, conn, decoratorCfg)
+	slog.Info("Message decorator wired with LCM support")
 }
 
 // [XRUSH: end]

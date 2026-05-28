@@ -45,12 +45,24 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireOrchestration()
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire swarm registry + mailbox]
+	wireSwarm()
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire prompt-assembly LCM]
 	wirePromptAssembly(extHost)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire repo map prompt injection]
+	wireRepoMapPromptInjection(extHost)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: rewind service initialization]
 	app.RewindService = initRewindService(q, sessions, store)
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire message decorator]
+	wireMessageDecorator(app, q, conn, store)
 	// [XRUSH: end]
 
 	// [XRUSH: begin: wire compaction event to pill]

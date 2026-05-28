@@ -58,6 +58,19 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 
 	e.asyncRefresh = refreshAsync
 
+	e.mu.Lock()
+	e.loadCachedMap = func(sessionID string) (string, int) {
+		return svc.LastGoodMap(sessionID), svc.LastTokenCount(sessionID)
+	}
+	e.shouldInjectMap = func(ctx context.Context, sessionID string) bool {
+		runKey, ok := repomap.RunInjectionKeyFromContext(ctx)
+		if !ok {
+			return false
+		}
+		return svc.ShouldInject(sessionID, runKey)
+	}
+	e.mu.Unlock()
+
 	return baseRepomapTools(refreshSync, refreshAsync)
 }
 
