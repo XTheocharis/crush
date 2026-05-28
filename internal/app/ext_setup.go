@@ -33,6 +33,14 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	}
 	app.ExtHost = extHost
 
+	// [XRUSH: begin: wire LCM LLM client]
+	wireLCMLLMClient(store)
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire compact hook runners]
+	wireCompactHookRunners(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: rewind service initialization]
 	app.RewindService = initRewindService(q, sessions, store)
 	// [XRUSH: end]

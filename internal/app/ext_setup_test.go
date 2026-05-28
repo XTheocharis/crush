@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/extensions"
+	"github.com/charmbracelet/crush/internal/hooks"
 	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/stretchr/testify/require"
@@ -64,8 +66,6 @@ func TestSetLLMClientCreatesAdapter(t *testing.T) {
 }
 
 func TestLCMLLMClientWired(t *testing.T) {
-	t.Parallel()
-
 	origExt := extensions.TheLCMExtension
 	t.Cleanup(func() { extensions.TheLCMExtension = origExt })
 	freshExt := &extensions.LCMExtension{}
@@ -109,3 +109,68 @@ func TestLCMLLMClientWired(t *testing.T) {
 		"LCM manager has nil compressor after setup — SetLLMClient was never called",
 	)
 }
+
+func TestHookRunnersNilManager(t *testing.T) {
+	origExt := extensions.TheLCMExtension
+	t.Cleanup(func() { extensions.TheLCMExtension = origExt })
+	extensions.TheLCMExtension = &extensions.LCMExtension{}
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+	}
+	store := config.NewTestStore(cfg)
+
+	require.NotPanics(t, func() {
+		wireCompactHookRunners(store)
+	}, "wireCompactHookRunners should not panic when LCM manager is nil")
+}
+
+func TestHookRunnersWired(t *testing.T) {
+	origExt := extensions.TheLCMExtension
+	t.Cleanup(func() { extensions.TheLCMExtension = origExt })
+	freshExt := &extensions.LCMExtension{}
+	extensions.TheLCMExtension = freshExt
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshExt)
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+
+	markerDir := t.TempDir()
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options: &config.Options{
+			LCM: &config.LCMOptions{},
+		},
+		Hooks: map[string][]config.HookConfig{
+			hooks.EventPreCompact: {
+				{Command: "touch " + filepath.Join(markerDir, "pre-fired")},
+			},
+			hooks.EventPostCompact: {
+				{Command: "touch " + filepath.Join(markerDir, "post-fired")},
+			},
+		},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
+
+	mgr := extensions.TheLCMExtension.Manager()
+	require.NotNil(t, mgr, "LCM manager should be initialized after setupExtensions")
+}
+

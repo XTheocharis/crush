@@ -80,6 +80,19 @@ func (e *OrchestrationExtension) SetMailbox(mailbox tools.Mailbox) {
 	e.mailbox = mailbox
 }
 
+// RebuildTools reconstructs the orchestration tools using the current
+// registry and mailbox. Call this after SetRegistry and SetMailbox to
+// ensure tools are wired with non-nil dependencies.
+func (e *OrchestrationExtension) RebuildTools() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.tools = buildOrchestrationTools(e.registry, e.mailbox)
+	e.names = make([]string, len(e.tools))
+	for i, t := range e.tools {
+		e.names[i] = t.Info().Name
+	}
+}
+
 func buildOrchestrationTools(registry tools.AgentRegistry, mailbox tools.Mailbox) []fantasy.AgentTool {
 	return []fantasy.AgentTool{
 		tools.NewSendMessageTool(registry, mailbox),

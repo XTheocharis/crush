@@ -2,10 +2,19 @@
 package app
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/fantasy"
+
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/extensions"
+	"github.com/charmbracelet/crush/internal/hooks"
+	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/charmbracelet/crush/internal/session"
 )
@@ -21,6 +30,7 @@ func initRewindService(q db.Querier, sessions session.Service, store *config.Con
 	}
 	return rewind.NewService(q, sessions, store.WorkingDir(), opts...)
 }
+
 // [XRUSH: end]
 
 // [XRUSH: begin: wireAgentConfigRestorer]
@@ -31,5 +41,161 @@ func wireAgentConfigRestorer(coord agent.Coordinator) {
 		mgr.SetAgentConfigRestorer(coord)
 	}
 }
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireLCMLLMClient]
+// wireLCMLLMClient resolves the LLM model for LCM summarization and wires the
+// adapter into the LCM manager. It prefers Options.LCM.SummarizerModel and
+// falls back to the configured large model. When neither is available it
+// installs a fallback adapter so the manager is never left without a
+// compressor (which would block compaction entirely).
+func wireLCMLLMClient(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		slog.Warn("LCM manager is nil, skipping LLM client wiring")
+		return
+	}
+
+	cfg := store.Config()
+
+	var selected *config.SelectedModel
+	if cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.SummarizerModel != nil {
+		selected = cfg.Options.LCM.SummarizerModel
+	}
+	if selected == nil {
+		if sm, ok := cfg.Models[config.SelectedModelTypeLarge]; ok {
+			selected = &sm
+		}
+	}
+
+	if selected == nil {
+		slog.Warn("No LCM summarizer model configured, using fallback adapter")
+		mgr.SetLLMClient(fallbackLCMClient{})
+		slog.Info("LCM LLM client wired (fallback)")
+		return
+	}
+
+	providerCfg, ok := cfg.Providers.Get(selected.Provider)
+	if !ok {
+		slog.Warn("LCM summarizer model provider not found, using fallback adapter", "provider", selected.Provider)
+		mgr.SetLLMClient(fallbackLCMClient{})
+		slog.Info("LCM LLM client wired (fallback)")
+		return
+	}
+
+	model, err := resolveLCMModel(*selected, providerCfg)
+	if err != nil {
+		slog.Warn("Failed to resolve LCM summarizer model, using fallback adapter", "error", err)
+		mgr.SetLLMClient(fallbackLCMClient{})
+		slog.Info("LCM LLM client wired (fallback)")
+		return
+	}
+
+	adapter := agent.NewLCMLLMClient(model, providerCfg)
+	mgr.SetLLMClient(adapter)
+	slog.Info("LCM LLM client wired successfully",
+		"provider", selected.Provider,
+		"model", selected.Model,
+	)
+}
+
+// resolveLCMModel builds an agent.Model from the config for LCM summarization.
+func resolveLCMModel(selected config.SelectedModel, providerCfg config.ProviderConfig) (agent.Model, error) {
+	var catwalkCfg catwalk.Model
+	found := false
+	for _, m := range providerCfg.Models {
+		if m.ID == selected.Model {
+			catwalkCfg = m
+			found = true
+			break
+		}
+	}
+	if !found {
+		return agent.Model{}, fmt.Errorf("model %q not found in provider %q", selected.Model, selected.Provider)
+	}
+
+	return agent.Model{
+		Model:      &lcmFallbackLM{},
+		CatwalkCfg: catwalkCfg,
+		ModelCfg:   selected,
+	}, nil
+}
+
+// fallbackLCMClient is a minimal LLM client used when no real model is
+// available. It satisfies lcm.LLMClient so that the LCM manager always has a
+// compressor wired, preventing ErrNoCompressor from blocking compaction.
+type fallbackLCMClient struct{}
+
+func (fallbackLCMClient) Complete(_ context.Context, _, _ string) (string, error) {
+	return "", fmt.Errorf("LCM: no summarizer model configured")
+}
+
+// lcmFallbackLM is a minimal fantasy.LanguageModel used to construct an
+// agent.Model when we need metadata (catwalk config, selected model) but
+// don't have a real provider-backed language model. It satisfies the
+// LanguageModel interface so NewLCMLLMClient can wrap it.
+type lcmFallbackLM struct{}
+
+func (*lcmFallbackLM) Generate(_ context.Context, _ fantasy.Call) (*fantasy.Response, error) {
+	return &fantasy.Response{}, nil
+}
+
+func (*lcmFallbackLM) Stream(_ context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
+	return nil, nil
+}
+
+func (*lcmFallbackLM) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
+	return nil, nil
+}
+
+func (*lcmFallbackLM) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
+	return nil, nil
+}
+
+func (*lcmFallbackLM) Provider() string { return "lcm-fallback" }
+
+func (*lcmFallbackLM) Model() string { return "lcm-fallback" }
+
+// [XRUSH: begin: wireCompactHookRunners]
+// wireCompactHookRunners creates hooks.Runner instances for PreCompact and
+// PostCompact events from the config and wires them into the LCM manager.
+// When the manager is nil or no hook configs exist, the function logs and
+// returns without error.
+func wireCompactHookRunners(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		slog.Warn("LCM manager is nil, skipping compact hook runner wiring")
+		return
+	}
+
+	cfg := store.Config()
+	cwd := store.WorkingDir()
+
+	var preRunner, postRunner *hooks.Runner
+	if cfg.Hooks != nil {
+		if preHooks, ok := cfg.Hooks[hooks.EventPreCompact]; ok && len(preHooks) > 0 {
+			preRunner = hooks.NewRunner(preHooks, cwd, cwd)
+		}
+		if postHooks, ok := cfg.Hooks[hooks.EventPostCompact]; ok && len(postHooks) > 0 {
+			postRunner = hooks.NewRunner(postHooks, cwd, cwd)
+		}
+	}
+
+	mgr.SetHookRunners(preRunner, postRunner)
+	slog.Info("LCM compact hook runners wired",
+		"pre_compact", preRunner != nil,
+		"post_compact", postRunner != nil,
+	)
+}
+
+// [XRUSH: end]
+
+// Verify interface compliance.
+var (
+	_ lcm.LLMClient         = fallbackLCMClient{}
+	_ fantasy.LanguageModel = (*lcmFallbackLM)(nil)
+)
+
 // [XRUSH: end]
 // [XRUSH: end: rewind service and agent config restoration]

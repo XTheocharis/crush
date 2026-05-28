@@ -281,3 +281,29 @@ func (f *stubSessionFactory) NewStructuredSubagent(_ context.Context, parentSess
 	f.calls++
 	return f.sub, f.err
 }
+
+func TestNewCoordinatorOptionsApplied(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubSessionFactory{}
+	c := &coordinator{}
+	opts := []CoordinatorOption{
+		WithStructuredSubagentFactory(stub),
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	require.Equal(t, stub, c.structuredSubagentFactory)
+}
+
+func TestNewCoordinatorNoOptionsNilSafe(t *testing.T) {
+	t.Parallel()
+
+	c := &coordinator{}
+	var opts []CoordinatorOption
+	for _, opt := range opts {
+		opt(c)
+	}
+	require.Nil(t, c.structuredSubagentFactory)
+}

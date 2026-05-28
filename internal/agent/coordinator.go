@@ -131,6 +131,7 @@ func NewCoordinator(
 	notify pubsub.Publisher[notify.Notification],
 	skillsMgr *skills.Manager,
 	extHost *ext.ExtensionHost, // may be nil // XRUSH: extension host parameter
+	opts ...CoordinatorOption,
 ) (Coordinator, error) {
 	// Skills are pre-discovered by the caller (see app.New /
 	// backend.CreateWorkspace) and passed in via the manager. If no
@@ -159,6 +160,10 @@ func NewCoordinator(
 		activeSkills: activeSkills,
 		skillTracker: skillTracker,
 		extHost:      extHost, // XRUSH: extension host wiring
+	}
+
+	for _, opt := range opts {
+		opt(c)
 	}
 
 	agentCfg, ok := cfg.Config().Agents[config.AgentCoder]
