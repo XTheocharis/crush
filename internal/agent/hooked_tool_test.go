@@ -33,9 +33,10 @@ func (f *fakeTool) Run(ctx context.Context, _ fantasy.ToolCall) (fantasy.ToolRes
 func (f *fakeTool) ProviderOptions() fantasy.ProviderOptions     { return nil }
 func (f *fakeTool) SetProviderOptions(_ fantasy.ProviderOptions) {}
 
-// newRunner builds a hooks.Runner from a single HookConfig, running the
-// config-loader path that compiles the matcher regex.
-func newRunner(t *testing.T, cmd string) *hooks.Runner {
+// newPreRunner builds a hooks.Runner from a single HookConfig for
+// PreToolUse, running the config-loader path that compiles the matcher
+// regex.
+func newPreRunner(t *testing.T, cmd string) *hooks.Runner {
 	t.Helper()
 	cfg := &config.Config{
 		Hooks: map[string][]config.HookConfig{
@@ -46,12 +47,25 @@ func newRunner(t *testing.T, cmd string) *hooks.Runner {
 	return hooks.NewRunner(cfg.Hooks[hooks.EventPreToolUse], t.TempDir(), t.TempDir())
 }
 
+// newPostRunner builds a hooks.Runner from a single HookConfig for
+// PostToolUse.
+func newPostRunner(t *testing.T, cmd string) *hooks.Runner {
+	t.Helper()
+	cfg := &config.Config{
+		Hooks: map[string][]config.HookConfig{
+			hooks.EventPostToolUse: {{Command: cmd}},
+		},
+	}
+	require.NoError(t, cfg.ValidateHooks())
+	return hooks.NewRunner(cfg.Hooks[hooks.EventPostToolUse], t.TempDir(), t.TempDir())
+}
+
 func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 	t.Parallel()
 
 	inner := &fakeTool{name: "view", resp: fantasy.NewTextResponse("ok")}
-	runner := newRunner(t, `echo '{"decision":"allow"}'`)
-	tool := newHookedTool(inner, runner)
+	preRunner := newPreRunner(t, `echo '{"decision":"allow"}'`)
+	tool := newHookedTool(inner, preRunner, nil)
 
 	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-1", Name: "view"})
 	require.NoError(t, err)
@@ -74,8 +88,8 @@ func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 	t.Parallel()
 
 	inner := &fakeTool{name: "view", resp: fantasy.NewTextResponse("ok")}
-	runner := newRunner(t, `exit 0`) // no stdout, no decision
-	tool := newHookedTool(inner, runner)
+	preRunner := newPreRunner(t, `exit 0`) // no stdout, no decision
+	tool := newHookedTool(inner, preRunner, nil)
 
 	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-2", Name: "view"})
 	require.NoError(t, err)
@@ -103,8 +117,8 @@ func TestHookedTool_DenySkipsInnerTool(t *testing.T) {
 	t.Parallel()
 
 	inner := &fakeTool{name: "bash"}
-	runner := newRunner(t, `echo "blocked" >&2; exit 2`)
-	tool := newHookedTool(inner, runner)
+	preRunner := newPreRunner(t, `echo "blocked" >&2; exit 2`)
+	tool := newHookedTool(inner, preRunner, nil)
 
 	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-3", Name: "bash"})
 	require.NoError(t, err)
@@ -116,12 +130,12 @@ func TestHookedTool_DenySkipsInnerTool(t *testing.T) {
 func TestWrapToolsWithHooks(t *testing.T) {
 	t.Parallel()
 
-	runner := newRunner(t, `exit 0`)
+	preRunner := newPreRunner(t, `exit 0`)
 	inputs := []fantasy.AgentTool{&fakeTool{name: "a"}, &fakeTool{name: "b"}}
 
 	t.Run("top-level agent wraps every tool", func(t *testing.T) {
 		t.Parallel()
-		out := wrapToolsWithHooks(inputs, runner, false)
+		out := wrapToolsWithHooks(inputs, preRunner, nil, false)
 		require.Len(t, out, len(inputs))
 		for i, tool := range out {
 			_, ok := tool.(*hookedTool)
@@ -131,7 +145,7 @@ func TestWrapToolsWithHooks(t *testing.T) {
 
 	t.Run("sub-agent skips the wrap", func(t *testing.T) {
 		t.Parallel()
-		out := wrapToolsWithHooks(inputs, runner, true)
+		out := wrapToolsWithHooks(inputs, preRunner, nil, true)
 		require.Equal(t, inputs, out, "sub-agent tools should be returned unwrapped")
 		for _, tool := range out {
 			_, isHooked := tool.(*hookedTool)
@@ -139,9 +153,62 @@ func TestWrapToolsWithHooks(t *testing.T) {
 		}
 	})
 
-	t.Run("nil runner skips the wrap for both agent kinds", func(t *testing.T) {
+	t.Run("both nil runners skips the wrap for both agent kinds", func(t *testing.T) {
 		t.Parallel()
-		require.Equal(t, inputs, wrapToolsWithHooks(inputs, nil, false))
-		require.Equal(t, inputs, wrapToolsWithHooks(inputs, nil, true))
+		require.Equal(t, inputs, wrapToolsWithHooks(inputs, nil, nil, false))
+		require.Equal(t, inputs, wrapToolsWithHooks(inputs, nil, nil, true))
 	})
+
+	t.Run("only postRunner wraps tools", func(t *testing.T) {
+		t.Parallel()
+		postRunner := newPostRunner(t, `exit 0`)
+		out := wrapToolsWithHooks(inputs, nil, postRunner, false)
+		require.Len(t, out, len(inputs))
+		for i, tool := range out {
+			_, ok := tool.(*hookedTool)
+			require.Truef(t, ok, "tool %d should be a *hookedTool with only postRunner", i)
+		}
+	})
+}
+
+func TestPreToolUseHookFires(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeTool{name: "bash", resp: fantasy.NewTextResponse("ok")}
+	preRunner := newPreRunner(t, `echo '{"decision":"allow"}'`)
+	// Only preRunner configured; postRunner is nil.
+	tool := newHookedTool(inner, preRunner, nil)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-pre", Name: "bash", Input: `{}`})
+	require.NoError(t, err)
+	require.True(t, inner.called, "inner tool should have run after pre-hook allow")
+	require.Equal(t, "ok", resp.Content)
+}
+
+func TestPostToolUseHookFires(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeTool{name: "bash", resp: fantasy.NewTextResponse("original output")}
+	// Only postRunner configured; preRunner is nil.
+	postRunner := newPostRunner(t, `echo '{"modified_output":"rewritten by post-hook"}'`)
+	tool := newHookedTool(inner, nil, postRunner)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-post", Name: "bash", Input: `{}`})
+	require.NoError(t, err)
+	require.True(t, inner.called, "inner tool should have run (no pre-hook to block it)")
+	require.Equal(t, "rewritten by post-hook", resp.Content, "post-hook should rewrite output")
+}
+
+func TestBothHookRunnersFire(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeTool{name: "bash", resp: fantasy.NewTextResponse("raw")}
+	preRunner := newPreRunner(t, `echo '{"decision":"allow"}'`)
+	postRunner := newPostRunner(t, `echo '{"modified_output":"post-processed"}'`)
+	tool := newHookedTool(inner, preRunner, postRunner)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-both", Name: "bash", Input: `{}`})
+	require.NoError(t, err)
+	require.True(t, inner.called)
+	require.Equal(t, "post-processed", resp.Content, "post-hook should rewrite the inner tool output")
 }

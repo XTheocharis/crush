@@ -346,19 +346,28 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 
 			a.hooks.invokePrepareStep(callContext, call.SessionID, &prepared) // XRUSH: hook lifecycle - prepare step
 
+			// Determine model metadata based on the model router's routing decision.
+			routedModel := largeModel
+			if a.hooks.getRoutedModelType() == config.SelectedModelTypeSmall {
+				if sm := a.smallModel.Get(); sm.Model != nil {
+					slog.Debug("Model router selected small model", "model", sm.ModelCfg.Model)
+					routedModel = sm
+				}
+			}
+
 			var assistantMsg message.Message
 			assistantMsg, err = a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{
 				Role:     message.Assistant,
 				Parts:    []message.ContentPart{},
-				Model:    largeModel.ModelCfg.Model,
-				Provider: largeModel.ModelCfg.Provider,
+				Model:    routedModel.ModelCfg.Model,
+				Provider: routedModel.ModelCfg.Provider,
 			})
 			if err != nil {
 				return callContext, prepared, err
 			}
 			callContext = context.WithValue(callContext, tools.MessageIDContextKey, assistantMsg.ID)
-			callContext = context.WithValue(callContext, tools.SupportsImagesContextKey, largeModel.CatwalkCfg.SupportsImages)
-			callContext = context.WithValue(callContext, tools.ModelNameContextKey, largeModel.CatwalkCfg.Name)
+			callContext = context.WithValue(callContext, tools.SupportsImagesContextKey, routedModel.CatwalkCfg.SupportsImages)
+			callContext = context.WithValue(callContext, tools.ModelNameContextKey, routedModel.CatwalkCfg.Name)
 			currentAssistant = &assistantMsg
 			return callContext, prepared, err
 		},

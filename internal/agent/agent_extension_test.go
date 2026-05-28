@@ -2,14 +2,72 @@ package agent
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/stretchr/testify/require"
 )
+
+// mockModelRouterExt is a test-only extension that mimics the real
+// ModelRouterExtension's routing and LastRoutedModel accessor.
+type mockModelRouterExt struct {
+	mu            sync.RWMutex
+	lastModelType config.SelectedModelType
+}
+
+func (e *mockModelRouterExt) Name() string                                    { return "model_router" }
+func (e *mockModelRouterExt) Init(_ context.Context, _ ext.HostContext) error { return nil }
+func (e *mockModelRouterExt) Shutdown(_ context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.lastModelType = ""
+	return nil
+}
+
+func (e *mockModelRouterExt) Tools(_ context.Context) ([]fantasy.AgentTool, error) {
+	return nil, nil
+}
+func (e *mockModelRouterExt) ToolNames() []string         { return nil }
+func (e *mockModelRouterExt) RunHooks() []ext.RunHook     { return nil }
+func (e *mockModelRouterExt) PromptHook() *ext.PromptHook { return nil }
+func (e *mockModelRouterExt) StepHooks() []ext.StepHook {
+	return []ext.StepHook{
+		{
+			Name:          "model_router:select_model",
+			OnPrepareStep: e.selectModel,
+		},
+	}
+}
+
+func (e *mockModelRouterExt) selectModel(_ context.Context, _ string, messages []fantasy.Message) ([]fantasy.Message, error) {
+	charCount := 0
+	for _, msg := range messages {
+		for _, part := range msg.Content {
+			if tp, ok := fantasy.AsContentType[fantasy.TextPart](part); ok {
+				charCount += len(tp.Text)
+			}
+		}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if charCount < 10000 {
+		e.lastModelType = config.SelectedModelTypeSmall
+	} else {
+		e.lastModelType = config.SelectedModelTypeLarge
+	}
+	return messages, nil
+}
+
+func (e *mockModelRouterExt) LastRoutedModel() config.SelectedModelType {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.lastModelType
+}
 
 func TestSessionAgentExtHostStored(t *testing.T) {
 	ext.ResetForTesting()
@@ -250,4 +308,199 @@ func TestAgentCsyncFieldsInitialized(t *testing.T) {
 
 	require.NotNil(t, sa.largeModel)
 	require.NotNil(t, sa.smallModel)
+}
+
+func TestGetRoutedModelType_NoExtensionHost(t *testing.T) {
+	m := agentHookMediator{host: nil}
+	require.Equal(t, config.SelectedModelTypeLarge, m.getRoutedModelType())
+}
+
+func TestGetRoutedModelType_NoModelRouterExtension(t *testing.T) {
+	ext.ResetForTesting()
+	t.Cleanup(func() { ext.ResetForTesting() })
+
+	host := ext.NewExtensionHost(ext.HostDeps{})
+	require.NoError(t, host.Bootstrap(context.Background()))
+
+	m := agentHookMediator{host: host}
+	require.Equal(t, config.SelectedModelTypeLarge, m.getRoutedModelType())
+}
+
+func TestGetRoutedModelType_WithModelRouterSmall(t *testing.T) {
+	ext.ResetForTesting()
+	t.Cleanup(func() { ext.ResetForTesting() })
+
+	router := &mockModelRouterExt{}
+	ext.RegisterExtension(router)
+
+	host := ext.NewExtensionHost(ext.HostDeps{})
+	require.NoError(t, host.Bootstrap(context.Background()))
+
+	_, err := router.StepHooks()[0].OnPrepareStep(context.Background(), "s1", []fantasy.Message{
+		fantasy.NewUserMessage("hi"),
+	})
+	require.NoError(t, err)
+
+	m := agentHookMediator{host: host}
+	require.Equal(t, config.SelectedModelTypeSmall, m.getRoutedModelType())
+}
+
+func TestGetRoutedModelType_WithModelRouterLarge(t *testing.T) {
+	ext.ResetForTesting()
+	t.Cleanup(func() { ext.ResetForTesting() })
+
+	router := &mockModelRouterExt{}
+	ext.RegisterExtension(router)
+
+	host := ext.NewExtensionHost(ext.HostDeps{})
+	require.NoError(t, host.Bootstrap(context.Background()))
+
+	var longText string
+	for i := 0; i < 20000; i++ {
+		longText += "x"
+	}
+	_, err := router.StepHooks()[0].OnPrepareStep(context.Background(), "s1", []fantasy.Message{
+		fantasy.NewUserMessage(longText),
+	})
+	require.NoError(t, err)
+
+	m := agentHookMediator{host: host}
+	require.Equal(t, config.SelectedModelTypeLarge, m.getRoutedModelType())
+}
+
+func TestModelRouterSwitchesModels(t *testing.T) {
+	ext.ResetForTesting()
+	t.Cleanup(func() { ext.ResetForTesting() })
+
+	router := &mockModelRouterExt{}
+	ext.RegisterExtension(router)
+
+	host := ext.NewExtensionHost(ext.HostDeps{})
+	require.NoError(t, host.Bootstrap(context.Background()))
+
+	largeModel := Model{
+		CatwalkCfg: catwalk.Model{
+			Name:             "LargeModel",
+			ContextWindow:    200000,
+			DefaultMaxTokens: 10000,
+			SupportsImages:   true,
+		},
+		ModelCfg: config.SelectedModel{
+			Model:    "large-model-id",
+			Provider: "test-provider",
+		},
+	}
+	smallModel := Model{
+		CatwalkCfg: catwalk.Model{
+			Name:             "SmallModel",
+			ContextWindow:    100000,
+			DefaultMaxTokens: 5000,
+			SupportsImages:   false,
+		},
+		ModelCfg: config.SelectedModel{
+			Model:    "small-model-id",
+			Provider: "test-provider",
+		},
+	}
+
+	agent := NewSessionAgent(SessionAgentOptions{
+		LargeModel:   largeModel,
+		SmallModel:   smallModel,
+		SystemPrompt: "test",
+		IsYolo:       true,
+		ExtHost:      host,
+	})
+
+	sa, ok := agent.(*sessionAgent)
+	require.True(t, ok)
+
+	t.Run("small_message_routes_to_small_model", func(t *testing.T) {
+		_, err := router.StepHooks()[0].OnPrepareStep(context.Background(), "s1", []fantasy.Message{
+			fantasy.NewUserMessage("hi"),
+		})
+		require.NoError(t, err)
+
+		routedModelType := sa.hooks.getRoutedModelType()
+		require.Equal(t, config.SelectedModelTypeSmall, routedModelType)
+
+		routedModel := sa.largeModel.Get()
+		if routedModelType == config.SelectedModelTypeSmall {
+			if sm := sa.smallModel.Get(); sm.Model != nil || sm.CatwalkCfg.Name != "" {
+				routedModel = sm
+			}
+		}
+		require.Equal(t, "SmallModel", routedModel.CatwalkCfg.Name)
+		require.Equal(t, "small-model-id", routedModel.ModelCfg.Model)
+		require.False(t, routedModel.CatwalkCfg.SupportsImages)
+	})
+
+	t.Run("large_message_routes_to_large_model", func(t *testing.T) {
+		var longText string
+		for i := 0; i < 20000; i++ {
+			longText += "x"
+		}
+		_, err := router.StepHooks()[0].OnPrepareStep(context.Background(), "s1", []fantasy.Message{
+			fantasy.NewUserMessage(longText),
+		})
+		require.NoError(t, err)
+
+		routedModelType := sa.hooks.getRoutedModelType()
+		require.Equal(t, config.SelectedModelTypeLarge, routedModelType)
+
+		routedModel := sa.largeModel.Get()
+		require.Equal(t, "LargeModel", routedModel.CatwalkCfg.Name)
+		require.Equal(t, "large-model-id", routedModel.ModelCfg.Model)
+		require.True(t, routedModel.CatwalkCfg.SupportsImages)
+	})
+}
+
+func TestModelRouterSwitchesModels_NilSmallModel(t *testing.T) {
+	ext.ResetForTesting()
+	t.Cleanup(func() { ext.ResetForTesting() })
+
+	router := &mockModelRouterExt{}
+	ext.RegisterExtension(router)
+
+	host := ext.NewExtensionHost(ext.HostDeps{})
+	require.NoError(t, host.Bootstrap(context.Background()))
+
+	largeModel := Model{
+		CatwalkCfg: catwalk.Model{
+			Name:             "LargeModel",
+			ContextWindow:    200000,
+			DefaultMaxTokens: 10000,
+			SupportsImages:   true,
+		},
+		ModelCfg: config.SelectedModel{
+			Model:    "large-model-id",
+			Provider: "test-provider",
+		},
+	}
+
+	agent := NewSessionAgent(SessionAgentOptions{
+		LargeModel:   largeModel,
+		SmallModel:   Model{},
+		SystemPrompt: "test",
+		IsYolo:       true,
+		ExtHost:      host,
+	})
+
+	sa, ok := agent.(*sessionAgent)
+	require.True(t, ok)
+
+	_, err := router.StepHooks()[0].OnPrepareStep(context.Background(), "s1", []fantasy.Message{
+		fantasy.NewUserMessage("hi"),
+	})
+	require.NoError(t, err)
+
+	routedModelType := sa.hooks.getRoutedModelType()
+	require.Equal(t, config.SelectedModelTypeSmall, routedModelType)
+
+	routedModel := sa.largeModel.Get()
+	if routedModelType == config.SelectedModelTypeSmall {
+		if sm := sa.smallModel.Get(); sm.Model != nil {
+			routedModel = sm
+		}
+	}
+	require.Equal(t, "LargeModel", routedModel.CatwalkCfg.Name)
 }

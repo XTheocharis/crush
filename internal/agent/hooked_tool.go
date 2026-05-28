@@ -15,27 +15,29 @@ import (
 )
 
 // hookedTool wraps a fantasy.AgentTool to run PreToolUse hooks before
-// delegating to the inner tool.
+// delegating to the inner tool, and PostToolUse hooks after.
 type hookedTool struct {
-	inner  fantasy.AgentTool
-	runner *hooks.Runner
+	inner      fantasy.AgentTool
+	preRunner  *hooks.Runner
+	postRunner *hooks.Runner
 }
 
-func newHookedTool(inner fantasy.AgentTool, runner *hooks.Runner) *hookedTool {
-	return &hookedTool{inner: inner, runner: runner}
+func newHookedTool(inner fantasy.AgentTool, preRunner, postRunner *hooks.Runner) *hookedTool {
+	return &hookedTool{inner: inner, preRunner: preRunner, postRunner: postRunner}
 }
 
 // wrapToolsWithHooks returns a tool slice with each entry wrapped in a
-// hookedTool. Returns the original slice unchanged when runner is nil or
-// when isSubAgent is true — sub-agents never fire hooks, the top-level
-// invocation of the sub-agent tool itself is wrapped on the caller's side.
-func wrapToolsWithHooks(tools []fantasy.AgentTool, runner *hooks.Runner, isSubAgent bool) []fantasy.AgentTool {
-	if runner == nil || isSubAgent {
+// hookedTool. Returns the original slice unchanged when both runners are
+// nil or when isSubAgent is true — sub-agents never fire hooks, the
+// top-level invocation of the sub-agent tool itself is wrapped on the
+// caller's side.
+func wrapToolsWithHooks(tools []fantasy.AgentTool, preRunner, postRunner *hooks.Runner, isSubAgent bool) []fantasy.AgentTool {
+	if (preRunner == nil && postRunner == nil) || isSubAgent {
 		return tools
 	}
 	out := make([]fantasy.AgentTool, len(tools))
 	for i, tool := range tools {
-		out[i] = newHookedTool(tool, runner)
+		out[i] = newHookedTool(tool, preRunner, postRunner)
 	}
 	return out
 }
@@ -54,34 +56,40 @@ func (h *hookedTool) SetProviderOptions(opts fantasy.ProviderOptions) {
 
 func (h *hookedTool) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 	sessionID := tools.GetSessionFromContext(ctx)
-	result, err := h.runner.Run(ctx, hooks.EventPreToolUse, sessionID, call.Name, call.Input)
-	if err != nil {
-		slog.Warn("Hook execution error, proceeding with tool call",
-			"tool", call.Name, "error", err)
-	}
 
-	if result.Decision == hooks.DecisionDeny || result.Halt {
-		reason := fmt.Sprintf("Tool call blocked by hook. Reason: %s", result.Reason)
-		if result.Halt {
-			reason = fmt.Sprintf("Turn halted by hook. Reason: %s", result.Reason)
+	// Run PreToolUse hooks if a pre-runner is configured.
+	var result hooks.AggregateResult
+	if h.preRunner != nil {
+		var err error
+		result, err = h.preRunner.Run(ctx, hooks.EventPreToolUse, sessionID, call.Name, call.Input)
+		if err != nil {
+			slog.Warn("Hook execution error, proceeding with tool call",
+				"tool", call.Name, "error", err)
 		}
-		resp := fantasy.NewTextErrorResponse(reason)
-		// Halt ends the whole turn; a plain deny only blocks this tool
-		// call so the model can see the error and try something else.
-		resp.StopTurn = result.Halt
-		resp.Metadata = hookMetadataJSON(result)
-		return resp, nil
-	}
 
-	if result.UpdatedInput != "" {
-		call.Input = result.UpdatedInput
-	}
+		if result.Decision == hooks.DecisionDeny || result.Halt {
+			reason := fmt.Sprintf("Tool call blocked by hook. Reason: %s", result.Reason)
+			if result.Halt {
+				reason = fmt.Sprintf("Turn halted by hook. Reason: %s", result.Reason)
+			}
+			resp := fantasy.NewTextErrorResponse(reason)
+			// Halt ends the whole turn; a plain deny only blocks this tool
+			// call so the model can see the error and try something else.
+			resp.StopTurn = result.Halt
+			resp.Metadata = hookMetadataJSON(result)
+			return resp, nil
+		}
 
-	// An explicit allow from a hook pre-approves the permission prompt for
-	// this tool call. Deny is already handled above; silence falls through
-	// to the normal permission flow.
-	if result.Decision == hooks.DecisionAllow {
-		ctx = permission.WithHookApproval(ctx, call.ID)
+		if result.UpdatedInput != "" {
+			call.Input = result.UpdatedInput
+		}
+
+		// An explicit allow from a hook pre-approves the permission prompt for
+		// this tool call. Deny is already handled above; silence falls through
+		// to the normal permission flow.
+		if result.Decision == hooks.DecisionAllow {
+			ctx = permission.WithHookApproval(ctx, call.ID)
+		}
 	}
 
 	start := time.Now()
@@ -91,16 +99,15 @@ func (h *hookedTool) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.To
 		return resp, err
 	}
 
-	// [XRUSH: begin: PostToolUse hook invocation]
-	if h.runner != nil {
-		postResult, postErr := h.runner.RunPostToolUse(ctx, hooks.EventPostToolUse, sessionID, call.Name, call.Input, resp.Content, durationMs)
+	// Run PostToolUse hooks if a post-runner is configured.
+	if h.postRunner != nil {
+		postResult, postErr := h.postRunner.RunPostToolUse(ctx, hooks.EventPostToolUse, sessionID, call.Name, call.Input, resp.Content, durationMs)
 		if postErr != nil {
 			slog.Warn("PostToolUse hook execution error", "tool", call.Name, "error", postErr)
 		} else if postResult.UpdatedOutput != "" {
 			resp.Content = postResult.UpdatedOutput
 		}
 	}
-	// [XRUSH: end]
 
 	if result.Context != "" {
 		if resp.Content != "" {

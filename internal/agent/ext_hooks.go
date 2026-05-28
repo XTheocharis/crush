@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
@@ -123,6 +124,32 @@ func (m agentHookMediator) checkStopCondition(ctx context.Context, steps []fanta
 		}
 	}
 	return false
+}
+
+// getRoutedModelType returns the model type selected by the model router
+// extension's most recent routing decision. Returns
+// config.SelectedModelTypeLarge if no router is available or no routing
+// has occurred.
+func (m agentHookMediator) getRoutedModelType() config.SelectedModelType {
+	if m.host == nil {
+		return config.SelectedModelTypeLarge
+	}
+	e := m.host.ExtensionByName("model_router")
+	if e == nil {
+		return config.SelectedModelTypeLarge
+	}
+	type lastModelGetter interface {
+		LastRoutedModel() config.SelectedModelType
+	}
+	getter, ok := e.(lastModelGetter)
+	if !ok {
+		return config.SelectedModelTypeLarge
+	}
+	mt := getter.LastRoutedModel()
+	if mt == "" {
+		return config.SelectedModelTypeLarge
+	}
+	return mt
 }
 
 // invokeRunEnd calls OnRunEnd on every registered RunHook.
