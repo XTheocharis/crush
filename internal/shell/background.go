@@ -17,6 +17,8 @@ const (
 	MaxBackgroundJobs = 50
 	// CompletedJobRetentionMinutes is how long to keep completed jobs before auto-cleanup (8 hours)
 	CompletedJobRetentionMinutes = 8 * 60
+	// killTimeout is how long Kill waits for a shell to exit after cancellation.
+	killTimeout = 5 * time.Second
 )
 
 // syncBuffer is a thread-safe wrapper around bytes.Buffer.
@@ -143,7 +145,9 @@ func (m *BackgroundShellManager) Remove(id string) error {
 	return nil
 }
 
-// Kill terminates a background shell by ID.
+// Kill terminates a background shell by ID. It cancels the shell's context and
+// waits up to killTimeout for the shell to exit. If the shell does not exit in
+// time (e.g. a subprocess ignoring context cancellation), it returns an error.
 func (m *BackgroundShellManager) Kill(id string) error {
 	shell, ok := m.shells.Take(id)
 	if !ok {
@@ -151,8 +155,13 @@ func (m *BackgroundShellManager) Kill(id string) error {
 	}
 
 	shell.cancel()
-	<-shell.done
-	return nil
+
+	select {
+	case <-shell.done:
+		return nil
+	case <-time.After(killTimeout):
+		return fmt.Errorf("background shell %s did not exit within %s; process may still be running", id, killTimeout)
+	}
 }
 
 // BackgroundShellInfo contains information about a background shell.
