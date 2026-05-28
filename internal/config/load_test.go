@@ -2074,3 +2074,46 @@ func TestConfig_configureProviders_UnsetAzureEndpointSkipsProvider(t *testing.T)
 	_, exists := cfg.Providers.Get("azure")
 	require.False(t, exists)
 }
+
+func TestNormalizeHookEvent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// PreToolUse variants.
+		{"PreToolUse", "PreToolUse"},
+		{"pretooluse", "PreToolUse"},
+		{"PRE_TOOL_USE", "PreToolUse"},
+		{"pre_tool_use", "PreToolUse"},
+
+		// PostToolUse variants.
+		{"PostToolUse", "PostToolUse"},
+		{"posttooluse", "PostToolUse"},
+		{"POST_TOOL_USE", "PostToolUse"},
+		{"post_tool_use", "PostToolUse"},
+
+		// PreCompact variants.
+		{"PreCompact", "PreCompact"},
+		{"precompact", "PreCompact"},
+		{"PRECOMPACT", "PreCompact"},
+		{"pre_compact", "PreCompact"},
+
+		// PostCompact variants.
+		{"PostCompact", "PostCompact"},
+		{"postcompact", "PostCompact"},
+		{"POSTCOMPACT", "PostCompact"},
+		{"post_compact", "PostCompact"},
+
+		// Unknown event passes through unchanged.
+		{"UnknownEvent", "UnknownEvent"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, normalizeHookEvent(tc.input))
+		})
+	}
+}

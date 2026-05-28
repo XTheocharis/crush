@@ -1066,6 +1066,11 @@ func normalizeHookEvent(name string) string {
 	// XRUSH: PostToolUse event normalization.
 	case "posttooluse":
 		return "PostToolUse"
+	// XRUSH: compaction event normalization.
+	case "precompact":
+		return "PreCompact"
+	case "postcompact":
+		return "PostCompact"
 	default:
 		return name
 	}

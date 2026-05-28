@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/dialog"
 	"github.com/charmbracelet/crush/internal/ui/list"
+	"github.com/charmbracelet/crush/internal/ui/util"
 )
 
 // handleXrushRoutingUpdate handles fork-only message routing in the main Update
@@ -103,7 +104,9 @@ func (m *UI) handleXrushDialogMsg(action tea.Msg) tea.Cmd {
 	switch msg := action.(type) {
 	case dialog.ActionOpenMessageOptions:
 		if m.com.Workspace.RewindService() == nil {
-			return nil
+			return func() tea.Msg {
+				return util.InfoMsg{Type: util.InfoTypeWarn, Msg: "Rewind is not available"}
+			}
 		}
 		seq := msg.Seq
 		messageID := msg.MessageID
@@ -150,7 +153,12 @@ func (m *UI) handleXrushDialogMsg(action tea.Msg) tea.Cmd {
 // handleXrushKeyPress handles fork-only key bindings. This includes the message
 // options key binding in the main chat focus state.
 func (m *UI) handleXrushKeyPress(msg tea.KeyPressMsg) tea.Cmd {
-	if m.hasSession() && m.com.Workspace.RewindService() != nil {
+	if m.hasSession() {
+		if m.com.Workspace.RewindService() == nil {
+			return func() tea.Msg {
+				return util.InfoMsg{Type: util.InfoTypeWarn, Msg: "Rewind is not available"}
+			}
+		}
 		if item := m.chat.SelectedUserMessageItem(); item != nil {
 			if m.chat.OnMessageOptions != nil {
 				return m.chat.OnMessageOptions(item.ID(), m.session.ID, item.Seq())

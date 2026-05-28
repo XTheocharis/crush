@@ -2,9 +2,11 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/crush/internal/ui/util"
 )
 
 // RepoMapRefreshResultMsg carries the result of an asynchronous repo map
@@ -30,6 +32,11 @@ func (m *UI) executeRepoMapRefresh(sessionID string) tea.Cmd {
 func (m *UI) handleRepoMapRefreshResult(msg RepoMapRefreshResultMsg) tea.Cmd {
 	if msg.Err != nil {
 		slog.Error("Repo map refresh failed", "session_id", msg.SessionID, "error", msg.Err)
+		return func() tea.Msg {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: fmt.Sprintf("Repo map refresh failed: %v", msg.Err)}
+		}
 	}
-	return nil
+	return func() tea.Msg {
+		return util.InfoMsg{Type: util.InfoTypeSuccess, Msg: "Repo map refreshed"}
+	}
 }
