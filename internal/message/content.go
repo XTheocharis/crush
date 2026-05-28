@@ -133,13 +133,17 @@ type Message struct {
 	ID               string
 	Role             MessageRole
 	SessionID        string
-	Seq              int // XRUSH: message sequence number
+	Seq              int
 	Parts            []ContentPart
 	Model            string
 	Provider         string
 	CreatedAt        int64
 	UpdatedAt        int64
 	IsSummaryMessage bool
+	SubmittedAt      int64 `json:"submitted_at,omitempty"`
+	SentToLLMAt      int64 `json:"sent_to_llm_at,omitempty"`
+	FirstTokenAt     int64 `json:"first_token_at,omitempty"`
+	CompletedAt      int64 `json:"completed_at,omitempty"`
 }
 
 func (m *Message) Content() TextContent {

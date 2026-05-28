@@ -26,6 +26,7 @@ type CreateMessageParams struct {
 	Model            string
 	Provider         string
 	IsSummaryMessage bool
+	SubmittedAt      int64
 }
 
 // Service is the public interface to the message store.
@@ -176,12 +177,13 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 	dbMessage, err := s.q.CreateMessage(ctx, db.CreateMessageParams{
 		ID:               uuid.New().String(),
 		SessionID:        sessionID,
-		SessionID_2:      sessionID, // XRUSH: duplicate session ID for DB schema
+		SessionID_2:      sessionID,
 		Role:             string(params.Role),
 		Parts:            string(partsJSON),
 		Model:            sql.NullString{String: string(params.Model), Valid: true},
 		Provider:         sql.NullString{String: params.Provider, Valid: params.Provider != ""},
 		IsSummaryMessage: isSummary,
+		SubmittedAt:      params.SubmittedAt,
 	})
 	if err != nil {
 		return Message{}, err
@@ -402,9 +404,12 @@ func (s *service) write(ctx context.Context, msg Message) error {
 		finishedAt.Valid = true
 	}
 	if err := s.q.UpdateMessage(ctx, db.UpdateMessageParams{
-		ID:         msg.ID,
-		Parts:      string(parts),
-		FinishedAt: finishedAt,
+		ID:           msg.ID,
+		Parts:        string(parts),
+		FinishedAt:   finishedAt,
+		SentToLlmAt:  msg.SentToLLMAt,
+		FirstTokenAt: msg.FirstTokenAt,
+		CompletedAt:  msg.CompletedAt,
 	}); err != nil {
 		return err
 	}
@@ -514,7 +519,11 @@ func (s *service) fromDBItem(item db.Message) (Message, error) {
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 		IsSummaryMessage: item.IsSummaryMessage != 0,
-		Seq:              int(item.Seq), // XRUSH: populate Seq from DB
+		Seq:              int(item.Seq),
+		SubmittedAt:      item.SubmittedAt,
+		SentToLLMAt:      item.SentToLlmAt,
+		FirstTokenAt:     item.FirstTokenAt,
+		CompletedAt:      item.CompletedAt,
 	}, nil
 }
 
