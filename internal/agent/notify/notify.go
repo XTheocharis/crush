@@ -9,6 +9,9 @@ type Type string
 const (
 	// TypeAgentFinished indicates the agent has completed its turn.
 	TypeAgentFinished Type = "agent_finished"
+	// TypeAgentProcessing indicates post-LLM processing (autofix,
+	// compaction, etc.) has started after streaming completed.
+	TypeAgentProcessing Type = "agent_processing"
 	// TypeReAuthenticate indicates the agent encountered an
 	// authentication error and the user needs to re-authenticate.
 	TypeReAuthenticate Type = "re_authenticate"

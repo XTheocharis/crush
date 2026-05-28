@@ -82,6 +82,7 @@ type SessionAgentCall struct {
 	FrequencyPenalty *float64
 	PresencePenalty  *float64
 	NonInteractive   bool
+	SubmittedAt      int64
 }
 
 type SessionAgent interface {
@@ -265,12 +266,20 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	history, files := a.preparePrompt(msgs, largeModel.CatwalkCfg.SupportsImages, call.Attachments...)
 
 	startTime := time.Now()
+	sentToLLMAt := startTime.Unix()
 	a.eventPromptSent(call.SessionID)
 
-	a.hooks.invokeRunStart(ctx, call.SessionID, call.Prompt) // XRUSH: hook lifecycle - run start
+	a.hooks.invokeRunStart(ctx, call.SessionID, call.Prompt)
 
 	var currentAssistant *message.Message
 	var stepMessages []fantasy.Message
+	var firstTokenAt int64
+	var firstTokenOnce sync.Once
+	setFirstToken := func() {
+		firstTokenOnce.Do(func() {
+			firstTokenAt = time.Now().Unix()
+		})
+	}
 	var shouldSummarize bool
 	// Don't send MaxOutputTokens if 0 — some providers (e.g. LM Studio) reject it
 	var maxOutputTokens *int64
@@ -354,6 +363,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return callContext, prepared, err
 		},
 		OnReasoningStart: func(id string, reasoning fantasy.ReasoningContent) error {
+			setFirstToken()
 			currentAssistant.AppendReasoningContent(reasoning.Text)
 			return a.messages.Update(genCtx, *currentAssistant)
 		},
@@ -382,9 +392,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(genCtx, *currentAssistant)
 		},
 		OnTextDelta: func(id string, text string) error {
-			// Strip leading newline from initial text content. This is is
-			// particularly important in non-interactive mode where leading
-			// newlines are very visible.
+			setFirstToken()
 			if len(currentAssistant.Parts) == 0 {
 				text = strings.TrimPrefix(text, "\n")
 			}
@@ -455,6 +463,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				}
 			}
 			currentAssistant.AddFinish(finishReason, "", "")
+			currentAssistant.SentToLLMAt = sentToLLMAt
+			currentAssistant.FirstTokenAt = firstTokenAt
 			sessionLock.Lock()
 			defer sessionLock.Unlock()
 
@@ -503,6 +513,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			},
 		},
 	})
+
+	if currentAssistant != nil {
+		currentAssistant.CompletedAt = time.Now().Unix()
+	}
 
 	a.eventPromptResponded(call.SessionID, time.Since(startTime).Truncate(time.Second))
 
@@ -828,8 +842,9 @@ func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentC
 	}
 	parts = append(parts, attachmentParts...)
 	msg, err := a.messages.Create(ctx, call.SessionID, message.CreateMessageParams{
-		Role:  message.User,
-		Parts: parts,
+		Role:        message.User,
+		Parts:       parts,
+		SubmittedAt: call.SubmittedAt,
 	})
 	if err != nil {
 		return message.Message{}, fmt.Errorf("failed to create user message: %w", err)
