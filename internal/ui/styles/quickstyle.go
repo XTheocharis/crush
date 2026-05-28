@@ -786,6 +786,8 @@ func quickStyle(o quickStyleOpts) Styles {
 		BorderForeground(o.primary).BorderStyle(lipgloss.NormalBorder())
 	s.Messages.UserFocused = s.Messages.NoContent.PaddingLeft(1).BorderLeft(true).
 		BorderForeground(o.primary).BorderStyle(messageFocussedBorder)
+	s.Messages.UserTimestamp = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
+	s.Messages.AssistantTimestamp = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
 	s.Messages.AssistantBlurred = s.Messages.NoContent.PaddingLeft(2)
 	s.Messages.AssistantFocused = s.Messages.NoContent.PaddingLeft(1).BorderLeft(true).
 		BorderForeground(o.successMostSubtle).BorderStyle(messageFocussedBorder)

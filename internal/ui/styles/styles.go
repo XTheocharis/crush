@@ -231,8 +231,10 @@ type Styles struct {
 	Messages struct {
 		UserBlurred      lipgloss.Style
 		UserFocused      lipgloss.Style
-		AssistantBlurred lipgloss.Style
-		AssistantFocused lipgloss.Style
+		UserTimestamp      lipgloss.Style
+		AssistantBlurred   lipgloss.Style
+		AssistantFocused   lipgloss.Style
+		AssistantTimestamp lipgloss.Style
 		NoContent        lipgloss.Style
 		Thinking         lipgloss.Style
 		ErrorTag         lipgloss.Style

@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/xml"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -92,6 +93,21 @@ func (m *UserMessageItem) RawRender(width int) string {
 			content = attachmentsStr
 		} else {
 			content = strings.Join([]string{content, "", attachmentsStr}, "\n")
+		}
+	}
+
+	ts := m.message.SubmittedAt
+	if ts == 0 {
+		ts = m.message.CreatedAt
+	}
+	if ts > 0 {
+		timestamp := m.sty.Messages.UserTimestamp.Render(
+			time.Unix(ts, 0).Format("2006-01-02 15:04:05"),
+		)
+		if content == "" {
+			content = timestamp
+		} else {
+			content = timestamp + "\n" + content
 		}
 	}
 

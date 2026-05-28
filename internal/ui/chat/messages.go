@@ -336,9 +336,7 @@ func (a *AssistantInfoItem) renderContent(width int) string {
 	if finishData == nil {
 		return ""
 	}
-	finishTime := time.Unix(finishData.Time, 0)
-	duration := finishTime.Sub(a.lastUserMessageTime)
-	infoMsg := a.sty.Messages.AssistantInfoDuration.Render(duration.String())
+
 	icon := a.sty.Messages.AssistantInfoIcon.Render(styles.ModelIcon)
 	model := a.cfg.GetModel(a.message.Provider, a.message.Model)
 	if model == nil {
@@ -350,8 +348,40 @@ func (a *AssistantInfoItem) renderContent(width int) string {
 		providerName = providerConfig.Name
 	}
 	provider := a.sty.Messages.AssistantInfoProvider.Render(fmt.Sprintf("via %s", providerName))
+
+	var durationStr string
+	if a.message.SubmittedAt > 0 {
+		endTime := a.message.CompletedAt
+		if endTime == 0 {
+			endTime = finishData.Time
+		}
+		totalDuration := time.Duration(endTime-a.message.SubmittedAt) * time.Second
+		durationStr = formatDuration(totalDuration)
+
+		if a.message.SentToLLMAt > 0 && a.message.FirstTokenAt > 0 {
+			ttfb := time.Duration(a.message.FirstTokenAt-a.message.SentToLLMAt) * time.Second
+			durationStr += fmt.Sprintf(" (TTFB: %s)", formatDuration(ttfb))
+		}
+	} else {
+		finishTime := time.Unix(finishData.Time, 0)
+		duration := finishTime.Sub(a.lastUserMessageTime)
+		durationStr = duration.String()
+	}
+
+	infoMsg := a.sty.Messages.AssistantInfoDuration.Render(durationStr)
 	assistant := fmt.Sprintf("%s %s %s %s", icon, modelFormatted, provider, infoMsg)
 	return common.Section(a.sty, assistant, width)
+}
+
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return d.String()
+	}
+	seconds := d.Seconds()
+	if seconds < 60 {
+		return fmt.Sprintf("%.1fs", seconds)
+	}
+	return d.Truncate(time.Second).String()
 }
 
 // cappedMessageWidth returns the maximum width for message content for readability.

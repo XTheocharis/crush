@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -203,21 +204,50 @@ func (a *AssistantMessageItem) ID() string {
 func (a *AssistantMessageItem) RawRender(width int) string {
 	cappedWidth := cappedMessageWidth(width)
 
+	var startTimestamp, endTimestamp string
+	createdAt := a.message.CreatedAt
+	if createdAt > 0 {
+		startTimestamp = a.sty.Messages.AssistantTimestamp.Render(
+			time.Unix(createdAt, 0).Format("2006-01-02 15:04:05"),
+		)
+	}
+	if a.message.IsFinished() {
+		ts := a.message.CompletedAt
+		if ts == 0 {
+			if fp := a.message.FinishPart(); fp != nil {
+				ts = fp.Time
+			}
+		}
+		if ts > 0 {
+			endTimestamp = a.sty.Messages.AssistantTimestamp.Render(
+				time.Unix(ts, 0).Format("2006-01-02 15:04:05"),
+			)
+		}
+	}
+
 	var spinner string
 	if a.isSpinning() {
 		spinner = a.renderSpinning()
 	}
 
 	content, height := a.renderMessageContent(cappedWidth)
+
+	var parts []string
+	if startTimestamp != "" {
+		parts = append(parts, startTimestamp)
+	}
 	highlightedContent := a.renderHighlighted(content, cappedWidth, height)
+	if highlightedContent != "" {
+		parts = append(parts, highlightedContent)
+	}
 	if spinner != "" {
-		if highlightedContent != "" {
-			highlightedContent += "\n\n"
-		}
-		return highlightedContent + spinner
+		parts = append(parts, spinner)
+	}
+	if endTimestamp != "" {
+		parts = append(parts, endTimestamp)
 	}
 
-	return highlightedContent
+	return strings.Join(parts, "\n")
 }
 
 // Render implements MessageItem.
