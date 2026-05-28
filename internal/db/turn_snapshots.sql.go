@@ -280,7 +280,7 @@ func (q *Queries) GetLatestTurnSnapshot(ctx context.Context, sessionID string) (
 }
 
 const getLatestUserMessage = `-- name: GetLatestUserMessage :one
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count FROM messages
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count, submitted_at, sent_to_llm_at, first_token_at, completed_at FROM messages
 WHERE session_id = ? AND role = 'user'
 ORDER BY seq DESC
 LIMIT 1
@@ -302,12 +302,16 @@ func (q *Queries) GetLatestUserMessage(ctx context.Context, sessionID string) (M
 		&i.IsSummaryMessage,
 		&i.Seq,
 		&i.TokenCount,
+		&i.SubmittedAt,
+		&i.SentToLlmAt,
+		&i.FirstTokenAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }
 
 const getMessageBySessionAndSeq = `-- name: GetMessageBySessionAndSeq :one
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count FROM messages
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count, submitted_at, sent_to_llm_at, first_token_at, completed_at FROM messages
 WHERE session_id = ? AND seq = ? LIMIT 1
 `
 
@@ -332,6 +336,10 @@ func (q *Queries) GetMessageBySessionAndSeq(ctx context.Context, arg GetMessageB
 		&i.IsSummaryMessage,
 		&i.Seq,
 		&i.TokenCount,
+		&i.SubmittedAt,
+		&i.SentToLlmAt,
+		&i.FirstTokenAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }

@@ -18,13 +18,15 @@ INSERT INTO messages (
     model,
     provider,
     is_summary_message,
-    seq, -- XRUSH: auto-incrementing sequence number for rewind
+    seq,
     created_at,
-    updated_at
+    updated_at,
+    submitted_at
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?,
-    (SELECT COALESCE(MAX(m.seq) + 1, 0) FROM messages m WHERE m.session_id = ?), -- XRUSH: seq subquery
-    strftime('%s', 'now'), strftime('%s', 'now')
+    (SELECT COALESCE(MAX(m.seq) + 1, 0) FROM messages m WHERE m.session_id = ?),
+    strftime('%s', 'now'), strftime('%s', 'now'),
+    ?
 )
 RETURNING *;
 
@@ -33,6 +35,9 @@ UPDATE messages
 SET
     parts = ?,
     finished_at = ?,
+    sent_to_llm_at = ?,
+    first_token_at = ?,
+    completed_at = ?,
     updated_at = strftime('%s', 'now')
 WHERE id = ?;
 

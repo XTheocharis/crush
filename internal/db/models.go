@@ -151,6 +151,10 @@ type Message struct {
 	IsSummaryMessage int64          `json:"is_summary_message"`
 	Seq              int64          `json:"seq"`
 	TokenCount       int64          `json:"token_count"`
+	SubmittedAt      int64          `json:"submitted_at"`
+	SentToLlmAt      int64          `json:"sent_to_llm_at"`
+	FirstTokenAt     int64          `json:"first_token_at"`
+	CompletedAt      int64          `json:"completed_at"`
 }
 
 type MessagesFt struct {

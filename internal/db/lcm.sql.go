@@ -476,7 +476,7 @@ func (q *Queries) ListLcmSummaryParents(ctx context.Context, summaryID string) (
 }
 
 const listMessagesBySessionSeq = `-- name: ListMessagesBySessionSeq :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count FROM messages WHERE session_id = ? ORDER BY seq ASC
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count, submitted_at, sent_to_llm_at, first_token_at, completed_at FROM messages WHERE session_id = ? ORDER BY seq ASC
 `
 
 func (q *Queries) ListMessagesBySessionSeq(ctx context.Context, sessionID string) ([]Message, error) {
@@ -501,6 +501,10 @@ func (q *Queries) ListMessagesBySessionSeq(ctx context.Context, sessionID string
 			&i.IsSummaryMessage,
 			&i.Seq,
 			&i.TokenCount,
+			&i.SubmittedAt,
+			&i.SentToLlmAt,
+			&i.FirstTokenAt,
+			&i.CompletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -516,7 +520,7 @@ func (q *Queries) ListMessagesBySessionSeq(ctx context.Context, sessionID string
 }
 
 const listMessagesInSeqRange = `-- name: ListMessagesInSeqRange :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count FROM messages WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count, submitted_at, sent_to_llm_at, first_token_at, completed_at FROM messages WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC
 `
 
 type ListMessagesInSeqRangeParams struct {
@@ -547,6 +551,10 @@ func (q *Queries) ListMessagesInSeqRange(ctx context.Context, arg ListMessagesIn
 			&i.IsSummaryMessage,
 			&i.Seq,
 			&i.TokenCount,
+			&i.SubmittedAt,
+			&i.SentToLlmAt,
+			&i.FirstTokenAt,
+			&i.CompletedAt,
 		); err != nil {
 			return nil, err
 		}
