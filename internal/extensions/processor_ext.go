@@ -14,8 +14,19 @@ import (
 )
 
 var safeProcessorNames = map[string]struct{}{
+	// Tier 0 — existing.
 	"token_limiter":          {},
 	"system_prompt_scrubber": {},
+	// Tier 1 — zero deps, zero risk.
+	"unicode_normalizer": {},
+	"batch_parts":        {},
+	// Tier 2 — safe with config.
+	"pii_detector":      {},
+	"message_selection": {},
+	"tool_call_filter":  {},
+	"tool_search":       {},
+	"skills":            {},
+	"skill_search":      {},
 }
 
 const defaultTokenBudget = 200000
@@ -219,6 +230,7 @@ func buildProcessorRunner(list []string, completer ext.TextCompleter) *processor
 			continue
 		}
 		switch name {
+		// Tier 0 — existing processors.
 		case "token_limiter":
 			inputProcessors = append(inputProcessors, &processor.TokenLimiter{
 				Budget: defaultTokenBudget,
@@ -229,6 +241,29 @@ func buildProcessorRunner(list []string, completer ext.TextCompleter) *processor
 				continue
 			}
 			outputProcessors = append(outputProcessors, processor.NewSystemPromptScrubber(&completerAdapter{fn: completer}))
+
+		// Tier 1 — zero deps, zero risk.
+		case "unicode_normalizer":
+			inputProcessors = append(inputProcessors, &processor.UnicodeNormalizer{})
+			outputProcessors = append(outputProcessors, &processor.UnicodeNormalizer{})
+		case "batch_parts":
+			outputProcessors = append(outputProcessors, &processor.BatchParts{})
+
+		// Tier 2 — safe with config.
+		case "pii_detector":
+			p := processor.NewPIIDetector(processor.SensitivityLow, nil)
+			inputProcessors = append(inputProcessors, p)
+			outputProcessors = append(outputProcessors, p)
+		case "message_selection":
+			inputProcessors = append(inputProcessors, &processor.MessageSelection{})
+		case "tool_call_filter":
+			outputProcessors = append(outputProcessors, &processor.ToolCallFilter{})
+		case "tool_search":
+			inputProcessors = append(inputProcessors, &processor.ToolSearch{})
+		case "skills":
+			inputProcessors = append(inputProcessors, &processor.Skills{})
+		case "skill_search":
+			inputProcessors = append(inputProcessors, &processor.SkillSearch{})
 		}
 	}
 

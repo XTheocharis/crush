@@ -7,6 +7,7 @@ import (
 	"charm.land/fantasy"
 
 	"github.com/charmbracelet/crush/internal/agent"
+	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
@@ -52,7 +53,10 @@ func (e *ToolSurfaceExtension) RunHooks() []ext.RunHook {
 				}
 				lspManager := e.host.LSP()
 				ctx := agent.SurfaceContext{
-					HasLSP: lspManager != nil && lspManager.Clients().Len() > 0,
+					HasLSP:     lspManager != nil && lspManager.Clients().Len() > 0,
+					HasLCM:     TheLCMExtension.Manager() != nil,
+					HasRepoMap: TheRepomapExtension.isActive(),
+					HasMCP:     hasMCPTools(),
 				}
 				e.surface.UpdateCapabilities(ctx)
 				return nil
@@ -62,6 +66,13 @@ func (e *ToolSurfaceExtension) RunHooks() []ext.RunHook {
 			},
 		},
 	}
+}
+
+func hasMCPTools() bool {
+	for range mcp.Tools() {
+		return true
+	}
+	return false
 }
 
 var (

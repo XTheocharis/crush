@@ -275,3 +275,135 @@ func TestBuildProcessorRunner_MixedKnownAndUnknown(t *testing.T) {
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 }
+
+func TestBuildProcessorRunner_UnicodeNormalizer(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"unicode_normalizer"}, nil)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 1)
+	require.Len(t, runner.OutputProcessors, 1)
+	require.Equal(t, "unicode_normalizer", runner.InputProcessors[0].ID())
+	require.Equal(t, "unicode_normalizer", runner.OutputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_BatchParts(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"batch_parts"}, nil)
+	require.NotNil(t, runner)
+	require.Empty(t, runner.InputProcessors)
+	require.Len(t, runner.OutputProcessors, 1)
+	require.Equal(t, "batch_parts", runner.OutputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_PIIDetector(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"pii_detector"}, nil)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 1)
+	require.Len(t, runner.OutputProcessors, 1)
+	require.Equal(t, "pii_detector", runner.InputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_MessageSelection(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"message_selection"}, nil)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 1)
+	require.Empty(t, runner.OutputProcessors)
+	require.Equal(t, "message_selection", runner.InputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_ToolCallFilter(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"tool_call_filter"}, nil)
+	require.NotNil(t, runner)
+	require.Empty(t, runner.InputProcessors)
+	require.Len(t, runner.OutputProcessors, 1)
+	require.Equal(t, "tool_call_filter", runner.OutputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_ToolSearch(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"tool_search"}, nil)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 1)
+	require.Empty(t, runner.OutputProcessors)
+	require.Equal(t, "tool_search", runner.InputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_Skills(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"skills"}, nil)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 1)
+	require.Empty(t, runner.OutputProcessors)
+	require.Equal(t, "skills", runner.InputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_SkillSearch(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner([]string{"skill_search"}, nil)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 1)
+	require.Empty(t, runner.OutputProcessors)
+	require.Equal(t, "skill_search", runner.InputProcessors[0].ID())
+}
+
+func TestBuildProcessorRunner_AllProcessors(t *testing.T) {
+	t.Parallel()
+	all := []string{
+		"token_limiter",
+		"system_prompt_scrubber",
+		"unicode_normalizer",
+		"batch_parts",
+		"pii_detector",
+		"message_selection",
+		"tool_call_filter",
+		"tool_search",
+		"skills",
+		"skill_search",
+	}
+	runner := buildProcessorRunner(all, nil)
+	require.NotNil(t, runner)
+
+	// system_prompt_scrubber is skipped without completer, so input = 7, output = 4.
+	inputIDs := make([]string, len(runner.InputProcessors))
+	for i, p := range runner.InputProcessors {
+		inputIDs[i] = p.ID()
+	}
+	outputIDs := make([]string, len(runner.OutputProcessors))
+	for i, p := range runner.OutputProcessors {
+		outputIDs[i] = p.ID()
+	}
+
+	require.Len(t, runner.InputProcessors, 7)
+	require.Len(t, runner.OutputProcessors, 4)
+	require.Contains(t, inputIDs, "token_limiter")
+	require.Contains(t, inputIDs, "unicode_normalizer")
+	require.Contains(t, inputIDs, "pii_detector")
+	require.Contains(t, inputIDs, "message_selection")
+	require.Contains(t, inputIDs, "tool_search")
+	require.Contains(t, inputIDs, "skills")
+	require.Contains(t, inputIDs, "skill_search")
+	require.Contains(t, outputIDs, "unicode_normalizer")
+	require.Contains(t, outputIDs, "batch_parts")
+	require.Contains(t, outputIDs, "pii_detector")
+	require.Contains(t, outputIDs, "tool_call_filter")
+}
+
+func TestBuildProcessorRunner_DestructiveNotWhitelisted(t *testing.T) {
+	t.Parallel()
+	destructive := []string{
+		"structured_output",
+		"moderation",
+		"workspace_instructions",
+		"message_history",
+	}
+	runner := buildProcessorRunner(destructive, nil)
+	require.Nil(t, runner)
+}
+
+func TestSafeProcessorNames_Count(t *testing.T) {
+	t.Parallel()
+	require.Len(t, safeProcessorNames, 10)
+}

@@ -20,7 +20,7 @@ func init() {
 	ext.RegisterExtension(&ResourceLimitsExtension{})
 	ext.RegisterExtension(&XrushExtension{})
 	ext.RegisterExtension(TheLCMExtension) // [XRUSH: wire compaction event to pill]
-	ext.RegisterExtension(&RepomapExtension{})
+	ext.RegisterExtension(TheRepomapExtension)
 	ext.RegisterExtension(&PromptAssemblyExtension{})
 	ext.RegisterExtension(&OrchestrationExtension{})
 	ext.RegisterExtension(&ModelRouterExtension{})

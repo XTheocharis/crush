@@ -9,6 +9,10 @@ import (
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
+// TheRepomapExtension is the singleton repomap extension instance registered
+// at init.
+var TheRepomapExtension = &RepomapExtension{}
+
 // RepomapExtension wraps the repository map subsystem as a ToolProvider and
 // RunHookProvider.
 type RepomapExtension struct {
@@ -21,6 +25,12 @@ type RepomapExtension struct {
 }
 
 func (e *RepomapExtension) Name() string { return "repomap" }
+
+func (e *RepomapExtension) isActive() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.active
+}
 
 func (e *RepomapExtension) Init(ctx context.Context, host ext.HostContext) error {
 	e.host = host
