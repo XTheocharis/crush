@@ -10,6 +10,10 @@ import (
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
+// TheXrushExtension is the singleton xrush-sessions extension instance
+// registered at init.
+var TheXrushExtension = &XrushExtension{}
+
 // XrushExtension wraps forked agent sessions as a ToolProvider.
 // It manages the agent registry and mailbox for parent-child agent orchestration.
 type XrushExtension struct {

@@ -128,11 +128,6 @@ func (s *ToolSurface) registerDefaults() {
 
 	s.Register("agent", CapabilityExecution)
 
-	s.Register("team_create", CapabilityExecution)
-	s.Register("team_delete", CapabilityExecution)
-	s.Register("send_message", CapabilityExecution)
-	s.Register("task_stop", CapabilityExecution)
-
 	s.Register("batch_edit", CapabilityFS)
 	s.Register("synthetic_output", CapabilityObservation)
 }

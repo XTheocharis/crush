@@ -41,6 +41,14 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireCompactHookRunners(store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire orchestration tools]
+	wireOrchestration()
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire prompt-assembly LCM]
+	wirePromptAssembly(extHost)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: rewind service initialization]
 	app.RewindService = initRewindService(q, sessions, store)
 	// [XRUSH: end]

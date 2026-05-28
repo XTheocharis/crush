@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/extensions"
 	"github.com/charmbracelet/crush/internal/hooks"
 	"github.com/charmbracelet/crush/internal/lcm"
@@ -188,6 +189,75 @@ func wireCompactHookRunners(store *config.ConfigStore) {
 		"post_compact", postRunner != nil,
 	)
 }
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireOrchestration]
+// wireOrchestration connects the XrushExtension's registry and mailbox to
+// the OrchestrationExtension, then rebuilds orchestration tools with the
+// non-nil dependencies.
+func wireOrchestration() {
+	xrush := extensions.TheXrushExtension
+	if xrush == nil {
+		slog.Warn("XrushExtension singleton is nil, skipping orchestration wiring")
+		return
+	}
+
+	registry := xrush.Registry()
+	if registry == nil {
+		slog.Warn("XrushExtension registry is nil, skipping orchestration wiring")
+		return
+	}
+
+	mailbox := xrush.Mailbox()
+	if mailbox == nil {
+		slog.Warn("XrushExtension mailbox is nil, skipping orchestration wiring")
+		return
+	}
+
+	orch := extensions.TheOrchestrationExtension
+	if orch == nil {
+		slog.Warn("OrchestrationExtension singleton is nil, skipping orchestration wiring")
+		return
+	}
+
+	orch.SetRegistry(registry)
+	orch.SetMailbox(mailbox)
+	orch.RebuildTools()
+	slog.Info("Orchestration tools wired with registry and mailbox")
+}
+
+// [XRUSH: begin: wirePromptAssembly]
+// wirePromptAssembly connects the LCM extension to the PromptAssemblyExtension
+// so that the system prompt modifier can inject LCM context files.
+func wirePromptAssembly(extHost *ext.ExtensionHost) {
+	if extHost == nil {
+		slog.Warn("Extension host is nil, skipping prompt-assembly wiring")
+		return
+	}
+
+	raw := extHost.ExtensionByName("prompt-assembly")
+	if raw == nil {
+		slog.Warn("PromptAssemblyExtension not found, skipping LCM wiring")
+		return
+	}
+
+	pa, ok := raw.(*extensions.PromptAssemblyExtension)
+	if !ok {
+		slog.Warn("ExtensionByName(\"prompt-assembly\") returned unexpected type", "type", fmt.Sprintf("%T", raw))
+		return
+	}
+
+	if extensions.TheLCMExtension == nil {
+		slog.Warn("LCMExtension singleton is nil, skipping prompt-assembly LCM wiring")
+		return
+	}
+
+	pa.SetLCMExtension(extensions.TheLCMExtension)
+	slog.Info("PromptAssemblyExtension wired with LCM extension")
+}
+
+// [XRUSH: end]
 
 // [XRUSH: end]
 

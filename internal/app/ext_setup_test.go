@@ -11,6 +11,7 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/agent"
+	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/db"
@@ -174,3 +175,165 @@ func TestHookRunnersWired(t *testing.T) {
 	require.NotNil(t, mgr, "LCM manager should be initialized after setupExtensions")
 }
 
+func TestOrchestrationWiringComplete(t *testing.T) {
+	origXrush := extensions.TheXrushExtension
+	origOrch := extensions.TheOrchestrationExtension
+	origLCM := extensions.TheLCMExtension
+	t.Cleanup(func() {
+		extensions.TheXrushExtension = origXrush
+		extensions.TheOrchestrationExtension = origOrch
+		extensions.TheLCMExtension = origLCM
+	})
+
+	freshXrush := &extensions.XrushExtension{}
+	freshOrch := &extensions.OrchestrationExtension{}
+	freshLCM := &extensions.LCMExtension{}
+	extensions.TheXrushExtension = freshXrush
+	extensions.TheOrchestrationExtension = freshOrch
+	extensions.TheLCMExtension = freshLCM
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshXrush)
+	ext.RegisterExtension(freshLCM)
+	ext.RegisterExtension(freshOrch)
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options: &config.Options{
+			LCM: &config.LCMOptions{},
+		},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
+
+	require.NotNil(t, extensions.TheXrushExtension.Registry(),
+		"XrushExtension registry should be non-nil after bootstrap+wiring")
+	require.NotNil(t, extensions.TheXrushExtension.Mailbox(),
+		"XrushExtension mailbox should be non-nil after bootstrap+wiring")
+
+	orchTools, err := extensions.TheOrchestrationExtension.Tools(t.Context())
+	require.NoError(t, err)
+	require.Len(t, orchTools, 4,
+		"OrchestrationExtension should contribute 4 tools after wiring")
+
+	expectedNames := map[string]bool{
+		"send_message": true,
+		"team_create":  true,
+		"team_delete":  true,
+		"task_stop":    true,
+	}
+	for _, tool := range orchTools {
+		name := tool.Info().Name
+		require.True(t, expectedNames[name],
+			"unexpected orchestration tool: %s", name)
+	}
+
+	surface := agent.NewToolSurface()
+	for _, name := range []string{"send_message", "team_create", "team_delete", "task_stop"} {
+		caps := surface.GetToolCapabilities(name)
+		require.Empty(t, caps,
+			"tool %q should NOT be registered in ToolSurface defaults (provided by extension)", name)
+	}
+}
+
+func TestLCMExtensionWiredToPromptAssembly(t *testing.T) {
+	origLCM := extensions.TheLCMExtension
+	t.Cleanup(func() { extensions.TheLCMExtension = origLCM })
+
+	freshLCM := &extensions.LCMExtension{}
+	extensions.TheLCMExtension = freshLCM
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshLCM)
+	ext.RegisterExtension(&extensions.PromptAssemblyExtension{})
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{LCM: &config.LCMOptions{}},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
+
+	raw := app.ExtHost.ExtensionByName("prompt-assembly")
+	require.NotNil(t, raw, "prompt-assembly extension should be registered")
+
+	hook := raw.(interface{ PromptHook() *ext.PromptHook }).PromptHook()
+	require.NotNil(t, hook, "PromptHook should be non-nil")
+	require.NotNil(t, hook.SystemPromptModifier, "SystemPromptModifier should be non-nil")
+
+	mgr := extensions.TheLCMExtension.Manager()
+	require.NotNil(t, mgr, "LCM manager should exist after bootstrap")
+
+	modified, err := hook.SystemPromptModifier(t.Context(), "", "base-prompt")
+	require.NoError(t, err)
+	require.NotEqual(t, "base-prompt", modified,
+		"SystemPromptModifier should modify prompt when LCM extension is wired "+
+			"(LCM manager has built-in context files)")
+	require.Contains(t, modified, "base-prompt",
+		"Modified prompt should contain the original base prompt")
+}
+
+func TestWireOrchestrationNilSafe(t *testing.T) {
+	origXrush := extensions.TheXrushExtension
+	origOrch := extensions.TheOrchestrationExtension
+	t.Cleanup(func() {
+		extensions.TheXrushExtension = origXrush
+		extensions.TheOrchestrationExtension = origOrch
+	})
+
+	extensions.TheXrushExtension = &extensions.XrushExtension{}
+	extensions.TheOrchestrationExtension = &extensions.OrchestrationExtension{}
+
+	require.NotPanics(t, func() {
+		wireOrchestration()
+	}, "wireOrchestration should not panic when xrush registry/mailbox are nil (pre-bootstrap)")
+}
+
+var _ tools.AgentRegistry = (*stubAgentRegistry)(nil)
+
+type stubAgentRegistry struct{}
+
+func (stubAgentRegistry) Get(string) (tools.AgentHandle, bool) { return nil, false }
+func (stubAgentRegistry) HasAgent(string) bool                 { return false }
+func (stubAgentRegistry) List() []string                       { return nil }
+
+var _ tools.Mailbox = (*stubMailbox)(nil)
+
+type stubMailbox struct{}
+
+func (stubMailbox) Send(tools.MailboxMessage) error { return nil }
+func (stubMailbox) HasInbox(string) bool            { return false }

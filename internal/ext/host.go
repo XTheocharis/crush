@@ -198,6 +198,19 @@ func (h *ExtensionHost) IsBootstrapped() bool {
 	return h.bootstrapped
 }
 
+// ExtensionByName returns the extension with the given name, or nil if
+// not found.
+func (h *ExtensionHost) ExtensionByName(name string) Extension {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, e := range h.extensions {
+		if e.Name() == name {
+			return e
+		}
+	}
+	return nil
+}
+
 type hostContext struct {
 	deps HostDeps
 	host *ExtensionHost

@@ -17,12 +17,13 @@ import (
 // configured tier router, falling back to the binary ModelRouter when no
 // tiers are configured.
 type ModelRouterExtension struct {
-	mu     sync.RWMutex
-	host   ext.HostContext
-	tier   *agent.TierRouter
-	binary *agent.ModelRouter
-	active bool
-	hooks  []ext.StepHook
+	mu            sync.RWMutex
+	host          ext.HostContext
+	tier          *agent.TierRouter
+	binary        *agent.ModelRouter
+	active        bool
+	hooks         []ext.StepHook
+	lastModelType config.SelectedModelType
 }
 
 func (e *ModelRouterExtension) Name() string { return "model_router" }
@@ -59,6 +60,7 @@ func (e *ModelRouterExtension) Shutdown(_ context.Context) error {
 	e.binary = nil
 	e.hooks = nil
 	e.active = false
+	e.lastModelType = ""
 	return nil
 }
 
@@ -70,6 +72,14 @@ func (e *ModelRouterExtension) StepHooks() []ext.StepHook {
 		return nil
 	}
 	return append([]ext.StepHook{}, e.hooks...)
+}
+
+// LastRoutedModel returns the model type selected by the most recent
+// selectModel call. Returns the zero value if no routing has occurred.
+func (e *ModelRouterExtension) LastRoutedModel() config.SelectedModelType {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.lastModelType
 }
 
 func (e *ModelRouterExtension) selectModel(_ context.Context, _ string, messages []fantasy.Message) ([]fantasy.Message, error) {
@@ -94,7 +104,7 @@ func (e *ModelRouterExtension) selectModel(_ context.Context, _ string, messages
 		}
 	}
 
-	_ = modelType
+	e.lastModelType = modelType
 	return messages, nil
 }
 

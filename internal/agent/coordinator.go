@@ -166,6 +166,10 @@ func NewCoordinator(
 		opt(c)
 	}
 
+	if c.structuredSubagentFactory == nil {
+		c.structuredSubagentFactory = NewStructuredSubagentFactory(c)
+	}
+
 	agentCfg, ok := cfg.Config().Agents[config.AgentCoder]
 	if !ok {
 		return nil, errCoderAgentNotConfigured

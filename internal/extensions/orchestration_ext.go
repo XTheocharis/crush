@@ -10,6 +10,10 @@ import (
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
+// TheOrchestrationExtension is the singleton orchestration extension instance
+// registered at init.
+var TheOrchestrationExtension = &OrchestrationExtension{}
+
 // OrchestrationExtension wraps multi-agent orchestration tools as a
 // ToolProvider.
 type OrchestrationExtension struct {
