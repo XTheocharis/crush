@@ -9,22 +9,22 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/styles"
 )
 
-const preparingItemID = "__preparing__"
+const processingItemID = "__processing__"
 
-// PreparingItem is a chat [MessageItem] that shows an animated gradient
-// spinner while the agent prepares context before streaming begins. It is
-// injected into the chat list immediately on Enter and removed when the first
-// assistant message arrives.
-type PreparingItem struct {
+// ProcessingItem is a chat [MessageItem] that shows an animated gradient
+// spinner while the agent performs post-LLM processing (autofix, compaction,
+// etc.). It is injected after streaming completes and removed when the agent
+// finishes its turn.
+type ProcessingItem struct {
 	*list.Versioned
 
 	sty  *styles.Styles
 	anim *anim.Anim
 }
 
-// NewPreparingItem creates a new PreparingItem.
-func NewPreparingItem(sty *styles.Styles) *PreparingItem {
-	p := &PreparingItem{
+// NewProcessingItem creates a new ProcessingItem.
+func NewProcessingItem(sty *styles.Styles) *ProcessingItem {
+	p := &ProcessingItem{
 		Versioned: list.NewVersioned(),
 		sty:       sty,
 	}
@@ -40,31 +40,31 @@ func NewPreparingItem(sty *styles.Styles) *PreparingItem {
 }
 
 // ID implements [MessageItem].
-func (p *PreparingItem) ID() string { return preparingItemID }
+func (p *ProcessingItem) ID() string { return processingItemID }
 
-// Finished implements [list.Item]. The preparing indicator is always
+// Finished implements [list.Item]. The processing indicator is always
 // animating and should never be frozen by the list cache.
-func (p *PreparingItem) Finished() bool { return false }
+func (p *ProcessingItem) Finished() bool { return false }
 
 // StartAnimation implements [Animatable].
-func (p *PreparingItem) StartAnimation() tea.Cmd {
+func (p *ProcessingItem) StartAnimation() tea.Cmd {
 	return p.anim.Start()
 }
 
 // Animate implements [Animatable].
-func (p *PreparingItem) Animate(msg anim.StepMsg) tea.Cmd {
+func (p *ProcessingItem) Animate(msg anim.StepMsg) tea.Cmd {
 	return p.anim.Animate(msg)
 }
 
 // RawRender implements [MessageItem].
-func (p *PreparingItem) RawRender(width int) string {
+func (p *ProcessingItem) RawRender(width int) string {
 	return fmt.Sprintf("  %s", p.anim.Render())
 }
 
 // Render implements [list.Item].
-func (p *PreparingItem) Render(width int) string {
+func (p *ProcessingItem) Render(width int) string {
 	return p.RawRender(width)
 }
 
-// PreparingItemID returns the fixed ID used by the preparing indicator.
-func PreparingItemID() string { return preparingItemID }
+// ProcessingItemID returns the fixed ID used by the processing indicator.
+func ProcessingItemID() string { return processingItemID }

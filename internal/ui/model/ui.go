@@ -116,6 +116,8 @@ type openEditorMsg struct {
 	Text string
 }
 
+type processingHideMsg struct{}
+
 type (
 	// cancelTimerExpiredMsg is sent when the cancel timer expires.
 	cancelTimerExpiredMsg struct{}
@@ -177,6 +179,8 @@ type UI struct {
 	continueLastSession bool
 
 	lastUserMessageTime int64
+
+	agentProcessing bool
 
 	// The width and height of the terminal in cells.
 	width  int
@@ -771,6 +775,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// [XRUSH: end]
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
+	case processingHideMsg:
+		if m.agentProcessing {
+			m.chat.RemoveMessage(chat.ProcessingItemID())
+			m.agentProcessing = false
+		}
 	case tea.TerminalVersionMsg:
 		termVersion := strings.ToLower(msg.Name)
 		// Only enable progress bar for the following terminals.
@@ -1173,6 +1182,10 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	case message.Assistant:
+		if m.agentProcessing {
+			m.chat.RemoveMessage(chat.ProcessingItemID())
+			m.agentProcessing = false
+		}
 		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil)
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
@@ -1267,6 +1280,17 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 		if infoItem := m.chat.MessageItem(chat.AssistantInfoID(msg.ID)); infoItem == nil {
 			newInfoItem := chat.NewAssistantInfoItem(m.com.Styles, &msg, m.com.Config(), time.Unix(m.lastUserMessageTime, 0))
 			m.chat.AppendMessages(newInfoItem)
+		}
+		if !m.agentProcessing && m.com.Workspace.AgentIsBusy() {
+			processingItem := chat.NewProcessingItem(m.com.Styles)
+			m.agentProcessing = true
+			if cmd := processingItem.StartAnimation(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			m.chat.AppendMessages(processingItem)
+			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 	}
 
@@ -3601,6 +3625,11 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	switch n.Type {
 	case notify.TypeAgentFinished:
 		var cmds []tea.Cmd
+		if m.agentProcessing {
+			cmds = append(cmds, tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+				return processingHideMsg{}
+			}))
+		}
 		cmds = append(cmds, m.sendNotification(notification.Notification{
 			Title:   "Crush is waiting...",
 			Message: fmt.Sprintf("Agent's turn completed in \"%s\"", n.SessionTitle),
