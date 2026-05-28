@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/ui/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,23 +83,32 @@ func TestRepoMapRefreshRouting(t *testing.T) {
 		ui, _ := newRepoMapTestUI(t)
 		msg := RepoMapRefreshResultMsg{SessionID: "sess-1", Err: nil}
 		cmd := ui.handleXrushRoutingUpdate(msg)
-		require.Nil(t, cmd)
+		require.NotNil(t, cmd)
+		result := cmd()
+		info, ok := result.(util.InfoMsg)
+		require.True(t, ok, "expected util.InfoMsg, got %T", result)
+		require.Equal(t, util.InfoTypeSuccess, info.Type)
 	})
 
-	t.Run("RepoMapRefreshResultMsg with error routes without panic", func(t *testing.T) {
+	t.Run("RepoMapRefreshResultMsg with error routes and returns error toast", func(t *testing.T) {
 		t.Parallel()
 
 		ui, _ := newRepoMapTestUI(t)
 		msg := RepoMapRefreshResultMsg{SessionID: "sess-2", Err: errors.New("boom")}
 		cmd := ui.handleXrushRoutingUpdate(msg)
-		require.Nil(t, cmd)
+		require.NotNil(t, cmd)
+		result := cmd()
+		info, ok := result.(util.InfoMsg)
+		require.True(t, ok, "expected util.InfoMsg, got %T", result)
+		require.Equal(t, util.InfoTypeError, info.Type)
+		require.Contains(t, info.Msg, "boom")
 	})
 }
 
 func TestRepoMapRefreshResultHandler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("nil error returns nil cmd", func(t *testing.T) {
+	t.Run("nil error returns success toast", func(t *testing.T) {
 		t.Parallel()
 
 		ui, _ := newRepoMapTestUI(t)
@@ -106,10 +116,14 @@ func TestRepoMapRefreshResultHandler(t *testing.T) {
 			SessionID: "sess-ok",
 			Err:       nil,
 		})
-		require.Nil(t, cmd)
+		require.NotNil(t, cmd)
+		result := cmd()
+		info, ok := result.(util.InfoMsg)
+		require.True(t, ok, "expected util.InfoMsg, got %T", result)
+		require.Equal(t, util.InfoTypeSuccess, info.Type)
 	})
 
-	t.Run("non-nil error returns nil cmd", func(t *testing.T) {
+	t.Run("non-nil error returns error toast", func(t *testing.T) {
 		t.Parallel()
 
 		ui, _ := newRepoMapTestUI(t)
@@ -117,7 +131,12 @@ func TestRepoMapRefreshResultHandler(t *testing.T) {
 			SessionID: "sess-fail",
 			Err:       errors.New("something went wrong"),
 		})
-		require.Nil(t, cmd)
+		require.NotNil(t, cmd)
+		result := cmd()
+		info, ok := result.(util.InfoMsg)
+		require.True(t, ok, "expected util.InfoMsg, got %T", result)
+		require.Equal(t, util.InfoTypeError, info.Type)
+		require.Contains(t, info.Msg, "something went wrong")
 	})
 }
 
