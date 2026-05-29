@@ -40,10 +40,15 @@ type SnapshotConfig struct {
 	MaxPerSession int `json:"max_per_session,omitempty" jsonschema:"description=Maximum snapshots to retain per session (older ones are cleaned up),default=50"`
 }
 
+// ProcessorConfig holds per-processor configuration. Keys are processor
+// names and values are arbitrary config objects read by each processor.
+type ProcessorConfig map[string]any
+
 // ProcessorsOptions controls the processor pipeline.
 type ProcessorsOptions struct {
-	Enabled bool     `json:"enabled,omitempty" jsonschema:"description=Enable the message processing pipeline,default=false"`
-	List    []string `json:"list,omitempty" jsonschema:"description=List of processor names to enable. Safe defaults: token_limiter, system_prompt_scrubber, pii_detector"`
+	Enabled bool            `json:"enabled,omitempty" jsonschema:"description=Enable the message processing pipeline,default=false"`
+	List    []string        `json:"list,omitempty" jsonschema:"description=List of processor names to enable. Safe defaults: token_limiter, system_prompt_scrubber, pii_detector"`
+	Config  ProcessorConfig `json:"config,omitempty" jsonschema:"description=Per-processor configuration keyed by processor name"`
 }
 
 // AutoDownloadConfig specifies where to download an LSP server binary from

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/processor"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 )
@@ -272,6 +273,20 @@ func (hc *hostContext) Sessions() session.Service {
 
 func (hc *hostContext) Messages() message.Service {
 	return hc.deps.Messages
+}
+
+func (hc *hostContext) ToolDefs() []processor.ToolDef {
+	if hc.deps.ToolDefsFn == nil {
+		return nil
+	}
+	return hc.deps.ToolDefsFn()
+}
+
+func (hc *hostContext) SkillDefs() []processor.SkillDef {
+	if hc.deps.SkillDefsFn == nil {
+		return nil
+	}
+	return hc.deps.SkillDefsFn()
 }
 
 // safeCall executes fn with panic recovery, logging the panic and returning

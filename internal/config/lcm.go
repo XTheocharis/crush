@@ -65,6 +65,10 @@ type ObservationOptions struct {
 	//   - "resource-scoped" (skip observations under high memory pressure)
 	// The default is "default".
 	Strategy string `json:"strategy,omitempty" jsonschema:"description=Observation strategy name,enum=default,enum=resource-scoped,default=default"`
+
+	// TokenBudget is the maximum number of tokens allocated for observation
+	// text injected into agent prompts. Default: 2000.
+	TokenBudget int64 `json:"token_budget,omitempty" jsonschema:"description=Maximum tokens for observation prompt injection,default=2000"`
 }
 
 // DefaultLCMOptions returns LCMOptions with default values applied.

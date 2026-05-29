@@ -3,14 +3,18 @@ package extensions
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 
 	"charm.land/fantasy"
 
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/processor"
+	"github.com/charmbracelet/crush/internal/skills"
 )
 
 var safeProcessorNames = map[string]struct{}{
@@ -60,7 +64,15 @@ func (e *ProcessorExtension) Init(_ context.Context, host ext.HostContext) error
 		return nil
 	}
 
-	runner := buildProcessorRunner(cfg.Options.Processors.List, host.Completer())
+	var procCfg config.ProcessorConfig
+	if cfg.Options.Processors.Config != nil {
+		procCfg = cfg.Options.Processors.Config
+	}
+
+	toolDefs := host.ToolDefs()
+	skillDefs := host.SkillDefs()
+
+	runner := buildProcessorRunner(cfg.Options.Processors.List, procCfg, host.Completer(), toolDefs, skillDefs)
 	if runner == nil {
 		e.active = false
 		return nil
@@ -220,7 +232,15 @@ func (e *ProcessorExtension) processRunStart(ctx context.Context, _ string, user
 	return nil
 }
 
-func buildProcessorRunner(list []string, completer ext.TextCompleter) *processor.ProcessorRunner {
+func buildProcessorRunner(
+	list []string,
+	cfg config.ProcessorConfig,
+	completer ext.TextCompleter,
+	toolDefs []processor.ToolDef,
+	skillDefs []processor.SkillDef,
+) *processor.ProcessorRunner {
+	enforceOrdering(list)
+
 	var inputProcessors []processor.Processor
 	var outputProcessors []processor.Processor
 
@@ -251,17 +271,52 @@ func buildProcessorRunner(list []string, completer ext.TextCompleter) *processor
 
 		// Tier 2 — safe with config.
 		case "pii_detector":
-			p := processor.NewPIIDetector(processor.SensitivityLow, nil)
+			pc := perProcessor(cfg, name)
+			sensitivity := processor.SensitivityLow
+			if pc != nil {
+				if s, ok := pc["sensitivity"].(string); ok {
+					sensitivity = processor.PIISensitivity(s)
+				}
+			}
+			p := processor.NewPIIDetector(sensitivity, nil)
 			inputProcessors = append(inputProcessors, p)
 			outputProcessors = append(outputProcessors, p)
 		case "message_selection":
-			inputProcessors = append(inputProcessors, &processor.MessageSelection{})
+			pc := perProcessor(cfg, name)
+			ms := &processor.MessageSelection{}
+			if pc != nil {
+				if v, ok := pc["max_messages"].(float64); ok && v > 0 {
+					ms.MaxMessages = int(v)
+				}
+				if s, ok := pc["strategy"].(string); ok {
+					ms.Strategy = s
+				}
+			}
+			inputProcessors = append(inputProcessors, ms)
 		case "tool_call_filter":
-			outputProcessors = append(outputProcessors, &processor.ToolCallFilter{})
+			pc := perProcessor(cfg, name)
+			tcf := &processor.ToolCallFilter{}
+			if pc != nil {
+				if raw, ok := pc["allow_list"].([]any); ok {
+					for _, v := range raw {
+						if s, ok := v.(string); ok {
+							tcf.AllowList = append(tcf.AllowList, s)
+						}
+					}
+				}
+				if raw, ok := pc["deny_list"].([]any); ok {
+					for _, v := range raw {
+						if s, ok := v.(string); ok {
+							tcf.DenyList = append(tcf.DenyList, s)
+						}
+					}
+				}
+			}
+			outputProcessors = append(outputProcessors, tcf)
 		case "tool_search":
-			inputProcessors = append(inputProcessors, &processor.ToolSearch{})
+			inputProcessors = append(inputProcessors, &processor.ToolSearch{Tools: toolDefs})
 		case "skills":
-			inputProcessors = append(inputProcessors, &processor.Skills{})
+			inputProcessors = append(inputProcessors, &processor.Skills{Skills: skillDefs})
 		case "skill_search":
 			inputProcessors = append(inputProcessors, &processor.SkillSearch{})
 		}
@@ -280,6 +335,83 @@ func buildProcessorRunner(list []string, completer ext.TextCompleter) *processor
 	}
 
 	return processor.NewRunner(opts...)
+}
+
+// enforceOrdering ensures "skills" appears before "skill_search" in the list.
+// If both are present but out of order, it reorders them in place.
+func enforceOrdering(list []string) {
+	skillsIdx := -1
+	skillSearchIdx := -1
+	for i, name := range list {
+		switch name {
+		case "skills":
+			skillsIdx = i
+		case "skill_search":
+			skillSearchIdx = i
+		}
+	}
+	if skillsIdx >= 0 && skillSearchIdx >= 0 && skillsIdx > skillSearchIdx {
+		list[skillsIdx], list[skillSearchIdx] = list[skillSearchIdx], list[skillsIdx]
+	}
+}
+
+// LoadToolDefsFromMD scans a directory for .md files and returns each as a
+// ToolDef with the filename (minus .md) as Name and content as Description.
+func LoadToolDefsFromMD(toolsDir string) []processor.ToolDef {
+	entries, err := os.ReadDir(toolsDir)
+	if err != nil {
+		return nil
+	}
+	var defs []processor.ToolDef
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(toolsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".md")
+		defs = append(defs, processor.ToolDef{
+			Name:        name,
+			Description: strings.TrimSpace(string(data)),
+		})
+	}
+	return defs
+}
+
+// SkillDefsFromManager converts active skills from a skills.Manager into
+// processor SkillDef structs.
+func SkillDefsFromManager(m *skills.Manager) []processor.SkillDef {
+	if m == nil {
+		return nil
+	}
+	active := m.ActiveSkills()
+	defs := make([]processor.SkillDef, 0, len(active))
+	for _, s := range active {
+		defs = append(defs, processor.SkillDef{
+			Name:        s.Name,
+			Description: s.Description,
+			Content:     s.Instructions,
+		})
+	}
+	return defs
+}
+
+// perProcessor extracts a named processor's config block from the full config.
+func perProcessor(cfg config.ProcessorConfig, name string) config.ProcessorConfig {
+	if cfg == nil {
+		return nil
+	}
+	raw, ok := cfg[name]
+	if !ok {
+		return nil
+	}
+	sub, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return config.ProcessorConfig(sub)
 }
 
 // ---------------------------------------------------------------------------

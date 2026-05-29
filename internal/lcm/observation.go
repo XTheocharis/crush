@@ -368,3 +368,17 @@ func BuildObservationContextPrompt(entries map[string]string) string {
 
 	return sb.String()
 }
+
+// formatObservationForPrompt formats a single Observation as structured text
+// for injection into the system prompt.
+func formatObservationForPrompt(obs Observation) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "- [%s] %s\n", observationPriorityText(obs.Priority), obs.Event)
+	if obs.Context != "" {
+		fmt.Fprintf(&sb, "  Context: %s\n", obs.Context)
+	}
+	if obs.Implication != "" {
+		fmt.Fprintf(&sb, "  Implication: %s\n", obs.Implication)
+	}
+	return sb.String()
+}

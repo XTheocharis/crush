@@ -4,26 +4,31 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/extensions"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/processor"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/skills"
 )
 
 func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, sessions session.Service, messages message.Service, store *config.ConfigStore) {
 	completer := newTextCompleter(store)
 	extHost := ext.NewExtensionHost(ext.HostDeps{
-		Sessions:   sessions,
-		Messages:   messages,
-		LSP:        app.LSPManager,
-		DB:         conn,
-		Config:     store,
-		Events:     app.events,
-		WorkingDir: store.WorkingDir(),
-		Completer:  completer,
+		Sessions:    sessions,
+		Messages:    messages,
+		LSP:         app.LSPManager,
+		DB:          conn,
+		Config:      store,
+		Events:      app.events,
+		WorkingDir:  store.WorkingDir(),
+		Completer:   completer,
+		ToolDefsFn:  newToolDefsProvider(store.WorkingDir()),
+		SkillDefsFn: newSkillDefsProvider(app.Skills),
 	})
 	if err := extHost.Bootstrap(ctx); err != nil {
 		slog.Warn("Extension host bootstrap failed", "error", err)
@@ -77,4 +82,17 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 		}
 		return nil
 	})
+}
+
+func newToolDefsProvider(workingDir string) func() []processor.ToolDef {
+	return func() []processor.ToolDef {
+		toolsDir := filepath.Join(workingDir, "internal", "agent", "tools")
+		return extensions.LoadToolDefsFromMD(toolsDir)
+	}
+}
+
+func newSkillDefsProvider(m *skills.Manager) func() []processor.SkillDef {
+	return func() []processor.SkillDef {
+		return extensions.SkillDefsFromManager(m)
+	}
 }

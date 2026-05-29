@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/processor"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 )
@@ -22,6 +23,8 @@ type HostContext interface {
 	Config() *config.Config
 	WorkingDir() string
 	Completer() TextCompleter
+	ToolDefs() []processor.ToolDef
+	SkillDefs() []processor.SkillDef
 	RegisterTools(provider ToolProvider)
 	RegisterRunHooks(provider RunHookProvider)
 	RegisterStepHooks(provider StepHookProvider)
@@ -35,12 +38,14 @@ type HostContext interface {
 
 // HostDeps carries concrete service references from app.New().
 type HostDeps struct {
-	Sessions   session.Service
-	Messages   message.Service
-	LSP        *lsp.Manager
-	DB         *sql.DB
-	Config     *config.ConfigStore
-	Events     *pubsub.Broker[tea.Msg]
-	WorkingDir string
-	Completer  TextCompleter
+	Sessions    session.Service
+	Messages    message.Service
+	LSP         *lsp.Manager
+	DB          *sql.DB
+	Config      *config.ConfigStore
+	Events      *pubsub.Broker[tea.Msg]
+	WorkingDir  string
+	Completer   TextCompleter
+	ToolDefsFn  func() []processor.ToolDef
+	SkillDefsFn func() []processor.SkillDef
 }

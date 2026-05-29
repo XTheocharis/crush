@@ -10,6 +10,10 @@ import (
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
+// defaultObservationTokenBudget is the default token budget for observation
+// prompt injection. Can be overridden via config.ObservationOptions.TokenBudget.
+const defaultObservationTokenBudget int64 = 2000
+
 // PromptAssemblyExtension wraps prompt assembly v2 as a PromptHookProvider.
 type PromptAssemblyExtension struct {
 	mu      sync.RWMutex
@@ -83,6 +87,13 @@ func (e *PromptAssemblyExtension) systemPromptModifier(ctx context.Context, sess
 				sb.WriteString("\n\n")
 				for _, cf := range contextFiles {
 					fmt.Fprintf(&sb, "<context name=%q>\n%s\n</context>\n", cf.Name, cf.Content)
+				}
+			}
+
+			if sessionID != "" {
+				obsPrompt, err := mgr.GetObservationPrompt(ctx, sessionID, defaultObservationTokenBudget)
+				if err == nil && obsPrompt != "" {
+					fmt.Fprintf(&sb, "\n\n<context name=%q>\n%s\n</context>\n", "observations", obsPrompt)
 				}
 			}
 		}

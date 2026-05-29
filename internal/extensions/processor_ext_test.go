@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"charm.land/fantasy"
@@ -30,10 +31,12 @@ func (m *mockHostContext) RegisterPromptHook(ext.PromptHookProvider) {}
 func (m *mockHostContext) PublishEvent(_ context.Context, _ string, _ any) error {
 	return nil
 }
-func (m *mockHostContext) LSP() *lsp.Manager         { return nil }
-func (m *mockHostContext) DB() *sql.DB               { return nil }
-func (m *mockHostContext) Sessions() session.Service { return nil }
-func (m *mockHostContext) Messages() message.Service { return nil }
+func (m *mockHostContext) LSP() *lsp.Manager               { return nil }
+func (m *mockHostContext) DB() *sql.DB                     { return nil }
+func (m *mockHostContext) Sessions() session.Service       { return nil }
+func (m *mockHostContext) Messages() message.Service       { return nil }
+func (m *mockHostContext) ToolDefs() []processor.ToolDef   { return nil }
+func (m *mockHostContext) SkillDefs() []processor.SkillDef { return nil }
 
 func TestProcessorExtension_Name(t *testing.T) {
 	t.Parallel()
@@ -257,13 +260,13 @@ func TestExtractFantasyMessageText_MultipleParts(t *testing.T) {
 
 func TestBuildProcessorRunner_UnknownName(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"nonexistent"}, nil)
+	runner := buildProcessorRunner([]string{"nonexistent"}, nil, nil, nil, nil)
 	require.Nil(t, runner)
 }
 
 func TestBuildProcessorRunner_TokenLimiter(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"token_limiter"}, nil)
+	runner := buildProcessorRunner([]string{"token_limiter"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Equal(t, "token_limiter", runner.InputProcessors[0].ID())
@@ -271,14 +274,14 @@ func TestBuildProcessorRunner_TokenLimiter(t *testing.T) {
 
 func TestBuildProcessorRunner_MixedKnownAndUnknown(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"unknown", "token_limiter", "also_unknown"}, nil)
+	runner := buildProcessorRunner([]string{"unknown", "token_limiter", "also_unknown"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 }
 
 func TestBuildProcessorRunner_UnicodeNormalizer(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"unicode_normalizer"}, nil)
+	runner := buildProcessorRunner([]string{"unicode_normalizer"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Len(t, runner.OutputProcessors, 1)
@@ -288,7 +291,7 @@ func TestBuildProcessorRunner_UnicodeNormalizer(t *testing.T) {
 
 func TestBuildProcessorRunner_BatchParts(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"batch_parts"}, nil)
+	runner := buildProcessorRunner([]string{"batch_parts"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Empty(t, runner.InputProcessors)
 	require.Len(t, runner.OutputProcessors, 1)
@@ -297,7 +300,7 @@ func TestBuildProcessorRunner_BatchParts(t *testing.T) {
 
 func TestBuildProcessorRunner_PIIDetector(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"pii_detector"}, nil)
+	runner := buildProcessorRunner([]string{"pii_detector"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Len(t, runner.OutputProcessors, 1)
@@ -306,7 +309,7 @@ func TestBuildProcessorRunner_PIIDetector(t *testing.T) {
 
 func TestBuildProcessorRunner_MessageSelection(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"message_selection"}, nil)
+	runner := buildProcessorRunner([]string{"message_selection"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Empty(t, runner.OutputProcessors)
@@ -315,7 +318,7 @@ func TestBuildProcessorRunner_MessageSelection(t *testing.T) {
 
 func TestBuildProcessorRunner_ToolCallFilter(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"tool_call_filter"}, nil)
+	runner := buildProcessorRunner([]string{"tool_call_filter"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Empty(t, runner.InputProcessors)
 	require.Len(t, runner.OutputProcessors, 1)
@@ -324,7 +327,7 @@ func TestBuildProcessorRunner_ToolCallFilter(t *testing.T) {
 
 func TestBuildProcessorRunner_ToolSearch(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"tool_search"}, nil)
+	runner := buildProcessorRunner([]string{"tool_search"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Empty(t, runner.OutputProcessors)
@@ -333,7 +336,7 @@ func TestBuildProcessorRunner_ToolSearch(t *testing.T) {
 
 func TestBuildProcessorRunner_Skills(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"skills"}, nil)
+	runner := buildProcessorRunner([]string{"skills"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Empty(t, runner.OutputProcessors)
@@ -342,7 +345,7 @@ func TestBuildProcessorRunner_Skills(t *testing.T) {
 
 func TestBuildProcessorRunner_SkillSearch(t *testing.T) {
 	t.Parallel()
-	runner := buildProcessorRunner([]string{"skill_search"}, nil)
+	runner := buildProcessorRunner([]string{"skill_search"}, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 	require.Len(t, runner.InputProcessors, 1)
 	require.Empty(t, runner.OutputProcessors)
@@ -363,7 +366,7 @@ func TestBuildProcessorRunner_AllProcessors(t *testing.T) {
 		"skills",
 		"skill_search",
 	}
-	runner := buildProcessorRunner(all, nil)
+	runner := buildProcessorRunner(all, nil, nil, nil, nil)
 	require.NotNil(t, runner)
 
 	// system_prompt_scrubber is skipped without completer, so input = 7, output = 4.
@@ -399,11 +402,101 @@ func TestBuildProcessorRunner_DestructiveNotWhitelisted(t *testing.T) {
 		"workspace_instructions",
 		"message_history",
 	}
-	runner := buildProcessorRunner(destructive, nil)
+	runner := buildProcessorRunner(destructive, nil, nil, nil, nil)
 	require.Nil(t, runner)
 }
 
 func TestSafeProcessorNames_Count(t *testing.T) {
 	t.Parallel()
 	require.Len(t, safeProcessorNames, 10)
+}
+
+func TestProcessorConfigSchema(t *testing.T) {
+	t.Parallel()
+	cfg := config.ProcessorConfig{
+		"pii_detector": map[string]any{
+			"sensitivity": "high",
+		},
+		"message_selection": map[string]any{
+			"max_messages": float64(50),
+			"strategy":     "recency",
+		},
+		"tool_call_filter": map[string]any{
+			"allow_list": []any{"read", "edit"},
+			"deny_list":  []any{"bash"},
+		},
+	}
+	runner := buildProcessorRunner(
+		[]string{"pii_detector", "message_selection", "tool_call_filter"},
+		cfg, nil, nil, nil,
+	)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 2)
+	require.Len(t, runner.OutputProcessors, 2)
+}
+
+func TestProcessorConfigSchema_NilConfig(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner(
+		[]string{"pii_detector", "message_selection", "tool_call_filter"},
+		nil, nil, nil, nil,
+	)
+	require.NotNil(t, runner)
+}
+
+func TestToolDefsFromMD(t *testing.T) {
+	t.Parallel()
+	toolsDir := filepath.Join("..", "agent", "tools")
+	defs := LoadToolDefsFromMD(toolsDir)
+	require.NotEmpty(t, defs, "expected at least one tool definition from .md files")
+	for _, def := range defs {
+		require.NotEmpty(t, def.Name, "tool name should not be empty")
+		require.NotEmpty(t, def.Description, "tool description should not be empty")
+		require.Nil(t, def.Tags, "tags should be nil")
+	}
+}
+
+func TestToolDefsFromMD_NonexistentDir(t *testing.T) {
+	t.Parallel()
+	defs := LoadToolDefsFromMD("/nonexistent/path")
+	require.Nil(t, defs)
+}
+
+func TestSkillsBeforeSkillSearchOrdering(t *testing.T) {
+	t.Parallel()
+	list := []string{"skill_search", "skills"}
+	enforceOrdering(list)
+	skillsIdx := -1
+	skillSearchIdx := -1
+	for i, name := range list {
+		switch name {
+		case "skills":
+			skillsIdx = i
+		case "skill_search":
+			skillSearchIdx = i
+		}
+	}
+	require.True(t, skillsIdx < skillSearchIdx, "skills should come before skill_search")
+}
+
+func TestSkillsBeforeSkillSearchOrdering_AlreadyCorrect(t *testing.T) {
+	t.Parallel()
+	list := []string{"skills", "skill_search"}
+	enforceOrdering(list)
+	require.Equal(t, "skills", list[0])
+	require.Equal(t, "skill_search", list[1])
+}
+
+func TestSkillsBeforeSkillSearchOrdering_OnlySkills(t *testing.T) {
+	t.Parallel()
+	list := []string{"skills"}
+	enforceOrdering(list)
+	require.Equal(t, []string{"skills"}, list)
+}
+
+func TestSkillsBeforeSkillSearchOrdering_OnlySkillSearch(t *testing.T) {
+	t.Parallel()
+	list := []string{"skill_search"}
+	enforceOrdering(list)
+	require.Equal(t, []string{"skill_search"}, list)
 }

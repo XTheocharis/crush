@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -168,6 +169,12 @@ type Manager interface {
 
 	// ListObservations returns all stored observations for a session.
 	ListObservations(ctx context.Context, sessionID string) ([]Observation, error)
+
+	// GetObservationPrompt returns formatted observation text for injection
+	// into the system prompt. Observations are sorted by priority descending
+	// and truncated to fit within tokenBudget using the CueInjector greedy
+	// pattern. Returns an empty string when no observations exist.
+	GetObservationPrompt(ctx context.Context, sessionID string, tokenBudget int64) (string, error)
 
 	// ListReflections returns all stored reflections for a session.
 	ListReflections(ctx context.Context, sessionID string) ([]Reflection, error)
@@ -1459,6 +1466,39 @@ func (m *compactionManager) ListObservations(ctx context.Context, sessionID stri
 		return nil, nil
 	}
 	return m.observer.ListObservations(ctx, sessionID)
+}
+
+// GetObservationPrompt returns formatted observation text for injection into
+// the system prompt. Observations are already sorted by priority descending
+// from the database. A greedy token budget is applied to truncate at the
+// budget limit, following the CueInjector pattern.
+func (m *compactionManager) GetObservationPrompt(ctx context.Context, sessionID string, tokenBudget int64) (string, error) {
+	if tokenBudget <= 0 {
+		return "", nil
+	}
+
+	observations, err := m.ListObservations(ctx, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("listing observations for prompt: %w", err)
+	}
+	if len(observations) == 0 {
+		return "", nil
+	}
+
+	// Format each observation as structured text and accumulate within budget.
+	var sb strings.Builder
+	remaining := tokenBudget
+	for _, obs := range observations {
+		text := formatObservationForPrompt(obs)
+		cost := EstimateTokens(text)
+		if cost > remaining {
+			break
+		}
+		sb.WriteString(text)
+		remaining -= cost
+	}
+
+	return sb.String(), nil
 }
 
 func (m *compactionManager) ListReflections(ctx context.Context, sessionID string) ([]Reflection, error) {
