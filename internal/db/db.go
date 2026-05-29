@@ -114,6 +114,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAverageResponseTimeStmt, err = db.PrepareContext(ctx, getAverageResponseTime); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAverageResponseTime: %w", err)
 	}
+	if q.getContentReplacementStmt, err = db.PrepareContext(ctx, getContentReplacement); err != nil {
+		return nil, fmt.Errorf("error preparing query GetContentReplacement: %w", err)
+	}
+	if q.getContentReplacementsByFileIDStmt, err = db.PrepareContext(ctx, getContentReplacementsByFileID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetContentReplacementsByFileID: %w", err)
+	}
+	if q.getContentReplacementsBySessionPositionStmt, err = db.PrepareContext(ctx, getContentReplacementsBySessionPosition); err != nil {
+		return nil, fmt.Errorf("error preparing query GetContentReplacementsBySessionPosition: %w", err)
+	}
 	if q.getFileStmt, err = db.PrepareContext(ctx, getFile); err != nil {
 		return nil, fmt.Errorf("error preparing query GetFile: %w", err)
 	}
@@ -155,6 +164,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getMessageBySessionAndSeqStmt, err = db.PrepareContext(ctx, getMessageBySessionAndSeq); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMessageBySessionAndSeq: %w", err)
+	}
+	if q.getMessageCountByTimeRangeStmt, err = db.PrepareContext(ctx, getMessageCountByTimeRange); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMessageCountByTimeRange: %w", err)
+	}
+	if q.getMessagesByTimeRangeStmt, err = db.PrepareContext(ctx, getMessagesByTimeRange); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMessagesByTimeRange: %w", err)
 	}
 	if q.getRecentActivityStmt, err = db.PrepareContext(ctx, getRecentActivity); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRecentActivity: %w", err)
@@ -221,6 +236,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listAllUserMessagesStmt, err = db.PrepareContext(ctx, listAllUserMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAllUserMessages: %w", err)
+	}
+	if q.listContentReplacementsByRoundStmt, err = db.PrepareContext(ctx, listContentReplacementsByRound); err != nil {
+		return nil, fmt.Errorf("error preparing query ListContentReplacementsByRound: %w", err)
+	}
+	if q.listContentReplacementsByStateStmt, err = db.PrepareContext(ctx, listContentReplacementsByState); err != nil {
+		return nil, fmt.Errorf("error preparing query ListContentReplacementsByState: %w", err)
 	}
 	if q.listFilesByPathStmt, err = db.PrepareContext(ctx, listFilesByPath); err != nil {
 		return nil, fmt.Errorf("error preparing query ListFilesByPath: %w", err)
@@ -294,6 +315,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listUserMessagesBySessionStmt, err = db.PrepareContext(ctx, listUserMessagesBySession); err != nil {
 		return nil, fmt.Errorf("error preparing query ListUserMessagesBySession: %w", err)
 	}
+	if q.recordContentReplacementStmt, err = db.PrepareContext(ctx, recordContentReplacement); err != nil {
+		return nil, fmt.Errorf("error preparing query RecordContentReplacement: %w", err)
+	}
 	if q.recordFileReadStmt, err = db.PrepareContext(ctx, recordFileRead); err != nil {
 		return nil, fmt.Errorf("error preparing query RecordFileRead: %w", err)
 	}
@@ -305,6 +329,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.searchLcmSummariesStmt, err = db.PrepareContext(ctx, searchLcmSummaries); err != nil {
 		return nil, fmt.Errorf("error preparing query SearchLcmSummaries: %w", err)
+	}
+	if q.updateContentReplacementStateStmt, err = db.PrepareContext(ctx, updateContentReplacementState); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateContentReplacementState: %w", err)
 	}
 	if q.updateLcmLargeFileExplorationStmt, err = db.PrepareContext(ctx, updateLcmLargeFileExploration); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateLcmLargeFileExploration: %w", err)
@@ -497,6 +524,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getAverageResponseTimeStmt: %w", cerr)
 		}
 	}
+	if q.getContentReplacementStmt != nil {
+		if cerr := q.getContentReplacementStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getContentReplacementStmt: %w", cerr)
+		}
+	}
+	if q.getContentReplacementsByFileIDStmt != nil {
+		if cerr := q.getContentReplacementsByFileIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getContentReplacementsByFileIDStmt: %w", cerr)
+		}
+	}
+	if q.getContentReplacementsBySessionPositionStmt != nil {
+		if cerr := q.getContentReplacementsBySessionPositionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getContentReplacementsBySessionPositionStmt: %w", cerr)
+		}
+	}
 	if q.getFileStmt != nil {
 		if cerr := q.getFileStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getFileStmt: %w", cerr)
@@ -565,6 +607,16 @@ func (q *Queries) Close() error {
 	if q.getMessageBySessionAndSeqStmt != nil {
 		if cerr := q.getMessageBySessionAndSeqStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getMessageBySessionAndSeqStmt: %w", cerr)
+		}
+	}
+	if q.getMessageCountByTimeRangeStmt != nil {
+		if cerr := q.getMessageCountByTimeRangeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMessageCountByTimeRangeStmt: %w", cerr)
+		}
+	}
+	if q.getMessagesByTimeRangeStmt != nil {
+		if cerr := q.getMessagesByTimeRangeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMessagesByTimeRangeStmt: %w", cerr)
 		}
 	}
 	if q.getRecentActivityStmt != nil {
@@ -675,6 +727,16 @@ func (q *Queries) Close() error {
 	if q.listAllUserMessagesStmt != nil {
 		if cerr := q.listAllUserMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAllUserMessagesStmt: %w", cerr)
+		}
+	}
+	if q.listContentReplacementsByRoundStmt != nil {
+		if cerr := q.listContentReplacementsByRoundStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listContentReplacementsByRoundStmt: %w", cerr)
+		}
+	}
+	if q.listContentReplacementsByStateStmt != nil {
+		if cerr := q.listContentReplacementsByStateStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listContentReplacementsByStateStmt: %w", cerr)
 		}
 	}
 	if q.listFilesByPathStmt != nil {
@@ -797,6 +859,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listUserMessagesBySessionStmt: %w", cerr)
 		}
 	}
+	if q.recordContentReplacementStmt != nil {
+		if cerr := q.recordContentReplacementStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing recordContentReplacementStmt: %w", cerr)
+		}
+	}
 	if q.recordFileReadStmt != nil {
 		if cerr := q.recordFileReadStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing recordFileReadStmt: %w", cerr)
@@ -815,6 +882,11 @@ func (q *Queries) Close() error {
 	if q.searchLcmSummariesStmt != nil {
 		if cerr := q.searchLcmSummariesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing searchLcmSummariesStmt: %w", cerr)
+		}
+	}
+	if q.updateContentReplacementStateStmt != nil {
+		if cerr := q.updateContentReplacementStateStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateContentReplacementStateStmt: %w", cerr)
 		}
 	}
 	if q.updateLcmLargeFileExplorationStmt != nil {
@@ -914,225 +986,243 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                                DBTX
-	tx                                *sql.Tx
-	addSnapshotFileStmt               *sql.Stmt
-	appendLcmContextItemStmt          *sql.Stmt
-	clearSessionSummaryMessageIDStmt  *sql.Stmt
-	cloneSessionFilesStmt             *sql.Stmt
-	cloneSessionMessagesStmt          *sql.Stmt
-	countTurnSnapshotsStmt            *sql.Stmt
-	createFileStmt                    *sql.Stmt
-	createMessageStmt                 *sql.Stmt
-	createSessionStmt                 *sql.Stmt
-	createTurnSnapshotStmt            *sql.Stmt
-	deleteAllLcmContextItemsStmt      *sql.Stmt
-	deleteFileStmt                    *sql.Stmt
-	deleteLcmSummaryStmt              *sql.Stmt
-	deleteLcmSummaryMessagesStmt      *sql.Stmt
-	deleteLcmSummaryParentsStmt       *sql.Stmt
-	deleteMessageStmt                 *sql.Stmt
-	deleteMessagesAfterSeqStmt        *sql.Stmt
-	deleteOldTurnSnapshotsStmt        *sql.Stmt
-	deleteRepoMapFileCacheStmt        *sql.Stmt
-	deleteRepoMapTagsByPathStmt       *sql.Stmt
-	deleteSessionStmt                 *sql.Stmt
-	deleteSessionFilesStmt            *sql.Stmt
-	deleteSessionMessagesStmt         *sql.Stmt
-	deleteSessionRankingsStmt         *sql.Stmt
-	deleteSessionReadOnlyPathsStmt    *sql.Stmt
-	deleteSessionTurnSnapshotsStmt    *sql.Stmt
-	deleteSnapshotFilesStmt           *sql.Stmt
-	deleteSnapshotsAfterSeqStmt       *sql.Stmt
-	deleteTurnSnapshotStmt            *sql.Stmt
-	getAverageResponseTimeStmt        *sql.Stmt
-	getFileStmt                       *sql.Stmt
-	getFileByPathAndSessionStmt       *sql.Stmt
-	getFileReadStmt                   *sql.Stmt
-	getFileWriteStmt                  *sql.Stmt
-	getHourDayHeatmapStmt             *sql.Stmt
-	getLastSessionStmt                *sql.Stmt
-	getLatestTurnSnapshotStmt         *sql.Stmt
-	getLatestUserMessageStmt          *sql.Stmt
-	getLcmContextTokenCountStmt       *sql.Stmt
-	getLcmLargeFileStmt               *sql.Stmt
-	getLcmSessionConfigStmt           *sql.Stmt
-	getLcmSummaryStmt                 *sql.Stmt
-	getMessageStmt                    *sql.Stmt
-	getMessageBySessionAndSeqStmt     *sql.Stmt
-	getRecentActivityStmt             *sql.Stmt
-	getRepoMapFileCacheStmt           *sql.Stmt
-	getRepoMapFileCacheByPathStmt     *sql.Stmt
-	getSessionByIDStmt                *sql.Stmt
-	getToolUsageStmt                  *sql.Stmt
-	getTotalStatsStmt                 *sql.Stmt
-	getTurnSnapshotStmt               *sql.Stmt
-	getTurnSnapshotAtOrBeforeSeqStmt  *sql.Stmt
-	getTurnSnapshotByMessageStmt      *sql.Stmt
-	getUsageByDayStmt                 *sql.Stmt
-	getUsageByDayOfWeekStmt           *sql.Stmt
-	getUsageByHourStmt                *sql.Stmt
-	getUsageByModelStmt               *sql.Stmt
-	insertLcmContextItemStmt          *sql.Stmt
-	insertLcmLargeFileStmt            *sql.Stmt
-	insertLcmMapItemStmt              *sql.Stmt
-	insertLcmMapRunStmt               *sql.Stmt
-	insertLcmSummaryStmt              *sql.Stmt
-	insertLcmSummaryMessageStmt       *sql.Stmt
-	insertLcmSummaryParentStmt        *sql.Stmt
-	insertRepoMapTagStmt              *sql.Stmt
-	listAllUserMessagesStmt           *sql.Stmt
-	listFilesByPathStmt               *sql.Stmt
-	listFilesBySessionStmt            *sql.Stmt
-	listLatestSessionFilesStmt        *sql.Stmt
-	listLcmContextItemsStmt           *sql.Stmt
-	listLcmLargeFilesBySessionStmt    *sql.Stmt
-	listLcmSummariesBySessionStmt     *sql.Stmt
-	listLcmSummaryMessagesStmt        *sql.Stmt
-	listLcmSummaryParentsStmt         *sql.Stmt
-	listMessagesBySessionStmt         *sql.Stmt
-	listMessagesBySessionSeqStmt      *sql.Stmt
-	listMessagesInSeqRangeStmt        *sql.Stmt
-	listNewFilesStmt                  *sql.Stmt
-	listRecentReadFilesStmt           *sql.Stmt
-	listRecentSessionReadFilesStmt    *sql.Stmt
-	listRepoMapDefsByNameStmt         *sql.Stmt
-	listRepoMapTagsStmt               *sql.Stmt
-	listSessionRankingsStmt           *sql.Stmt
-	listSessionReadFilesStmt          *sql.Stmt
-	listSessionReadOnlyPathsStmt      *sql.Stmt
-	listSessionWrittenFilesStmt       *sql.Stmt
-	listSessionsStmt                  *sql.Stmt
-	listSnapshotFilesStmt             *sql.Stmt
-	listTurnSnapshotsBySessionStmt    *sql.Stmt
-	listUserMessagesBySessionStmt     *sql.Stmt
-	recordFileReadStmt                *sql.Stmt
-	recordFileWriteStmt               *sql.Stmt
-	renameSessionStmt                 *sql.Stmt
-	searchLcmSummariesStmt            *sql.Stmt
-	updateLcmLargeFileExplorationStmt *sql.Stmt
-	updateLcmMapItemStmt              *sql.Stmt
-	updateLcmMapRunStatusStmt         *sql.Stmt
-	updateLcmSessionConfigStmt        *sql.Stmt
-	updateMessageStmt                 *sql.Stmt
-	updateMessageTokenCountStmt       *sql.Stmt
-	updateSessionStmt                 *sql.Stmt
-	updateSessionTitleAndUsageStmt    *sql.Stmt
-	upsertLcmSessionConfigStmt        *sql.Stmt
-	upsertRepoMapFileCacheStmt        *sql.Stmt
-	upsertSessionRankingStmt          *sql.Stmt
-	upsertSessionReadOnlyPathStmt     *sql.Stmt
+	db                                          DBTX
+	tx                                          *sql.Tx
+	addSnapshotFileStmt                         *sql.Stmt
+	appendLcmContextItemStmt                    *sql.Stmt
+	clearSessionSummaryMessageIDStmt            *sql.Stmt
+	cloneSessionFilesStmt                       *sql.Stmt
+	cloneSessionMessagesStmt                    *sql.Stmt
+	countTurnSnapshotsStmt                      *sql.Stmt
+	createFileStmt                              *sql.Stmt
+	createMessageStmt                           *sql.Stmt
+	createSessionStmt                           *sql.Stmt
+	createTurnSnapshotStmt                      *sql.Stmt
+	deleteAllLcmContextItemsStmt                *sql.Stmt
+	deleteFileStmt                              *sql.Stmt
+	deleteLcmSummaryStmt                        *sql.Stmt
+	deleteLcmSummaryMessagesStmt                *sql.Stmt
+	deleteLcmSummaryParentsStmt                 *sql.Stmt
+	deleteMessageStmt                           *sql.Stmt
+	deleteMessagesAfterSeqStmt                  *sql.Stmt
+	deleteOldTurnSnapshotsStmt                  *sql.Stmt
+	deleteRepoMapFileCacheStmt                  *sql.Stmt
+	deleteRepoMapTagsByPathStmt                 *sql.Stmt
+	deleteSessionStmt                           *sql.Stmt
+	deleteSessionFilesStmt                      *sql.Stmt
+	deleteSessionMessagesStmt                   *sql.Stmt
+	deleteSessionRankingsStmt                   *sql.Stmt
+	deleteSessionReadOnlyPathsStmt              *sql.Stmt
+	deleteSessionTurnSnapshotsStmt              *sql.Stmt
+	deleteSnapshotFilesStmt                     *sql.Stmt
+	deleteSnapshotsAfterSeqStmt                 *sql.Stmt
+	deleteTurnSnapshotStmt                      *sql.Stmt
+	getAverageResponseTimeStmt                  *sql.Stmt
+	getContentReplacementStmt                   *sql.Stmt
+	getContentReplacementsByFileIDStmt          *sql.Stmt
+	getContentReplacementsBySessionPositionStmt *sql.Stmt
+	getFileStmt                                 *sql.Stmt
+	getFileByPathAndSessionStmt                 *sql.Stmt
+	getFileReadStmt                             *sql.Stmt
+	getFileWriteStmt                            *sql.Stmt
+	getHourDayHeatmapStmt                       *sql.Stmt
+	getLastSessionStmt                          *sql.Stmt
+	getLatestTurnSnapshotStmt                   *sql.Stmt
+	getLatestUserMessageStmt                    *sql.Stmt
+	getLcmContextTokenCountStmt                 *sql.Stmt
+	getLcmLargeFileStmt                         *sql.Stmt
+	getLcmSessionConfigStmt                     *sql.Stmt
+	getLcmSummaryStmt                           *sql.Stmt
+	getMessageStmt                              *sql.Stmt
+	getMessageBySessionAndSeqStmt               *sql.Stmt
+	getMessageCountByTimeRangeStmt              *sql.Stmt
+	getMessagesByTimeRangeStmt                  *sql.Stmt
+	getRecentActivityStmt                       *sql.Stmt
+	getRepoMapFileCacheStmt                     *sql.Stmt
+	getRepoMapFileCacheByPathStmt               *sql.Stmt
+	getSessionByIDStmt                          *sql.Stmt
+	getToolUsageStmt                            *sql.Stmt
+	getTotalStatsStmt                           *sql.Stmt
+	getTurnSnapshotStmt                         *sql.Stmt
+	getTurnSnapshotAtOrBeforeSeqStmt            *sql.Stmt
+	getTurnSnapshotByMessageStmt                *sql.Stmt
+	getUsageByDayStmt                           *sql.Stmt
+	getUsageByDayOfWeekStmt                     *sql.Stmt
+	getUsageByHourStmt                          *sql.Stmt
+	getUsageByModelStmt                         *sql.Stmt
+	insertLcmContextItemStmt                    *sql.Stmt
+	insertLcmLargeFileStmt                      *sql.Stmt
+	insertLcmMapItemStmt                        *sql.Stmt
+	insertLcmMapRunStmt                         *sql.Stmt
+	insertLcmSummaryStmt                        *sql.Stmt
+	insertLcmSummaryMessageStmt                 *sql.Stmt
+	insertLcmSummaryParentStmt                  *sql.Stmt
+	insertRepoMapTagStmt                        *sql.Stmt
+	listAllUserMessagesStmt                     *sql.Stmt
+	listContentReplacementsByRoundStmt          *sql.Stmt
+	listContentReplacementsByStateStmt          *sql.Stmt
+	listFilesByPathStmt                         *sql.Stmt
+	listFilesBySessionStmt                      *sql.Stmt
+	listLatestSessionFilesStmt                  *sql.Stmt
+	listLcmContextItemsStmt                     *sql.Stmt
+	listLcmLargeFilesBySessionStmt              *sql.Stmt
+	listLcmSummariesBySessionStmt               *sql.Stmt
+	listLcmSummaryMessagesStmt                  *sql.Stmt
+	listLcmSummaryParentsStmt                   *sql.Stmt
+	listMessagesBySessionStmt                   *sql.Stmt
+	listMessagesBySessionSeqStmt                *sql.Stmt
+	listMessagesInSeqRangeStmt                  *sql.Stmt
+	listNewFilesStmt                            *sql.Stmt
+	listRecentReadFilesStmt                     *sql.Stmt
+	listRecentSessionReadFilesStmt              *sql.Stmt
+	listRepoMapDefsByNameStmt                   *sql.Stmt
+	listRepoMapTagsStmt                         *sql.Stmt
+	listSessionRankingsStmt                     *sql.Stmt
+	listSessionReadFilesStmt                    *sql.Stmt
+	listSessionReadOnlyPathsStmt                *sql.Stmt
+	listSessionWrittenFilesStmt                 *sql.Stmt
+	listSessionsStmt                            *sql.Stmt
+	listSnapshotFilesStmt                       *sql.Stmt
+	listTurnSnapshotsBySessionStmt              *sql.Stmt
+	listUserMessagesBySessionStmt               *sql.Stmt
+	recordContentReplacementStmt                *sql.Stmt
+	recordFileReadStmt                          *sql.Stmt
+	recordFileWriteStmt                         *sql.Stmt
+	renameSessionStmt                           *sql.Stmt
+	searchLcmSummariesStmt                      *sql.Stmt
+	updateContentReplacementStateStmt           *sql.Stmt
+	updateLcmLargeFileExplorationStmt           *sql.Stmt
+	updateLcmMapItemStmt                        *sql.Stmt
+	updateLcmMapRunStatusStmt                   *sql.Stmt
+	updateLcmSessionConfigStmt                  *sql.Stmt
+	updateMessageStmt                           *sql.Stmt
+	updateMessageTokenCountStmt                 *sql.Stmt
+	updateSessionStmt                           *sql.Stmt
+	updateSessionTitleAndUsageStmt              *sql.Stmt
+	upsertLcmSessionConfigStmt                  *sql.Stmt
+	upsertRepoMapFileCacheStmt                  *sql.Stmt
+	upsertSessionRankingStmt                    *sql.Stmt
+	upsertSessionReadOnlyPathStmt               *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                                tx,
-		tx:                                tx,
-		addSnapshotFileStmt:               q.addSnapshotFileStmt,
-		appendLcmContextItemStmt:          q.appendLcmContextItemStmt,
-		clearSessionSummaryMessageIDStmt:  q.clearSessionSummaryMessageIDStmt,
-		cloneSessionFilesStmt:             q.cloneSessionFilesStmt,
-		cloneSessionMessagesStmt:          q.cloneSessionMessagesStmt,
-		countTurnSnapshotsStmt:            q.countTurnSnapshotsStmt,
-		createFileStmt:                    q.createFileStmt,
-		createMessageStmt:                 q.createMessageStmt,
-		createSessionStmt:                 q.createSessionStmt,
-		createTurnSnapshotStmt:            q.createTurnSnapshotStmt,
-		deleteAllLcmContextItemsStmt:      q.deleteAllLcmContextItemsStmt,
-		deleteFileStmt:                    q.deleteFileStmt,
-		deleteLcmSummaryStmt:              q.deleteLcmSummaryStmt,
-		deleteLcmSummaryMessagesStmt:      q.deleteLcmSummaryMessagesStmt,
-		deleteLcmSummaryParentsStmt:       q.deleteLcmSummaryParentsStmt,
-		deleteMessageStmt:                 q.deleteMessageStmt,
-		deleteMessagesAfterSeqStmt:        q.deleteMessagesAfterSeqStmt,
-		deleteOldTurnSnapshotsStmt:        q.deleteOldTurnSnapshotsStmt,
-		deleteRepoMapFileCacheStmt:        q.deleteRepoMapFileCacheStmt,
-		deleteRepoMapTagsByPathStmt:       q.deleteRepoMapTagsByPathStmt,
-		deleteSessionStmt:                 q.deleteSessionStmt,
-		deleteSessionFilesStmt:            q.deleteSessionFilesStmt,
-		deleteSessionMessagesStmt:         q.deleteSessionMessagesStmt,
-		deleteSessionRankingsStmt:         q.deleteSessionRankingsStmt,
-		deleteSessionReadOnlyPathsStmt:    q.deleteSessionReadOnlyPathsStmt,
-		deleteSessionTurnSnapshotsStmt:    q.deleteSessionTurnSnapshotsStmt,
-		deleteSnapshotFilesStmt:           q.deleteSnapshotFilesStmt,
-		deleteSnapshotsAfterSeqStmt:       q.deleteSnapshotsAfterSeqStmt,
-		deleteTurnSnapshotStmt:            q.deleteTurnSnapshotStmt,
-		getAverageResponseTimeStmt:        q.getAverageResponseTimeStmt,
-		getFileStmt:                       q.getFileStmt,
-		getFileByPathAndSessionStmt:       q.getFileByPathAndSessionStmt,
-		getFileReadStmt:                   q.getFileReadStmt,
-		getFileWriteStmt:                  q.getFileWriteStmt,
-		getHourDayHeatmapStmt:             q.getHourDayHeatmapStmt,
-		getLastSessionStmt:                q.getLastSessionStmt,
-		getLatestTurnSnapshotStmt:         q.getLatestTurnSnapshotStmt,
-		getLatestUserMessageStmt:          q.getLatestUserMessageStmt,
-		getLcmContextTokenCountStmt:       q.getLcmContextTokenCountStmt,
-		getLcmLargeFileStmt:               q.getLcmLargeFileStmt,
-		getLcmSessionConfigStmt:           q.getLcmSessionConfigStmt,
-		getLcmSummaryStmt:                 q.getLcmSummaryStmt,
-		getMessageStmt:                    q.getMessageStmt,
-		getMessageBySessionAndSeqStmt:     q.getMessageBySessionAndSeqStmt,
-		getRecentActivityStmt:             q.getRecentActivityStmt,
-		getRepoMapFileCacheStmt:           q.getRepoMapFileCacheStmt,
-		getRepoMapFileCacheByPathStmt:     q.getRepoMapFileCacheByPathStmt,
-		getSessionByIDStmt:                q.getSessionByIDStmt,
-		getToolUsageStmt:                  q.getToolUsageStmt,
-		getTotalStatsStmt:                 q.getTotalStatsStmt,
-		getTurnSnapshotStmt:               q.getTurnSnapshotStmt,
-		getTurnSnapshotAtOrBeforeSeqStmt:  q.getTurnSnapshotAtOrBeforeSeqStmt,
-		getTurnSnapshotByMessageStmt:      q.getTurnSnapshotByMessageStmt,
-		getUsageByDayStmt:                 q.getUsageByDayStmt,
-		getUsageByDayOfWeekStmt:           q.getUsageByDayOfWeekStmt,
-		getUsageByHourStmt:                q.getUsageByHourStmt,
-		getUsageByModelStmt:               q.getUsageByModelStmt,
-		insertLcmContextItemStmt:          q.insertLcmContextItemStmt,
-		insertLcmLargeFileStmt:            q.insertLcmLargeFileStmt,
-		insertLcmMapItemStmt:              q.insertLcmMapItemStmt,
-		insertLcmMapRunStmt:               q.insertLcmMapRunStmt,
-		insertLcmSummaryStmt:              q.insertLcmSummaryStmt,
-		insertLcmSummaryMessageStmt:       q.insertLcmSummaryMessageStmt,
-		insertLcmSummaryParentStmt:        q.insertLcmSummaryParentStmt,
-		insertRepoMapTagStmt:              q.insertRepoMapTagStmt,
-		listAllUserMessagesStmt:           q.listAllUserMessagesStmt,
-		listFilesByPathStmt:               q.listFilesByPathStmt,
-		listFilesBySessionStmt:            q.listFilesBySessionStmt,
-		listLatestSessionFilesStmt:        q.listLatestSessionFilesStmt,
-		listLcmContextItemsStmt:           q.listLcmContextItemsStmt,
-		listLcmLargeFilesBySessionStmt:    q.listLcmLargeFilesBySessionStmt,
-		listLcmSummariesBySessionStmt:     q.listLcmSummariesBySessionStmt,
-		listLcmSummaryMessagesStmt:        q.listLcmSummaryMessagesStmt,
-		listLcmSummaryParentsStmt:         q.listLcmSummaryParentsStmt,
-		listMessagesBySessionStmt:         q.listMessagesBySessionStmt,
-		listMessagesBySessionSeqStmt:      q.listMessagesBySessionSeqStmt,
-		listMessagesInSeqRangeStmt:        q.listMessagesInSeqRangeStmt,
-		listNewFilesStmt:                  q.listNewFilesStmt,
-		listRecentReadFilesStmt:           q.listRecentReadFilesStmt,
-		listRecentSessionReadFilesStmt:    q.listRecentSessionReadFilesStmt,
-		listRepoMapDefsByNameStmt:         q.listRepoMapDefsByNameStmt,
-		listRepoMapTagsStmt:               q.listRepoMapTagsStmt,
-		listSessionRankingsStmt:           q.listSessionRankingsStmt,
-		listSessionReadFilesStmt:          q.listSessionReadFilesStmt,
-		listSessionReadOnlyPathsStmt:      q.listSessionReadOnlyPathsStmt,
-		listSessionWrittenFilesStmt:       q.listSessionWrittenFilesStmt,
-		listSessionsStmt:                  q.listSessionsStmt,
-		listSnapshotFilesStmt:             q.listSnapshotFilesStmt,
-		listTurnSnapshotsBySessionStmt:    q.listTurnSnapshotsBySessionStmt,
-		listUserMessagesBySessionStmt:     q.listUserMessagesBySessionStmt,
-		recordFileReadStmt:                q.recordFileReadStmt,
-		recordFileWriteStmt:               q.recordFileWriteStmt,
-		renameSessionStmt:                 q.renameSessionStmt,
-		searchLcmSummariesStmt:            q.searchLcmSummariesStmt,
-		updateLcmLargeFileExplorationStmt: q.updateLcmLargeFileExplorationStmt,
-		updateLcmMapItemStmt:              q.updateLcmMapItemStmt,
-		updateLcmMapRunStatusStmt:         q.updateLcmMapRunStatusStmt,
-		updateLcmSessionConfigStmt:        q.updateLcmSessionConfigStmt,
-		updateMessageStmt:                 q.updateMessageStmt,
-		updateMessageTokenCountStmt:       q.updateMessageTokenCountStmt,
-		updateSessionStmt:                 q.updateSessionStmt,
-		updateSessionTitleAndUsageStmt:    q.updateSessionTitleAndUsageStmt,
-		upsertLcmSessionConfigStmt:        q.upsertLcmSessionConfigStmt,
-		upsertRepoMapFileCacheStmt:        q.upsertRepoMapFileCacheStmt,
-		upsertSessionRankingStmt:          q.upsertSessionRankingStmt,
-		upsertSessionReadOnlyPathStmt:     q.upsertSessionReadOnlyPathStmt,
+		db:                                          tx,
+		tx:                                          tx,
+		addSnapshotFileStmt:                         q.addSnapshotFileStmt,
+		appendLcmContextItemStmt:                    q.appendLcmContextItemStmt,
+		clearSessionSummaryMessageIDStmt:            q.clearSessionSummaryMessageIDStmt,
+		cloneSessionFilesStmt:                       q.cloneSessionFilesStmt,
+		cloneSessionMessagesStmt:                    q.cloneSessionMessagesStmt,
+		countTurnSnapshotsStmt:                      q.countTurnSnapshotsStmt,
+		createFileStmt:                              q.createFileStmt,
+		createMessageStmt:                           q.createMessageStmt,
+		createSessionStmt:                           q.createSessionStmt,
+		createTurnSnapshotStmt:                      q.createTurnSnapshotStmt,
+		deleteAllLcmContextItemsStmt:                q.deleteAllLcmContextItemsStmt,
+		deleteFileStmt:                              q.deleteFileStmt,
+		deleteLcmSummaryStmt:                        q.deleteLcmSummaryStmt,
+		deleteLcmSummaryMessagesStmt:                q.deleteLcmSummaryMessagesStmt,
+		deleteLcmSummaryParentsStmt:                 q.deleteLcmSummaryParentsStmt,
+		deleteMessageStmt:                           q.deleteMessageStmt,
+		deleteMessagesAfterSeqStmt:                  q.deleteMessagesAfterSeqStmt,
+		deleteOldTurnSnapshotsStmt:                  q.deleteOldTurnSnapshotsStmt,
+		deleteRepoMapFileCacheStmt:                  q.deleteRepoMapFileCacheStmt,
+		deleteRepoMapTagsByPathStmt:                 q.deleteRepoMapTagsByPathStmt,
+		deleteSessionStmt:                           q.deleteSessionStmt,
+		deleteSessionFilesStmt:                      q.deleteSessionFilesStmt,
+		deleteSessionMessagesStmt:                   q.deleteSessionMessagesStmt,
+		deleteSessionRankingsStmt:                   q.deleteSessionRankingsStmt,
+		deleteSessionReadOnlyPathsStmt:              q.deleteSessionReadOnlyPathsStmt,
+		deleteSessionTurnSnapshotsStmt:              q.deleteSessionTurnSnapshotsStmt,
+		deleteSnapshotFilesStmt:                     q.deleteSnapshotFilesStmt,
+		deleteSnapshotsAfterSeqStmt:                 q.deleteSnapshotsAfterSeqStmt,
+		deleteTurnSnapshotStmt:                      q.deleteTurnSnapshotStmt,
+		getAverageResponseTimeStmt:                  q.getAverageResponseTimeStmt,
+		getContentReplacementStmt:                   q.getContentReplacementStmt,
+		getContentReplacementsByFileIDStmt:          q.getContentReplacementsByFileIDStmt,
+		getContentReplacementsBySessionPositionStmt: q.getContentReplacementsBySessionPositionStmt,
+		getFileStmt:                                 q.getFileStmt,
+		getFileByPathAndSessionStmt:                 q.getFileByPathAndSessionStmt,
+		getFileReadStmt:                             q.getFileReadStmt,
+		getFileWriteStmt:                            q.getFileWriteStmt,
+		getHourDayHeatmapStmt:                       q.getHourDayHeatmapStmt,
+		getLastSessionStmt:                          q.getLastSessionStmt,
+		getLatestTurnSnapshotStmt:                   q.getLatestTurnSnapshotStmt,
+		getLatestUserMessageStmt:                    q.getLatestUserMessageStmt,
+		getLcmContextTokenCountStmt:                 q.getLcmContextTokenCountStmt,
+		getLcmLargeFileStmt:                         q.getLcmLargeFileStmt,
+		getLcmSessionConfigStmt:                     q.getLcmSessionConfigStmt,
+		getLcmSummaryStmt:                           q.getLcmSummaryStmt,
+		getMessageStmt:                              q.getMessageStmt,
+		getMessageBySessionAndSeqStmt:               q.getMessageBySessionAndSeqStmt,
+		getMessageCountByTimeRangeStmt:              q.getMessageCountByTimeRangeStmt,
+		getMessagesByTimeRangeStmt:                  q.getMessagesByTimeRangeStmt,
+		getRecentActivityStmt:                       q.getRecentActivityStmt,
+		getRepoMapFileCacheStmt:                     q.getRepoMapFileCacheStmt,
+		getRepoMapFileCacheByPathStmt:               q.getRepoMapFileCacheByPathStmt,
+		getSessionByIDStmt:                          q.getSessionByIDStmt,
+		getToolUsageStmt:                            q.getToolUsageStmt,
+		getTotalStatsStmt:                           q.getTotalStatsStmt,
+		getTurnSnapshotStmt:                         q.getTurnSnapshotStmt,
+		getTurnSnapshotAtOrBeforeSeqStmt:            q.getTurnSnapshotAtOrBeforeSeqStmt,
+		getTurnSnapshotByMessageStmt:                q.getTurnSnapshotByMessageStmt,
+		getUsageByDayStmt:                           q.getUsageByDayStmt,
+		getUsageByDayOfWeekStmt:                     q.getUsageByDayOfWeekStmt,
+		getUsageByHourStmt:                          q.getUsageByHourStmt,
+		getUsageByModelStmt:                         q.getUsageByModelStmt,
+		insertLcmContextItemStmt:                    q.insertLcmContextItemStmt,
+		insertLcmLargeFileStmt:                      q.insertLcmLargeFileStmt,
+		insertLcmMapItemStmt:                        q.insertLcmMapItemStmt,
+		insertLcmMapRunStmt:                         q.insertLcmMapRunStmt,
+		insertLcmSummaryStmt:                        q.insertLcmSummaryStmt,
+		insertLcmSummaryMessageStmt:                 q.insertLcmSummaryMessageStmt,
+		insertLcmSummaryParentStmt:                  q.insertLcmSummaryParentStmt,
+		insertRepoMapTagStmt:                        q.insertRepoMapTagStmt,
+		listAllUserMessagesStmt:                     q.listAllUserMessagesStmt,
+		listContentReplacementsByRoundStmt:          q.listContentReplacementsByRoundStmt,
+		listContentReplacementsByStateStmt:          q.listContentReplacementsByStateStmt,
+		listFilesByPathStmt:                         q.listFilesByPathStmt,
+		listFilesBySessionStmt:                      q.listFilesBySessionStmt,
+		listLatestSessionFilesStmt:                  q.listLatestSessionFilesStmt,
+		listLcmContextItemsStmt:                     q.listLcmContextItemsStmt,
+		listLcmLargeFilesBySessionStmt:              q.listLcmLargeFilesBySessionStmt,
+		listLcmSummariesBySessionStmt:               q.listLcmSummariesBySessionStmt,
+		listLcmSummaryMessagesStmt:                  q.listLcmSummaryMessagesStmt,
+		listLcmSummaryParentsStmt:                   q.listLcmSummaryParentsStmt,
+		listMessagesBySessionStmt:                   q.listMessagesBySessionStmt,
+		listMessagesBySessionSeqStmt:                q.listMessagesBySessionSeqStmt,
+		listMessagesInSeqRangeStmt:                  q.listMessagesInSeqRangeStmt,
+		listNewFilesStmt:                            q.listNewFilesStmt,
+		listRecentReadFilesStmt:                     q.listRecentReadFilesStmt,
+		listRecentSessionReadFilesStmt:              q.listRecentSessionReadFilesStmt,
+		listRepoMapDefsByNameStmt:                   q.listRepoMapDefsByNameStmt,
+		listRepoMapTagsStmt:                         q.listRepoMapTagsStmt,
+		listSessionRankingsStmt:                     q.listSessionRankingsStmt,
+		listSessionReadFilesStmt:                    q.listSessionReadFilesStmt,
+		listSessionReadOnlyPathsStmt:                q.listSessionReadOnlyPathsStmt,
+		listSessionWrittenFilesStmt:                 q.listSessionWrittenFilesStmt,
+		listSessionsStmt:                            q.listSessionsStmt,
+		listSnapshotFilesStmt:                       q.listSnapshotFilesStmt,
+		listTurnSnapshotsBySessionStmt:              q.listTurnSnapshotsBySessionStmt,
+		listUserMessagesBySessionStmt:               q.listUserMessagesBySessionStmt,
+		recordContentReplacementStmt:                q.recordContentReplacementStmt,
+		recordFileReadStmt:                          q.recordFileReadStmt,
+		recordFileWriteStmt:                         q.recordFileWriteStmt,
+		renameSessionStmt:                           q.renameSessionStmt,
+		searchLcmSummariesStmt:                      q.searchLcmSummariesStmt,
+		updateContentReplacementStateStmt:           q.updateContentReplacementStateStmt,
+		updateLcmLargeFileExplorationStmt:           q.updateLcmLargeFileExplorationStmt,
+		updateLcmMapItemStmt:                        q.updateLcmMapItemStmt,
+		updateLcmMapRunStatusStmt:                   q.updateLcmMapRunStatusStmt,
+		updateLcmSessionConfigStmt:                  q.updateLcmSessionConfigStmt,
+		updateMessageStmt:                           q.updateMessageStmt,
+		updateMessageTokenCountStmt:                 q.updateMessageTokenCountStmt,
+		updateSessionStmt:                           q.updateSessionStmt,
+		updateSessionTitleAndUsageStmt:              q.updateSessionTitleAndUsageStmt,
+		upsertLcmSessionConfigStmt:                  q.upsertLcmSessionConfigStmt,
+		upsertRepoMapFileCacheStmt:                  q.upsertRepoMapFileCacheStmt,
+		upsertSessionRankingStmt:                    q.upsertSessionRankingStmt,
+		upsertSessionReadOnlyPathStmt:               q.upsertSessionReadOnlyPathStmt,
 	}
 }

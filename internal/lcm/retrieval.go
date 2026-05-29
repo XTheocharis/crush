@@ -139,6 +139,118 @@ func (s *Store) Dolt(ctx context.Context, sessionID string) (string, error) {
 	return sb.String(), nil
 }
 
+// QueryByLineage traverses the summary DAG from a starting summary in the
+// requested direction, up to maxDepth levels. It uses recursive CTEs on
+// lcm_summary_parents and returns structured LineageNode values.
+func (s *Store) QueryByLineage(ctx context.Context, sessionID, summaryID string, direction LineageDirection, maxDepth int) ([]LineageNode, error) {
+	if maxDepth <= 0 {
+		maxDepth = 10
+	}
+
+	var nodes []LineageNode
+
+	if direction == LineageAncestors || direction == LineageBoth {
+		anc, err := s.queryLineageDirection(ctx, sessionID, summaryID, maxDepth, true)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, anc...)
+	}
+
+	if direction == LineageDescendants || direction == LineageBoth {
+		desc, err := s.queryLineageDirection(ctx, sessionID, summaryID, maxDepth, false)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, desc...)
+	}
+
+	return nodes, nil
+}
+
+func (s *Store) queryLineageDirection(ctx context.Context, sessionID, startSummaryID string, maxDepth int, ancestors bool) ([]LineageNode, error) {
+	var cte string
+	if ancestors {
+		cte = `
+			WITH RECURSIVE lineage(summary_id, parent_id, depth) AS (
+				SELECT ?, '', 0
+				UNION
+				SELECT sp.parent_summary_id, sp.summary_id, l.depth + 1
+				FROM lcm_summary_parents sp
+				JOIN lineage l ON sp.summary_id = l.summary_id
+				WHERE l.depth < ?
+			)`
+	} else {
+		cte = `
+			WITH RECURSIVE lineage(summary_id, parent_id, depth) AS (
+				SELECT ?, '', 0
+				UNION
+				SELECT sp.summary_id, sp.parent_summary_id, l.depth + 1
+				FROM lcm_summary_parents sp
+				JOIN lineage l ON sp.parent_summary_id = l.summary_id
+				WHERE l.depth < ?
+			)`
+	}
+
+	query := cte + `
+		SELECT l.summary_id, l.parent_id, l.depth, ls.token_count, ls.kind
+		FROM lineage l
+		JOIN lcm_summaries ls ON ls.summary_id = l.summary_id
+		WHERE ls.session_id = ?
+		ORDER BY l.depth ASC`
+
+	rows, err := s.rawDB.QueryContext(ctx, query, startSummaryID, maxDepth, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("querying lineage for %s: %w", startSummaryID, err)
+	}
+	defer rows.Close()
+
+	var nodes []LineageNode
+	for rows.Next() {
+		var n LineageNode
+		if err := rows.Scan(&n.SummaryID, &n.ParentID, &n.Depth, &n.TokenCount, &n.Kind); err != nil {
+			return nil, fmt.Errorf("scanning lineage node: %w", err)
+		}
+		nodes = append(nodes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating lineage nodes: %w", err)
+	}
+	return nodes, nil
+}
+
+// Lineage retrieves the lineage of a summary and returns formatted text.
+func (s *Store) Lineage(ctx context.Context, sessionID, summaryID string, direction LineageDirection, maxDepth int) (string, error) {
+	nodes, err := s.QueryByLineage(ctx, sessionID, summaryID, direction, maxDepth)
+	if err != nil {
+		return "", err
+	}
+
+	if len(nodes) == 0 {
+		return fmt.Sprintf("No lineage found for summary %s in session %s", summaryID, sessionID), nil
+	}
+
+	dirLabel := "both"
+	switch direction {
+	case LineageAncestors:
+		dirLabel = "ancestors"
+	case LineageDescendants:
+		dirLabel = "descendants"
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Lineage for %s (direction=%s, max_depth=%d, %d nodes):\n\n", summaryID, dirLabel, maxDepth, len(nodes))
+	for _, n := range nodes {
+		indent := strings.Repeat("  ", n.Depth)
+		parentInfo := ""
+		if n.ParentID != "" {
+			parentInfo = fmt.Sprintf(" parent=%s", n.ParentID)
+		}
+		fmt.Fprintf(&sb, "%sdepth=%d  %s  (kind=%s, tokens=%d%s)\n", indent, n.Depth, n.SummaryID, n.Kind, n.TokenCount, parentInfo)
+	}
+	return sb.String(), nil
+}
+
 // Archive searches summary content using FTS5 and returns formatted matches.
 // Returns a "no matches" message when nothing is found.
 func (s *Store) Archive(ctx context.Context, sessionID, pattern string) (string, error) {

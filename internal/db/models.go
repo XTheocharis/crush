@@ -40,6 +40,20 @@ type LcmAutoMemory struct {
 	Priority         string  `json:"priority"`
 }
 
+type LcmContentReplacement struct {
+	ID                    int64          `json:"id"`
+	SessionID             string         `json:"session_id"`
+	Position              int64          `json:"position"`
+	MessageID             sql.NullString `json:"message_id"`
+	FileID                sql.NullString `json:"file_id"`
+	State                 string         `json:"state"`
+	Round                 int64          `json:"round"`
+	OriginalTokenCount    int64          `json:"original_token_count"`
+	ReplacementTokenCount int64          `json:"replacement_token_count"`
+	CreatedAt             int64          `json:"created_at"`
+	UpdatedAt             int64          `json:"updated_at"`
+}
+
 type LcmContextItem struct {
 	SessionID  string         `json:"session_id"`
 	Position   int64          `json:"position"`
@@ -58,6 +72,10 @@ type LcmLargeFile struct {
 	ExplorationSummary sql.NullString `json:"exploration_summary"`
 	ExplorerUsed       sql.NullString `json:"explorer_used"`
 	CreatedAt          int64          `json:"created_at"`
+}
+
+type LcmLargeFilesFt struct {
+	Content string `json:"content"`
 }
 
 type LcmMapItem struct {

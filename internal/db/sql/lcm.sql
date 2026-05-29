@@ -124,3 +124,43 @@ UPDATE lcm_map_items SET status = ?, output_json = ?, error_msg = ?, updated_at 
 SELECT * FROM read_files
 WHERE session_id = ? AND read_at >= ?
 ORDER BY read_at DESC;
+
+-- name: GetMessagesByTimeRange :many
+SELECT * FROM messages WHERE session_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC;
+
+-- name: GetMessageCountByTimeRange :one
+SELECT COUNT(*) FROM messages WHERE session_id = ? AND created_at >= ? AND created_at <= ?;
+
+-- LCM Content Replacements
+-- name: RecordContentReplacement :one
+INSERT INTO lcm_content_replacements (
+    session_id, position, message_id, file_id, state,
+    round, original_token_count, replacement_token_count
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+-- name: GetContentReplacementsBySessionPosition :many
+SELECT * FROM lcm_content_replacements
+WHERE session_id = ? AND position = ?;
+
+-- name: GetContentReplacementsByFileID :many
+SELECT * FROM lcm_content_replacements
+WHERE session_id = ? AND file_id = ?;
+
+-- name: ListContentReplacementsByState :many
+SELECT * FROM lcm_content_replacements
+WHERE session_id = ? AND state = ?
+ORDER BY created_at;
+
+-- name: GetContentReplacement :one
+SELECT * FROM lcm_content_replacements WHERE id = ?;
+
+-- name: UpdateContentReplacementState :exec
+UPDATE lcm_content_replacements
+SET state = ?, updated_at = strftime('%s', 'now')
+WHERE id = ?;
+
+-- name: ListContentReplacementsByRound :many
+SELECT * FROM lcm_content_replacements
+WHERE session_id = ? AND round = ?
+ORDER BY position;

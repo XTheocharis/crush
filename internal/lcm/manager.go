@@ -1111,6 +1111,7 @@ func (m *compactionManager) ExtraAgentTools() []fantasy.AgentTool {
 		newDoltTool(m.store),
 		newArchiveTool(m.store),
 		newSprigTool(m.store),
+		newTimeQueryTool(m.store),
 	)
 	return base
 }

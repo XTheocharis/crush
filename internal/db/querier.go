@@ -43,6 +43,9 @@ type Querier interface {
 	DeleteSnapshotsAfterSeq(ctx context.Context, arg DeleteSnapshotsAfterSeqParams) error
 	DeleteTurnSnapshot(ctx context.Context, id string) error
 	GetAverageResponseTime(ctx context.Context) (int64, error)
+	GetContentReplacement(ctx context.Context, id int64) (LcmContentReplacement, error)
+	GetContentReplacementsByFileID(ctx context.Context, arg GetContentReplacementsByFileIDParams) ([]LcmContentReplacement, error)
+	GetContentReplacementsBySessionPosition(ctx context.Context, arg GetContentReplacementsBySessionPositionParams) ([]LcmContentReplacement, error)
 	GetFile(ctx context.Context, id string) (File, error)
 	GetFileByPathAndSession(ctx context.Context, arg GetFileByPathAndSessionParams) (File, error)
 	GetFileRead(ctx context.Context, arg GetFileReadParams) (ReadFile, error)
@@ -57,6 +60,8 @@ type Querier interface {
 	GetLcmSummary(ctx context.Context, summaryID string) (LcmSummary, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetMessageBySessionAndSeq(ctx context.Context, arg GetMessageBySessionAndSeqParams) (Message, error)
+	GetMessageCountByTimeRange(ctx context.Context, arg GetMessageCountByTimeRangeParams) (int64, error)
+	GetMessagesByTimeRange(ctx context.Context, arg GetMessagesByTimeRangeParams) ([]Message, error)
 	GetRecentActivity(ctx context.Context) ([]GetRecentActivityRow, error)
 	GetRepoMapFileCache(ctx context.Context, repoKey string) ([]RepoMapFileCache, error)
 	GetRepoMapFileCacheByPath(ctx context.Context, arg GetRepoMapFileCacheByPathParams) (RepoMapFileCache, error)
@@ -86,6 +91,8 @@ type Querier interface {
 	InsertLcmSummaryParent(ctx context.Context, arg InsertLcmSummaryParentParams) error
 	InsertRepoMapTag(ctx context.Context, arg InsertRepoMapTagParams) error
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
+	ListContentReplacementsByRound(ctx context.Context, arg ListContentReplacementsByRoundParams) ([]LcmContentReplacement, error)
+	ListContentReplacementsByState(ctx context.Context, arg ListContentReplacementsByStateParams) ([]LcmContentReplacement, error)
 	ListFilesByPath(ctx context.Context, path string) ([]File, error)
 	ListFilesBySession(ctx context.Context, sessionID string) ([]File, error)
 	ListLatestSessionFiles(ctx context.Context, sessionID string) ([]File, error)
@@ -110,10 +117,13 @@ type Querier interface {
 	ListSnapshotFiles(ctx context.Context, snapshotID string) ([]ListSnapshotFilesRow, error)
 	ListTurnSnapshotsBySession(ctx context.Context, sessionID string) ([]TurnSnapshot, error)
 	ListUserMessagesBySession(ctx context.Context, sessionID string) ([]Message, error)
+	// LCM Content Replacements
+	RecordContentReplacement(ctx context.Context, arg RecordContentReplacementParams) (int64, error)
 	RecordFileRead(ctx context.Context, arg RecordFileReadParams) error
 	RecordFileWrite(ctx context.Context, arg RecordFileWriteParams) error
 	RenameSession(ctx context.Context, arg RenameSessionParams) error
 	SearchLcmSummaries(ctx context.Context, arg SearchLcmSummariesParams) ([]SearchLcmSummariesRow, error)
+	UpdateContentReplacementState(ctx context.Context, arg UpdateContentReplacementStateParams) error
 	UpdateLcmLargeFileExploration(ctx context.Context, arg UpdateLcmLargeFileExplorationParams) error
 	UpdateLcmMapItem(ctx context.Context, arg UpdateLcmMapItemParams) error
 	UpdateLcmMapRunStatus(ctx context.Context, arg UpdateLcmMapRunStatusParams) error

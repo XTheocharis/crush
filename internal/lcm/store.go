@@ -416,6 +416,59 @@ func (s *Store) ExpandSummary(ctx context.Context, summaryID string) ([]MessageF
 	return msgs, nil
 }
 
+// GetActiveContext returns the active context for a session with all entries
+// and aggregated totals. It wraps GetContextEntries and GetContextTokenCount.
+func (s *Store) GetActiveContext(ctx context.Context, sessionID string) (*ActiveContext, error) {
+	entries, err := s.GetContextEntries(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("getting context entries: %w", err)
+	}
+
+	totalTokens, err := s.GetContextTokenCount(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("getting context token count: %w", err)
+	}
+
+	return &ActiveContext{
+		SessionID:   sessionID,
+		Entries:     entries,
+		TotalTokens: totalTokens,
+		EntryCount:  len(entries),
+	}, nil
+}
+
+// GetActiveContextFiltered returns the active context filtered by the given
+// ContextFilter. Token totals are recomputed from the filtered entries.
+func (s *Store) GetActiveContextFiltered(ctx context.Context, sessionID string, filter ContextFilter) (*ActiveContext, error) {
+	ac, err := s.GetActiveContext(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]ContextEntry, 0, len(ac.Entries))
+	var totalTokens int64
+	for _, e := range ac.Entries {
+		if filter.Type != nil && e.ItemType != *filter.Type {
+			continue
+		}
+		if filter.MinTokens != nil && e.TokenCount < int64(*filter.MinTokens) {
+			continue
+		}
+		if filter.MaxTokens != nil && e.TokenCount > int64(*filter.MaxTokens) {
+			continue
+		}
+		filtered = append(filtered, e)
+		totalTokens += e.TokenCount
+	}
+
+	return &ActiveContext{
+		SessionID:   sessionID,
+		Entries:     filtered,
+		TotalTokens: totalTokens,
+		EntryCount:  len(filtered),
+	}, nil
+}
+
 // ExtractFileIDs extracts file IDs from message content using known patterns.
 func ExtractFileIDs(content string) []string {
 	seen := make(map[string]struct{})
@@ -473,6 +526,33 @@ func (s *Store) GetMessageCount(ctx context.Context, sessionID string) (int, err
 		return 0, fmt.Errorf("counting messages: %w", err)
 	}
 	return count, nil
+}
+
+// QueryByTime returns messages within [startTime, endTime] inclusive for a
+// session, ordered by created_at.
+func (s *Store) QueryByTime(ctx context.Context, sessionID string, startTime, endTime int64) ([]TimeQueryMessage, error) {
+	dbMsgs, err := s.q.GetMessagesByTimeRange(ctx, db.GetMessagesByTimeRangeParams{
+		SessionID:   sessionID,
+		CreatedAt:   startTime,
+		CreatedAt_2: endTime,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying messages by time range: %w", err)
+	}
+
+	msgs := make([]TimeQueryMessage, 0, len(dbMsgs))
+	for _, m := range dbMsgs {
+		content := extractTextFromParts(m.Parts)
+		msgs = append(msgs, TimeQueryMessage{
+			ID:        m.ID,
+			SessionID: m.SessionID,
+			Seq:       m.Seq,
+			Role:      m.Role,
+			Content:   content,
+			CreatedAt: m.CreatedAt,
+		})
+	}
+	return msgs, nil
 }
 
 // GetLargeFilesBySession returns all large files for a session.

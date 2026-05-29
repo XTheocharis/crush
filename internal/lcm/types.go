@@ -100,9 +100,55 @@ type SummarySearchResult struct {
 	Kind      string
 }
 
+// TimeQueryMessage is a message returned by time-range queries.
+type TimeQueryMessage struct {
+	ID        string
+	SessionID string
+	Seq       int64
+	Role      string
+	Content   string
+	CreatedAt int64
+}
+
 // Budget holds the computed token budget for a session.
 type Budget struct {
 	SoftThreshold int64
 	HardLimit     int64
 	ContextWindow int64
+}
+
+// ActiveContext holds the active context overview for a session.
+type ActiveContext struct {
+	SessionID   string
+	Entries     []ContextEntry
+	TotalTokens int64
+	EntryCount  int
+}
+
+// ContextFilter filters active context results.
+type ContextFilter struct {
+	Type      *string // filter by item_type ("message" or "summary")
+	MinTokens *int    // minimum token_count
+	MaxTokens *int    // maximum token_count
+}
+
+// LineageDirection specifies which direction to traverse the summary DAG.
+type LineageDirection int
+
+const (
+	// LineageAncestors walks parents upward from the target summary.
+	LineageAncestors LineageDirection = iota
+	// LineageDescendants walks children downward from the target summary.
+	LineageDescendants
+	// LineageBoth combines both ancestor and descendant traversal.
+	LineageBoth
+)
+
+// LineageNode represents a single node in a lineage traversal result.
+type LineageNode struct {
+	SummaryID  string
+	ParentID   string // empty for the root node of the traversal
+	Depth      int
+	TokenCount int64
+	Kind       string
 }

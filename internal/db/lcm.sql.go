@@ -81,6 +81,119 @@ func (q *Queries) DeleteLcmSummaryParents(ctx context.Context, summaryID string)
 	return err
 }
 
+const getContentReplacement = `-- name: GetContentReplacement :one
+SELECT id, session_id, position, message_id, file_id, state, round, original_token_count, replacement_token_count, created_at, updated_at FROM lcm_content_replacements WHERE id = ?
+`
+
+func (q *Queries) GetContentReplacement(ctx context.Context, id int64) (LcmContentReplacement, error) {
+	row := q.queryRow(ctx, q.getContentReplacementStmt, getContentReplacement, id)
+	var i LcmContentReplacement
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.Position,
+		&i.MessageID,
+		&i.FileID,
+		&i.State,
+		&i.Round,
+		&i.OriginalTokenCount,
+		&i.ReplacementTokenCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getContentReplacementsByFileID = `-- name: GetContentReplacementsByFileID :many
+SELECT id, session_id, position, message_id, file_id, state, round, original_token_count, replacement_token_count, created_at, updated_at FROM lcm_content_replacements
+WHERE session_id = ? AND file_id = ?
+`
+
+type GetContentReplacementsByFileIDParams struct {
+	SessionID string         `json:"session_id"`
+	FileID    sql.NullString `json:"file_id"`
+}
+
+func (q *Queries) GetContentReplacementsByFileID(ctx context.Context, arg GetContentReplacementsByFileIDParams) ([]LcmContentReplacement, error) {
+	rows, err := q.query(ctx, q.getContentReplacementsByFileIDStmt, getContentReplacementsByFileID, arg.SessionID, arg.FileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LcmContentReplacement{}
+	for rows.Next() {
+		var i LcmContentReplacement
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Position,
+			&i.MessageID,
+			&i.FileID,
+			&i.State,
+			&i.Round,
+			&i.OriginalTokenCount,
+			&i.ReplacementTokenCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getContentReplacementsBySessionPosition = `-- name: GetContentReplacementsBySessionPosition :many
+SELECT id, session_id, position, message_id, file_id, state, round, original_token_count, replacement_token_count, created_at, updated_at FROM lcm_content_replacements
+WHERE session_id = ? AND position = ?
+`
+
+type GetContentReplacementsBySessionPositionParams struct {
+	SessionID string `json:"session_id"`
+	Position  int64  `json:"position"`
+}
+
+func (q *Queries) GetContentReplacementsBySessionPosition(ctx context.Context, arg GetContentReplacementsBySessionPositionParams) ([]LcmContentReplacement, error) {
+	rows, err := q.query(ctx, q.getContentReplacementsBySessionPositionStmt, getContentReplacementsBySessionPosition, arg.SessionID, arg.Position)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LcmContentReplacement{}
+	for rows.Next() {
+		var i LcmContentReplacement
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Position,
+			&i.MessageID,
+			&i.FileID,
+			&i.State,
+			&i.Round,
+			&i.OriginalTokenCount,
+			&i.ReplacementTokenCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getLcmContextTokenCount = `-- name: GetLcmContextTokenCount :one
 SELECT COALESCE(SUM(token_count), 0) AS total FROM lcm_context_items WHERE session_id = ?
 `
@@ -152,6 +265,73 @@ func (q *Queries) GetLcmSummary(ctx context.Context, summaryID string) (LcmSumma
 		&i.OriginalContent,
 	)
 	return i, err
+}
+
+const getMessageCountByTimeRange = `-- name: GetMessageCountByTimeRange :one
+SELECT COUNT(*) FROM messages WHERE session_id = ? AND created_at >= ? AND created_at <= ?
+`
+
+type GetMessageCountByTimeRangeParams struct {
+	SessionID   string `json:"session_id"`
+	CreatedAt   int64  `json:"created_at"`
+	CreatedAt_2 int64  `json:"created_at_2"`
+}
+
+func (q *Queries) GetMessageCountByTimeRange(ctx context.Context, arg GetMessageCountByTimeRangeParams) (int64, error) {
+	row := q.queryRow(ctx, q.getMessageCountByTimeRangeStmt, getMessageCountByTimeRange, arg.SessionID, arg.CreatedAt, arg.CreatedAt_2)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getMessagesByTimeRange = `-- name: GetMessagesByTimeRange :many
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, seq, token_count, submitted_at, sent_to_llm_at, first_token_at, completed_at FROM messages WHERE session_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC
+`
+
+type GetMessagesByTimeRangeParams struct {
+	SessionID   string `json:"session_id"`
+	CreatedAt   int64  `json:"created_at"`
+	CreatedAt_2 int64  `json:"created_at_2"`
+}
+
+func (q *Queries) GetMessagesByTimeRange(ctx context.Context, arg GetMessagesByTimeRangeParams) ([]Message, error) {
+	rows, err := q.query(ctx, q.getMessagesByTimeRangeStmt, getMessagesByTimeRange, arg.SessionID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Parts,
+			&i.Model,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FinishedAt,
+			&i.Provider,
+			&i.IsSummaryMessage,
+			&i.Seq,
+			&i.TokenCount,
+			&i.SubmittedAt,
+			&i.SentToLlmAt,
+			&i.FirstTokenAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertLcmContextItem = `-- name: InsertLcmContextItem :exec
@@ -311,6 +491,98 @@ type InsertLcmSummaryParentParams struct {
 func (q *Queries) InsertLcmSummaryParent(ctx context.Context, arg InsertLcmSummaryParentParams) error {
 	_, err := q.exec(ctx, q.insertLcmSummaryParentStmt, insertLcmSummaryParent, arg.SummaryID, arg.ParentSummaryID, arg.Ord)
 	return err
+}
+
+const listContentReplacementsByRound = `-- name: ListContentReplacementsByRound :many
+SELECT id, session_id, position, message_id, file_id, state, round, original_token_count, replacement_token_count, created_at, updated_at FROM lcm_content_replacements
+WHERE session_id = ? AND round = ?
+ORDER BY position
+`
+
+type ListContentReplacementsByRoundParams struct {
+	SessionID string `json:"session_id"`
+	Round     int64  `json:"round"`
+}
+
+func (q *Queries) ListContentReplacementsByRound(ctx context.Context, arg ListContentReplacementsByRoundParams) ([]LcmContentReplacement, error) {
+	rows, err := q.query(ctx, q.listContentReplacementsByRoundStmt, listContentReplacementsByRound, arg.SessionID, arg.Round)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LcmContentReplacement{}
+	for rows.Next() {
+		var i LcmContentReplacement
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Position,
+			&i.MessageID,
+			&i.FileID,
+			&i.State,
+			&i.Round,
+			&i.OriginalTokenCount,
+			&i.ReplacementTokenCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listContentReplacementsByState = `-- name: ListContentReplacementsByState :many
+SELECT id, session_id, position, message_id, file_id, state, round, original_token_count, replacement_token_count, created_at, updated_at FROM lcm_content_replacements
+WHERE session_id = ? AND state = ?
+ORDER BY created_at
+`
+
+type ListContentReplacementsByStateParams struct {
+	SessionID string `json:"session_id"`
+	State     string `json:"state"`
+}
+
+func (q *Queries) ListContentReplacementsByState(ctx context.Context, arg ListContentReplacementsByStateParams) ([]LcmContentReplacement, error) {
+	rows, err := q.query(ctx, q.listContentReplacementsByStateStmt, listContentReplacementsByState, arg.SessionID, arg.State)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LcmContentReplacement{}
+	for rows.Next() {
+		var i LcmContentReplacement
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Position,
+			&i.MessageID,
+			&i.FileID,
+			&i.State,
+			&i.Round,
+			&i.OriginalTokenCount,
+			&i.ReplacementTokenCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLcmContextItems = `-- name: ListLcmContextItems :many
@@ -603,6 +875,42 @@ func (q *Queries) ListRecentSessionReadFiles(ctx context.Context, arg ListRecent
 	return items, nil
 }
 
+const recordContentReplacement = `-- name: RecordContentReplacement :one
+INSERT INTO lcm_content_replacements (
+    session_id, position, message_id, file_id, state,
+    round, original_token_count, replacement_token_count
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id
+`
+
+type RecordContentReplacementParams struct {
+	SessionID             string         `json:"session_id"`
+	Position              int64          `json:"position"`
+	MessageID             sql.NullString `json:"message_id"`
+	FileID                sql.NullString `json:"file_id"`
+	State                 string         `json:"state"`
+	Round                 int64          `json:"round"`
+	OriginalTokenCount    int64          `json:"original_token_count"`
+	ReplacementTokenCount int64          `json:"replacement_token_count"`
+}
+
+// LCM Content Replacements
+func (q *Queries) RecordContentReplacement(ctx context.Context, arg RecordContentReplacementParams) (int64, error) {
+	row := q.queryRow(ctx, q.recordContentReplacementStmt, recordContentReplacement,
+		arg.SessionID,
+		arg.Position,
+		arg.MessageID,
+		arg.FileID,
+		arg.State,
+		arg.Round,
+		arg.OriginalTokenCount,
+		arg.ReplacementTokenCount,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const searchLcmSummaries = `-- name: SearchLcmSummaries :many
 SELECT summary_id, kind FROM lcm_summaries
 WHERE rowid IN (
@@ -642,6 +950,22 @@ func (q *Queries) SearchLcmSummaries(ctx context.Context, arg SearchLcmSummaries
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateContentReplacementState = `-- name: UpdateContentReplacementState :exec
+UPDATE lcm_content_replacements
+SET state = ?, updated_at = strftime('%s', 'now')
+WHERE id = ?
+`
+
+type UpdateContentReplacementStateParams struct {
+	State string `json:"state"`
+	ID    int64  `json:"id"`
+}
+
+func (q *Queries) UpdateContentReplacementState(ctx context.Context, arg UpdateContentReplacementStateParams) error {
+	_, err := q.exec(ctx, q.updateContentReplacementStateStmt, updateContentReplacementState, arg.State, arg.ID)
+	return err
 }
 
 const updateLcmLargeFileExploration = `-- name: UpdateLcmLargeFileExploration :exec
