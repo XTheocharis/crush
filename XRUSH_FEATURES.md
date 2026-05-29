@@ -1519,9 +1519,11 @@ config schema, not within `internal/config/`.
 Two config enhancements: `@include` directives allow modular configuration in
 context files (AGENTS.md, CRUSH.md, etc.) with conditional blocks based on
 language, file, or environment variables. Deep merge combines multiple config
-sources with a clear priority ordering: `.crush.json` < `crush.json` <
-`$HOME/.config/crush/crush.json` < `.crush/<workspace>.json`. YAML config is
-supported as an alternative via `.xrush/config.yml`.
+sources with a clear priority ordering: `$HOME/.config/crush/crush.json` <
+`$HOME/.local/share/crush/crush.json` < project-local configs (root→cwd walk,
+`.crush.json` and `crush.json` at each level) < `.xrush/config.yml` <
+`.crush/<workspace>.json`. YAML config is supported as an alternative via
+`.xrush/config.yml`.
 
 ### Configuration
 
@@ -1557,10 +1559,11 @@ options:
 
 Deep merge priority (lowest to highest):
 
-1. `.crush.json`
-2. `crush.json`
-3. `$HOME/.config/crush/crush.json`
-4. `.crush/<workspace>.json`
+1. `$HOME/.config/crush/crush.json` (global config)
+2. `$HOME/.local/share/crush/crush.json` (global data config)
+3. Project-local configs (root→cwd walk: `.crush.json` and `crush.json` at each level)
+4. `.xrush/config.yml` (YAML config)
+5. `.crush/<workspace>.json` (workspace-specific config)
 
 ### Usage
 
@@ -1724,14 +1727,12 @@ Several internal components support the fork's features:
     // Array of tiers, evaluated in order. First matching tier wins.
     "router_tiers": [
       {
-        "name": "simple",
-        "model": "gpt-4o-mini",
-        "max_tokens": 1000
+        "up_to_tokens": 1000,
+        "model_type": "small"
       },
       {
-        "name": "complex",
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 100000
+        "up_to_tokens": 100000,
+        "model_type": "large"
       }
     ]
   }
