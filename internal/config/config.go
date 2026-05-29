@@ -303,6 +303,10 @@ type Options struct {
 	// RouterTokenLimit is the token count threshold from the xrush router
 	// config's first tier. When set, it overrides the default small-model
 	// token limit used by the ModelRouter.
+	//
+	// Deprecated: Use RouterTiers for multi-tier routing instead.
+	// RouterTokenLimit only controls the binary ModelRouter, which has been
+	// superseded by TierRouter. See internal/agent/router_tier.go.
 	RouterTokenLimit int `json:"router_token_limit,omitempty" jsonschema:"description=Token count threshold for model routing, extracted from the xrush router config's first tier"`
 
 	// RouterTiers holds the full multi-tier routing configuration parsed

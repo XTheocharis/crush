@@ -22,6 +22,9 @@ type ModelRouter struct {
 	// SmallModelTokenLimit is the threshold in tokens. Inputs at or below
 	// this count are routed to the editor model; inputs above go to the
 	// architect model. When zero, DefaultSmallModelTokenLimit is used.
+	//
+	// Deprecated: Use RouterTiers in config.Options for multi-tier routing,
+	// or TierRouter directly. See internal/agent/router_tier.go.
 	SmallModelTokenLimit int
 }
 
@@ -33,6 +36,9 @@ func NewModelRouter() *ModelRouter {
 }
 
 // NewModelRouterWithLimit creates a ModelRouter with a custom token limit.
+//
+// Deprecated: Use TierRouter instead, which supports multi-tier routing with
+// configurable token thresholds. See internal/agent/router_tier.go.
 func NewModelRouterWithLimit(limit int) *ModelRouter {
 	return &ModelRouter{
 		SmallModelTokenLimit: limit,
