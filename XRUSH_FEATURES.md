@@ -19,14 +19,18 @@
 - [7. Extension Host](#7-extension-host)
 - [8. Rewind System](#8-rewind-system)
 - [9. Eval Framework](#9-eval-framework)
-- [10. Doom Loop Detection & Resource Limits](#10-doom-loop-detection--resource-limits)
-- [11. AutoFix Loop & Go Linter](#11-autofix-loop--go-linter)
+- [10. Doom Loop Detection & Resource Limits](#10-doom-loop-detection-resource-limits)
+- [11. AutoFix Loop & Go Linter](#11-autofix-loop-go-linter)
 - [12. Architect Planning](#12-architect-planning)
 - [13. LSP Enhancements](#13-lsp-enhancements)
 - [14. Tools](#14-tools)
 - [15. Config Enhancements](#15-config-enhancements)
 - [16. Message Timestamps](#16-message-timestamps)
 - [17. Database Migrations](#17-database-migrations)
+- [18. Hooks Engine](#18-hooks-engine)
+- [19. Shell Enhancements](#19-shell-enhancements)
+- [20. TUI Enhancements](#20-tui-enhancements)
+- [Appendix: Additional Components](#appendix-additional-components)
 
 ---
 
@@ -60,17 +64,20 @@ functional groups:
 
 ### Compaction Pipeline
 
-8-stage pipeline processes conversation content in priority order:
+11-stage pipeline processes conversation content in priority order:
 
 | Priority | Layer | Description |
 |----------|-------|-------------|
 | P1 | `MicroCompactor` | Stores large content (tool output, file contents) in `lcm_large_files` table, replaces with compact references |
+| P1b | `TimeGapCompactor` | Detects time gaps >30s between consecutive messages; compacts older tool-result outputs in gap regions |
 | P2 | `DedupCompactionLayer` | SHA-256 deduplication of repeated content blocks |
 | P3 | `StaleEvictionLayer` | Evicts tool output older than 30 minutes |
 | P4 | `post-compact-cleaner` | Cleans orphaned references after compaction |
 | P5 | `AdjacentCondensationLayer` | Merges adjacent summary blocks into unified summaries |
 | P5b | `pressure-compaction-selector` | Selects compaction strategy based on memory pressure |
-| P6–P7 | `CacheOptimizer` | P6: `compact-prompt-structure` (9-section prompt assembly); P7: `anthropic-cache-management` (Anthropic prefix cache optimization) |
+| P6 | `SessionCompactor` | Compiles full session history into a structured memory document via LLM (Decisions, Patterns, Errors, Current State) |
+| P7 | `FullCompactor` | Deep LLM summarization of entire conversation; cache-safe with frozen replacement state |
+| P8–P9 | `CacheOptimizer` | P8: `compact-prompt-structure` (9-section prompt assembly); P9: `anthropic-cache-management` (Anthropic prefix cache optimization) |
 
 ### Observation System
 
@@ -131,10 +138,205 @@ content on demand.
 | `llm_map` | Apply LLM transformation per JSONL item (read-only) |
 | `agentic_map` | Run sub-agent on each JSONL item, write results |
 
+### Reflector
+
+**Location**: `internal/lcm/reflector.go` (601 lines)
+
+The **ReflectorAgent** triggers asynchronous reflection when a session's token
+count crosses the configured threshold (default 40K tokens). It loads
+unreflected observations from the observation buffer, calls the LLM to produce
+(insight, confidence, action_suggestion) tuples, and persists them as
+reflections. The prompt adapts to context pressure via five compression levels
+(Normal → Extractive → Aggressive → Skeleton → Deterministic).
+
+The **BufferingCoordinator** collects observations at 20% intervals of the
+reflection threshold (i.e. at 20%, 40%, 60%, 80%, 100%) and triggers the
+reflector at 50% intervals (giving it two chances to produce insights before
+the session hits the full token budget). A `Flush` method forces immediate
+reflection for end-of-session cleanup. Controlled by the `reflector_enabled`
+config key.
+
+### Nudge System
+
+**Location**: `internal/lcm/nudge/nudge.go` (196 lines)
+
+Proactive context-management hints injected into the agent's prompt. Three
+nudge types fire under different conditions:
+
+- **context-limit**: when token usage exceeds `max_context_limit` and
+  pressure is high (≥95% of context window). Warns the agent to be concise.
+- **turn**: every `nudge_frequency` turns (default 5) when pressure is
+  medium or higher. Suggests periodic summarization.
+- **iteration**: when iteration count exceeds `iteration_nudge_threshold`
+  (default 15) at medium+ pressure. Warns about potential loops.
+
+Force levels: **soft** (advisory, default) or **hard** (directive). Configured
+via the `nudge` block in LCM options.
+
+### Ghost Cues
+
+**Location**: `internal/lcm/cue.go` (188 lines)
+
+Transparent context markers injected into system prompts and tool results.
+Cues are never shown to the user; they provide the LLM with lightweight
+pointers into LCM-managed context. Three cue types:
+
+- **CueTypeSummaryID** (`summary_id`): references a specific summary
+  (`[Summary ID: {{.SummaryID}}]`).
+- **CueTypeLineagePointer** (`lineage_pointer`): references a compaction
+  lineage chain (`[Lineage: {{.ParentIDs}}, depth={{.Depth}}]`).
+- **CueTypeArchiveStub** (`archive_stub`): references archived content
+  (`[Archived: {{.FileID}}, tokens={{.TokenCount}}]`).
+
+The **CueInjector** manages templates, renders cues via `{{.Var}}`
+substitution, and injects them respecting priority ordering and a token
+budget. Lower-priority cues are silently dropped when budget is constrained.
+
+### Operational Memory
+
+**Location**: `internal/session/om.go` (361 lines)
+
+A per-session, per-thread key-value store backed by SQLite. Entries have
+priority levels (**high**, **medium**, **low**) and support temporal relevance
+decay via exponential half-life (1 hour). The **ThreadScopedOM** wrapper binds
+a session+thread pair so callers do not repeat IDs on every call.
+
+Key operations: `Set`, `Get`, `Delete`, `List`, `ListByPriority`,
+`ListWithRelevance` (returns entries sorted by priority × relevance score).
+`FormatThreadMemory` produces a human-readable summary with priority emojis
+and relevance percentages. Controlled by the `operational_memory_enabled`
+config key.
+
+### Message Decorator
+
+**Location**: `internal/lcm/message_decorator.go` (559 lines)
+
+Wraps `message.Service` to intercept Create, Update, and List with LCM-aware
+behaviour:
+
+- **Large-output storage**: tool messages exceeding the token threshold
+  (default 10K) are stored in `lcm_large_files` and replaced with a
+  reference + 2000-char preview. Falls back to deterministic truncation
+  (40K chars) when storage fails.
+- **Explorer integration**: large tool outputs are explored via the
+  RuntimeAdapter to generate structured summaries.
+- **Token tracking**: persists per-message token counts and accumulates
+  pending-item token deltas for threshold checks.
+- **Compaction scheduling**: after each message creation, schedules async
+  soft-threshold compaction.
+- **Summary injection**: on List, rebuilds the message view from LCM context
+  entries, injecting synthetic summary messages and preserving a stable
+  prefix + append-only tail.
+
+### Post-Compact Preservation
+
+**Location**: `internal/lcm/post_compact.go` (403 lines)
+
+**PreservedContext** captures operational context that must survive
+compaction. The **PostCompactCleaner** (Layer 4) executes a 5-step restore
+sequence after earlier layers free tokens:
+
+1. Restore system prompt context.
+2. Re-register active files with the LSP (via `FileRegistrar`).
+3. Re-inject the repo map (via `MapInjector`).
+4. Restore tool state to operational memory.
+5. Restore agent configuration (skills, tools, agents) via
+   `AgentConfigRestorer`.
+
+A **PreservedContextStore** provides thread-safe save/load/delete keyed by
+session ID, plus a separate "restored" key that survives the post-compact
+clear for prompt assembly to read on the next cycle.
+
+### Reversible Compaction
+
+**Location**: `internal/lcm/reversible.go` (345 lines)
+
+Saves original messages alongside compressed summaries so selected "anchor"
+summaries can be decompressed on demand. Three detail levels:
+
+- **full**: complete original messages.
+- **partial**: first 200 characters of each message.
+- **metadata**: only role, sequence number, and ID (no content).
+
+Supports nested placeholder resolution: `(bN)` placeholders in compressed
+content are recursively expanded via a `BlockResolver`, up to 5 levels deep
+with cycle detection. **Recompress** reverses a decompression by clearing
+stored original content while preserving the ancestry chain.
+
+### Compressor
+
+**Location**: `internal/lcm/compressor.go` (295 lines)
+
+Defines the **CompressionStrategy** interface for LLM-based compression with
+pluggable strategies:
+
+- **RangeCompression** (ratio 0.3): extracts structured key-value ranges from
+  line-oriented output.
+- **MessageCompression** (ratio 0.4): compresses conversation messages while
+  preserving decisions, technical details, and action items.
+- **DedupCompression** (ratio 0.5): removes duplicate information, keeping
+  the most complete or recent occurrence.
+- **PurgeErrorsCompression** (ratio 0.6): removes resolved error output and
+  debugging trails while retaining resolutions.
+
+**ContextLimits** describes token budget constraints (max tokens, reserve,
+summary budget) with pressure threshold calculations. Used by the graduated
+pressure system to select strategies as the context window fills.
+
+### Observation Strategy
+
+**Location**: `internal/lcm/observation_strategy.go` (112 lines)
+
+Pluggable strategy interface controlling how observations are filtered and
+formatted. Two implementations:
+
+- **DefaultStrategy**: observes every event, JSON encoding, no compression.
+- **ResourceScopedStrategy**: checks `runtime.MemStats` before allowing an
+  observation. When `Alloc` exceeds `AllocFraction × Sys` (default 0.8 =
+  80%), observations are skipped to avoid adding memory pressure. Uses mild
+  compression (level 1).
+
+Selected via the `observation.strategy` config key (`"default"` or
+`"resource-scoped"`).
+
+### LCM System Prompt
+
+**Location**: `internal/lcm/prompt.go` (170 lines)
+
+The system prompt injected when LCM is active. Instructs the LLM on silent
+operation (never mention LCM internals), how hierarchical summaries work,
+and when to use LCM retrieval tools (`lcm_grep`, `lcm_describe`,
+`lcm_expand`). Documents ID types (`file_*`, `sum_*`) and provides guidance
+on task sub-agent delegation (including infinite-recursion prevention).
+Also documents `llm_map` and `agentic_map` tools when available.
+
+### Time-Gap Compactor
+
+**Location**: `internal/lcm/time_gap_compactor.go` (269 lines)
+
+Sub-layer between MicroCompactor (P1) and DedupCompactionLayer (P2), using
+priority 1b (15). Detects time gaps >30 seconds between consecutive messages
+and compacts older tool-result messages that fall before those gaps. Targets
+scenarios where the user stepped away or context-switched, making prior tool
+outputs less relevant. Replaces compacted content with archive stubs at ~10%
+of the original token cost.
+
+### Session Compactor
+
+**Location**: `internal/lcm/session_compactor.go` (270 lines)
+
+Layer 2 compactor (priority 20) that compiles the full session history into a
+structured memory document via the LLM. Produces markdown with four sections:
+**Decisions**, **Patterns**, **Errors**, **Current State**. Targets a token
+range of 10K–40K output tokens, scaled by context pressure. Only activates
+when the session has ≥50K context tokens and is under pressure. Skips if a
+session-memory summary already exists. Caps prompt input at 200 context
+entries to avoid exceeding LLM token limits.
+
 ### User-Facing Description
 
 LCM keeps conversations from running out of memory. As your chat grows toward
-the model's context window limit, LCM automatically triggers an 8-layer
+the model's context window limit, LCM automatically triggers an 11-layer
 compaction pipeline that summarizes older content, stores large outputs
 separately, and evicts stale data -- all without losing critical information.
 Extracted insights persist across sessions in `CRUSH.memory.md`. When
@@ -835,7 +1037,7 @@ Runtime extension system with plugin-like capabilities.
   - `StepHookProvider` -- Hooks per agent step
   - `PromptHookProvider` -- Hooks for prompt assembly
 
-### Registered Extensions (18)
+### Registered Extensions (19)
 
 | Extension | Description |
 |-----------|-------------|
@@ -854,6 +1056,7 @@ Runtime extension system with plugin-like capabilities.
 | `tool-surface` | Tool registry and surface descriptions |
 | `resource-limits` | Per-agent resource budgets |
 | `xrush-sessions` | Extended session management |
+| `xrush` | Agent registry and mailbox for parent-child orchestration |
 | `prompt-assembly` | System prompt assembly |
 | `lsp-tools` | LSP-powered code intelligence tools |
 | `StepAdapter` | Step-level adapter for agent coordination |
@@ -864,10 +1067,14 @@ Runtime extension system with plugin-like capabilities.
 - Tool deduplication across extensions
 - Hook collection and aggregation
 - `Bootstrap` / `Shutdown` lifecycle management
+- **Lifecycle hooks** (`internal/agent/ext_hooks.go`): `agentHookMediator` bridges
+  agent events to extensions, invoking `RunHook` (run start/end), `StepHook`
+  (prepare step, step finish, stop condition), and `PromptHook` (prepare prompt,
+  system prompt modifier) callbacks with panic-safe execution
 
 ### User-Facing Description
 
-The Extension Host is Crush's internal plugin system. It manages 18
+The Extension Host is Crush's internal plugin system. It manages 19
 compile-time extensions that provide capabilities like LCM integration,
 repository maps, tree-sitter parsing, the processor pipeline, orchestration,
 model routing, auto-fix, rewind, doom loop detection, and LSP tools. Users
@@ -896,7 +1103,7 @@ There are no CLI commands or keybindings for the host itself.
 
 ### Default Behavior
 
-All 18 extensions are registered at startup. Panic-safe execution ensures one
+All 19 extensions are registered at startup. Panic-safe execution ensures one
 crashing extension does not affect others. Tool deduplication prevents
 conflicts when multiple extensions register the same tool. Extensions follow
 an ordered `Bootstrap` / `Shutdown` lifecycle.
@@ -1291,6 +1498,55 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 Supporting files: `lsp_symbolic.go` (shared symbol operations), `lsp_helpers.go`
 (shared utilities). These are not standalone tools but are used by the tools above.
 
+### Fork-Specific LSP Additions
+
+Three additional files extend the upstream LSP manager and client with
+fork-specific functionality.
+
+**`manager_xrush_methods.go`** — Manager-level enhancements:
+
+| Addition | Purpose |
+|----------|---------|
+| Priority system (`PriorityCritical`…`PriorityLow`) | Controls server startup order; critical servers (gopls, rust-analyzer, etc.) start first |
+| `sortServersByPriority()` | Sorts server map by priority for ordered startup |
+| `resolveAutoDownload()` | Resolves auto-download paths for LSP server binaries at startup |
+| `userMatchPatterns()` | Returns user-configured glob patterns for file-to-server matching |
+| `Close()` | Graceful shutdown: stops health checker, task executor, and all clients |
+| `GetDiagnosticsForServer()` | Per-server diagnostics, serialised through the task executor |
+| `FindReferencesForServer()` | Per-server find-references, serialised through the task executor |
+| `StartAll()` | Concurrent startup of all configured servers via errgroup, sorted by priority |
+| `SaveAllCaches()` | Persists document symbol caches from all running clients |
+| `RestartLanguageServer()` | Restarts a specific server by name |
+| `RequestFullSymbolTree()` | Returns recursive document symbols for a URI from the first matching client |
+| `startCrashRecovery()` | Background goroutine that monitors for crashes and auto-recreates the client |
+| `handleServerReadyFailure()` / `handleServerReadySuccess()` | Post-readiness hooks for cleanup or crash recovery activation |
+
+**`manager_handles_xrush.go`** — File-matching with user patterns:
+
+Extends upstream `handles()` logic with support for user-configured
+`match_patterns`. `handlesWithPatterns()` and `handleFiletypeWithPatterns()`
+check both traditional file-type suffixes and glob-based patterns via
+`NamePathMatcher`, allowing more flexible file-to-server routing.
+
+**`client_xrush_methods.go`** — Client-level LSP protocol methods:
+
+Adds direct LSP protocol call support (`callLSP` field) and seven standard
+LSP methods on the `Client` struct:
+
+| Method | LSP Request |
+|--------|-------------|
+| `Definition()` | `textDocument/definition` |
+| `Rename()` | `textDocument/rename` |
+| `CodeAction()` | `textDocument/codeAction` |
+| `Hover()` | `textDocument/hover` |
+| `DocumentSymbols()` | `textDocument/documentSymbol` |
+| `Completion()` | `textDocument/completion` |
+| `Formatting()` | `textDocument/formatting` |
+
+Also adds `IsAlive()` (process liveness check via `healthCheck` or
+`client.IsRunning()`), helper types (`xrushClientFields`), and response
+parsing utilities (`remarshal`, `parseLocationArray`, `parseCompletionResult`).
+
 ### User-Facing Description
 
 The enhanced LSP integration provides robust language server connectivity with
@@ -1426,6 +1682,21 @@ explicit `url` and `sha256` configuration per server.
 AutoFix and DiagGate extension systems. They have no `New*Tool`
 constructors and are not registered in the agent tool surface.
 
+`diag_cascade` (304L) provides diagnostic cascading: after editing a
+file, it runs LSP diagnostics and recursively checks importing files
+(up to depth 3). It has no `New*Tool` constructor and is called
+internally by edit/write tools.
+
+`search` (219L) provides DuckDuckGo HTML scraping via
+`lite.duckduckgo.com` with randomized headers and rate limiting. It has
+no `New*Tool` constructor; the `web_search` tool (`NewWebSearchTool`)
+delegates to it.
+
+`safe` (90L) provides a whitelist of read-only shell commands (e.g.
+`git status`, `ls`, `ps`) and command-chaining detection. It has no
+`New*Tool` constructor; the `bash` tool (`NewBashTool`) uses it to
+auto-approve safe commands.
+
 ### Fork-New Edit Support
 
 | Component | Lines | Description |
@@ -1507,6 +1778,12 @@ tools from the agent's surface.
 
 | Component | Lines | Description |
 |-----------|-------|-------------|
+| Config Store | 761 | Main `ConfigStore` implementation: owns pure-data `Config`, runtime state (working dir, resolver, known providers), file-change snapshots, auto-reload, and persistence to global/workspace config files |
+| Docker MCP | 134 | Auto-detect Docker MCP gateway (`docker mcp version`), 10 s TTL cache, enable/disable methods on `ConfigStore` that persist to global config |
+| Hyper Provider | 124 | Charm Hyper provider auto-configuration: fetches provider metadata from `/api/v1/provider`, ETag-based caching, embedded fallback, `sync.Once` init |
+| Atomic Writes | 38 | Safe config file writes via temp-file + rename, preventing concurrent readers from seeing partial writes |
+| Xrush Types | 61 | Fork-specific config types: `RoutingTier`, `ArchitectOptions`, `ValidationOptions`, `ProcessorsOptions`, `SnapshotConfig`, `AutoDownloadConfig` |
+| Xrush Tools Registry | 95 | Fork-only tool name registry (`xrushToolNames`, `xrushReadOnlyTools`) merged into sorted `allToolNames` alongside extension-contributed tools |
 | Migration | 44 | Config schema migration |
 | Walking | 134 | Walk config tree for validation |
 | YAML | 345 | YAML config file support |
@@ -1524,6 +1801,21 @@ sources with a clear priority ordering: `$HOME/.config/crush/crush.json` <
 `.crush.json` and `crush.json` at each level) < `.xrush/config.yml` <
 `.crush/<workspace>.json`. YAML config is supported as an alternative via
 `.xrush/config.yml`.
+
+The `ConfigStore` is the single entry point for all config access — it owns
+the pure-data `Config`, runtime state (working directory, variable resolver,
+known providers), and persistence to both global and workspace config files.
+It supports auto-reload on file changes (with snapshot-based change detection)
+and safe writes via atomic temp-file + rename.
+
+Docker MCP auto-detection probes `docker mcp version` and caches the result
+for 10 seconds. When available, the Docker MCP gateway can be enabled or
+disabled through the config store, persisting to the global config file.
+
+The Hyper provider module fetches Charm Hyper provider metadata from
+`/api/v1/provider` with ETag-based conditional requests and a local cache
+file. It falls back to an embedded provider definition when offline or
+timed out, and initializes once via `sync.Once`.
 
 ### Configuration
 
@@ -1629,7 +1921,7 @@ configuration or opt-in required.
 
 ## 17. Database Migrations
 
-17 new migrations added by the fork:
+18 new migrations added by the fork:
 
 | Migration | Description |
 |-----------|-------------|
@@ -1650,10 +1942,11 @@ configuration or opt-in required.
 | `20260516000000_message_timestamps.sql` | Message timestamp columns |
 | `20260517000000_lcm_gaps.sql` | Content replacements + large files FTS |
 | `20260518000000_lcm_observation_priority.sql` | Observation priority support |
+| `20260519000000_lcm_observation_priority_info.sql` | Add 'info' priority level to observation buffer |
 
 ### User-Facing Description
 
-24 SQLite migrations are applied automatically on startup using the Goose
+25 SQLite migrations are applied automatically on startup using the Goose
 format with Up and Down support. Each migration adds schema for a specific
 fork feature: LCM tables, repository map cache, LCM infrastructure (reversible state, observation buffer, auto-memory),
 session observations, eval scorer storage, turn snapshots, message timestamps,
@@ -1681,6 +1974,439 @@ active agent work to avoid data corruption.
 
 ---
 
+## 18. Hooks Engine
+
+**Location**: `internal/hooks/`
+
+The hooks engine runs user-defined shell commands on agent lifecycle events
+(PreToolUse, PostToolUse, PreCompact, PostCompact), returning decisions that
+control agent behavior. It builds on Crush's upstream hook infrastructure (see
+`docs/hooks/`) with additional fork-specific extensions: PostToolUse output
+rewriting, compaction hooks, and deeper integration with the coordinator via
+the `HookedTool` decorator.
+
+### Hook Events & Decision Types
+
+**Location**: `internal/hooks/hooks.go` (207 lines)
+
+Four event constants trigger hook execution at different agent lifecycle
+points:
+
+| Event | Description |
+|-------|-------------|
+| `PreToolUse` | Fires before every tool call. Can block, allow, or rewrite tool input. |
+| `PostToolUse` | Fires after every tool call (fork addition). Non-blocking; primary use is output rewriting/sanitization. |
+| `PreCompact` | Fires before LCM compaction (fork addition). |
+| `PostCompact` | Fires after LCM compaction (fork addition). |
+
+Three decision types control how hooks influence agent behavior:
+
+| Decision | Effect |
+|----------|--------|
+| `DecisionNone` | Hook expressed no opinion. Falls through to normal flow. |
+| `DecisionAllow` | Explicitly allows the action. For PreToolUse, pre-approves the permission prompt. |
+| `DecisionDeny` | Blocks the action. For PreToolUse, prevents the tool call. |
+
+Key types:
+
+- `HookResult` — parsed output of a single hook: `Decision`, `Halt`, `Reason`,
+  `Context`, `UpdatedInput`, `UpdatedOutput` (fork: PostToolUse rewriting).
+- `AggregateResult` — combined outcome of all hooks for an event: merged
+  decisions, concatenated reasons/context, shallow-merged input patches,
+  last-writer-wins output replacement.
+- `HookMetadata` / `HookInfo` — embedded in tool response metadata for UI
+  display.
+- `HaltExitCode` (49) — exit code that halts the whole turn; chosen to avoid
+  collisions with generic-error (1–30), BSD sysexits (64–78), and signal ranges
+  (128+).
+
+Aggregation rules (in `aggregate()`): deny wins over allow, allow wins over
+none. Halt is sticky. Reasons and context concatenate in config order.
+`updated_input` patches shallow-merge sequentially. `updated_output` uses
+last-writer-wins semantics (fork addition for PostToolUse).
+
+### Hook Runner
+
+**Location**: `internal/hooks/runner.go` (265 lines)
+
+The `Runner` executes hook commands and aggregates results:
+
+1. **Construction** (`NewRunner`): accepts `[]HookConfig`, compiles each
+   `Matcher` regex at construction time. Hooks with invalid matchers are
+   skipped with a warning (defense in depth beyond `ValidateHooks`).
+2. **Matching** (`matchingHooks`): filters hooks whose matcher matches the
+   tool name; nil matcher matches everything.
+3. **Deduplication**: by command string so identical commands run once.
+4. **Parallel execution** (`Run`): all matching hooks run concurrently via
+   goroutines with a `sync.WaitGroup`. Each hook receives environment variables
+   and a JSON stdin payload.
+5. **Single-hook execution** (`runOne`): runs a hook through Crush's embedded
+   POSIX shell (`shell.Run`). Uses context-based timeout with an
+   `abandonGrace` (1 second) period for non-yielding goroutines. Exit codes:
+   0 = parse stdout JSON, 2 = deny (stderr = reason), 49 = halt turn, other =
+   non-blocking warning.
+
+### Input Builder
+
+**Location**: `internal/hooks/input.go` (209 lines)
+
+Constructs the data provided to hook commands via two channels:
+
+**Environment variables** (`BuildEnv`): extends `os.Environ()` with
+hook-specific variables:
+
+| Variable | Description |
+|----------|-------------|
+| `CRUSH_EVENT` | Hook event name (e.g. `PreToolUse`) |
+| `CRUSH_TOOL_NAME` | Tool being called (e.g. `bash`) |
+| `CRUSH_SESSION_ID` | Current session ID |
+| `CRUSH_CWD` | Working directory |
+| `CRUSH_PROJECT_DIR` | Project root directory |
+| `CRUSH_TOOL_INPUT_COMMAND` | For `bash` calls: the shell command |
+| `CRUSH_TOOL_INPUT_FILE_PATH` | For file tools: the target file path |
+
+**JSON stdin payload** (`BuildPayload`): structured JSON with `event`,
+`session_id`, `cwd`, `tool_name`, and `tool_input` fields.
+
+**Output parsing** (`parseStdout`): handles both Crush format and Claude Code
+compatibility (`hookSpecificOutput` wrapper). Supports envelope versioning
+(`version` field, default 1). Parses `decision`, `halt`, `reason`, `context`
+(string or string array), and `updated_input` from hook stdout.
+
+### Fork Additions: PostToolUse & Output Rewriting
+
+**Location**: `internal/hooks/runner_xrush.go` (138 lines) +
+`internal/hooks/input_xrush.go` (68 lines)
+
+The fork extends the hooks engine with PostToolUse support and additional
+lifecycle events:
+
+**PostToolUse runner** (`RunPostToolUse`): executes matching hooks after a
+tool completes. Unlike PreToolUse, PostToolUse hooks are non-blocking — exit
+codes 2 and 49 do NOT halt or deny (the tool already ran). The primary use
+case is output rewriting/sanitization via the `UpdatedOutput` field.
+
+**PostToolUse payload** (`PostPayload`): extends the base `Payload` with:
+
+| Field | Description |
+|-------|-------------|
+| `tool_output` | The tool's output text |
+| `duration_ms` | Tool execution duration in milliseconds |
+
+**PostToolUse environment** (`BuildPostEnv`): extends `BuildEnv` with:
+
+| Variable | Description |
+|----------|-------------|
+| `CRUSH_TOOL_OUTPUT` | The tool's output text |
+| `CRUSH_TOOL_DURATION_MS` | Execution time in milliseconds |
+
+**PostToolUse output parsing** (`parsePostStdout`): extracts
+`modified_output` from hook stdout. If the hook returns valid JSON with a
+`modified_output` field, that text replaces the tool's original output. If
+stdout is valid JSON without the field, no replacement occurs. If stdout is
+not valid JSON, it is used as-is (plain text replacement).
+
+### HookedTool Decorator
+
+**Location**: `internal/agent/hooked_tool.go` (163 lines)
+
+The `hookedTool` struct wraps `fantasy.AgentTool` to inject hook execution
+into the tool call pipeline at the coordinator level:
+
+1. **PreToolUse**: runs PreToolUse hooks. If deny/halt, returns error response
+   with `StopTurn` set for halts. If allow, injects `permission.WithHookApproval`
+   into context to bypass the permission prompt. If `UpdatedInput`, rewrites
+   the tool call input.
+2. **Tool execution**: delegates to the inner tool with (possibly rewritten)
+   input.
+3. **PostToolUse**: runs PostToolUse hooks. If `UpdatedOutput` is returned,
+   replaces the tool response content.
+4. **Metadata**: merges `HookMetadata` into the tool response so the UI can
+   display hook indicators.
+
+`wrapToolsWithHooks` wraps all tools for the top-level agent. Sub-agents are
+explicitly excluded (`isSubAgent` check) so hooks only fire once per
+top-level invocation, not N times for N sub-agent calls.
+
+### User-Facing Description
+
+Hooks let you run custom shell scripts at key points in the agent lifecycle.
+Configure them in `crush.json` to block dangerous commands, rewrite tool
+input/output, auto-approve safe tools, inject context reminders, or sanitize
+tool results. Hooks run in parallel for speed, but their results compose in
+config order for determinism. The fork extends upstream hooks with PostToolUse
+(output rewriting/sanitization) and compaction hooks (PreCompact/PostCompact).
+
+### Configuration
+
+```jsonc
+{
+  "hooks": {
+    // Fires before every tool call. Can block, allow, or rewrite input.
+    "PreToolUse": [
+      {
+        // Regex matched against tool name. Omit to match all tools.
+        "matcher": "^bash$",
+        // Shell command to run. Scripts use embedded POSIX shell.
+        "command": "./hooks/my-hook.sh",
+        // Timeout in seconds (default: 30).
+        "timeout": 10
+      }
+    ],
+    // Fires after every tool call. Non-blocking; for output rewriting.
+    "PostToolUse": [
+      {
+        "matcher": "bash",
+        "command": "./hooks/sanitize-output.sh"
+      }
+    ],
+    // Fires before LCM compaction.
+    "PreCompact": [],
+    // Fires after LCM compaction.
+    "PostCompact": []
+  }
+}
+```
+
+Hooks can be added at both project-level (`crush.json`) and global-level
+(`~/.config/crush/crush.json`), with project hooks taking precedence. See
+`docs/hooks/README.md` for the full hook guide including input/output formats,
+exit codes, aggregation rules, and Claude Code compatibility.
+
+### Usage
+
+Hooks are configured entirely through `crush.json`. No CLI commands are
+needed. When a tool is called, the `HookedTool` decorator automatically runs
+matching PreToolUse hooks before the tool executes and PostToolUse hooks after.
+The hook indicator appears in the TUI via response metadata. Sub-agents do not
+fire hooks independently — only the top-level agent's tool calls are hooked.
+
+### Default Behavior
+
+When no hooks are configured in `crush.json`, the hooks engine is completely
+inactive. All tool calls proceed through the normal permission flow without
+any hook interception. The `HookedTool` decorator passes through to the inner
+tool unchanged when both `preRunner` and `postRunner` are nil.
+
+---
+
+## 19. Shell Enhancements
+
+**Location**: `internal/shell/`
+
+Cross-platform shell execution enhancements providing embedded `jq`, shell-style
+variable expansion, background job management, platform-aware command dispatch,
+and a core utilities flag -- all operating within the embedded POSIX shell
+interpreter (mvdan/sh).
+
+### Embedded jq
+
+**File**: `jq.go` (342 lines)
+
+Embedded gojq (v0.12.19) providing full `jq` functionality within the shell
+without requiring an external binary. Available as a shell builtin in all
+command execution contexts: interactive commands, hooks, and command
+substitution.
+
+Supported flags: `-r` (raw output), `-j` (join output), `-c` (compact output),
+`-s` (slurp), `-n` (null input), `-e` (exit status), `-R` (raw input),
+`--arg name value`, `--argjson name value`.
+
+Context-aware cancellation: long-running `jq` queries are interruptible via
+context cancellation at each output iteration and each reader boundary, so hook
+timeouts never block indefinitely.
+
+### Variable Expansion
+
+**File**: `expand.go` (145 lines)
+
+Shell-style variable expansion for configuration values (`crush.json`,
+environment files, hook inputs). Supports:
+
+- `$VAR` and `${VAR}` -- basic variable substitution
+- `${VAR:-default}` -- default value when unset or empty
+- `${VAR:+alt}` -- alternative value when set and non-empty
+- `${VAR:?message}` -- error with message when unset or empty
+- `$(command)` -- command substitution with full quoting and nesting
+- Escaped and quoted strings (`"..."`, `'...'`)
+
+Expansion is used across MCP server configuration, provider credentials, and
+hook payloads. No field splitting, no globbing, no pathname generation --
+output is preserved verbatim.
+
+### Background Jobs
+
+**File**: `background.go` (254 lines)
+
+Singleton `BackgroundShellManager` manages up to 50 concurrent background shell
+instances. Each job runs in its own shell with independent stdout/stderr buffers
+(thread-safe). Features:
+
+- Start, monitor, and kill background commands
+- Retrieve partial output while running, full output on completion
+- Automatic cleanup of completed jobs after 8 hours
+- Graceful kill with 5-second timeout
+- `KillAll` for batch shutdown with context-bound waits
+
+### Platform-Aware Command Dispatch
+
+**File**: `dispatch.go` (423 lines)
+
+Exec-handler middleware that intercepts path-prefixed commands (e.g.,
+`./foo.sh`, `/opt/bin/tool`, `C:\script.ps1`) and dispatches based on file
+contents:
+
+1. **Shebang** (`#!...`) -- Resolves the interpreter, with permissive PATH
+   fallback (e.g., `#!/bin/bash` works on Windows via Git for Windows PATH).
+   Supports `/usr/bin/env` rewriting with `-S` flag for tokenized argument
+   splitting.
+2. **Binary** (MZ, ELF, Mach-O magic bytes or NUL in probe window) -- Passes
+   through to the default exec handler.
+3. **Shell source** -- Parses as POSIX shell and runs in-process via a nested
+   interpreter, reusing the same handler stack so builtins and block rules apply
+   recursively. Positional parameters (`$1`, `$2`, ...) are forwarded from the
+   invoking command.
+
+Only the first 128 bytes are probed; the full file is read only for the
+shell-source branch, keeping I/O bounded for binaries and shebang scripts.
+
+### Core Utilities Flag
+
+**File**: `coreutils.go` (19 lines)
+
+The `CRUSH_CORE_UTILS` environment variable controls whether Go-based core
+utilities are used instead of system binaries. Defaults to enabled on Windows,
+disabled on all other platforms. Set `CRUSH_CORE_UTILS=true` to force Go
+coreutils, or `CRUSH_CORE_UTILS=false` to disable them.
+
+### User-Facing Description
+
+The shell enhancements provide three user-visible capabilities. First, `jq` is
+available as a builtin command in all shell contexts -- no external `jq`
+binary needed. This means hooks, command substitution, and the agent's bash
+tool can pipe JSON through `jq` on any platform, including Windows. Second,
+`crush.json` values support shell-style variable expansion (`$VAR`,
+`${VAR:-default}`, `$(command)`) for credentials, API keys, and dynamic
+configuration -- the same syntax works identically across macOS, Linux, and
+Windows. Third, long-running commands can run as background jobs that are
+started, monitored, and killed independently, with output available for
+retrieval at any time.
+
+### Configuration
+
+```jsonc
+// Shell enhancements are controlled via environment variables:
+
+// Force Go-based core utilities (default: true on Windows, false elsewhere).
+// Set to "true" or "false" to override the platform default.
+// CRUSH_CORE_UTILS=true
+
+// Strict unset-variable mode for variable expansion.
+// Default: unset variables expand to "" (bash behavior).
+// When enabled via internal escape hatch, unset $VAR is an error.
+// Not exposed in crush.json.
+```
+
+No `crush.json` configuration section is required. The `CRUSH_CORE_UTILS`
+environment variable is the only user-facing configuration knob.
+
+### Usage
+
+Shell enhancements are transparent. Use `jq` in any command context (hooks,
+bash tool, command substitution) as you would externally:
+
+```bash
+# jq builtin -- no external binary needed
+echo '{"name": "crush"}' | jq '.name'
+
+# Variable expansion in crush.json
+// "api_key": "$MY_API_KEY"
+// "api_key": "${MY_API_KEY:?set MY_API_KEY}"
+// "api_key": "$(cat /path/to/key)"
+```
+
+Background jobs are managed programmatically by the agent and hook system. The
+dispatch handler activates automatically for path-prefixed commands (scripts).
+
+### Default Behavior
+
+All shell enhancements are active by default. `jq` is always available as a
+builtin. Variable expansion applies to all `crush.json` values, MCP
+configuration, provider credentials, and hook payloads. Background jobs allow
+up to 50 concurrent instances with 8-hour auto-cleanup. Command dispatch
+activates automatically for any command referencing a file path. Go coreutils
+are enabled by default on Windows and disabled on Unix; override via
+`CRUSH_CORE_UTILS`.
+
+---
+
+## 20. TUI Enhancements
+
+**Location**: `internal/ui/`
+
+User-visible TUI additions for fork features: compaction status, message
+actions, repo map refresh, and message routing.
+
+### Components
+
+| File | Lines | Description | User-Visible Behavior |
+|------|-------|-------------|-----------------------|
+| `model/compaction.go` | 69 | LCM compaction status pill | Animated "⟳ Compacting" pill with elapsed time in the status bar while LCM is compacting |
+| `model/xrush_routing.go` | 169 | Message routing and dialog actions | Routes rewind results, compaction events, edit-message results, and delayed clicks through the main update loop |
+| `model/repomap_xrush.go` | 42 | Repo map refresh from command palette | Triggers async repo map refresh; shows success or error notification |
+| `dialog/actions_xrush.go` | 29 | Extended action menu entries | Adds Rewind, Fork, Edit Message, and Message Options actions to the per-message action dialog |
+| `chat/user_xrush.go` | 6 | User message sequence accessor | Exposes message sequence number for rewind/fork/edit targeting on user messages |
+
+### User-Facing Description
+
+Four TUI enhancements are visible to users:
+
+1. **Compaction pill**: When LCM starts compacting the conversation, an animated
+   "⟳ Compacting" pill with elapsed seconds appears in the status bar. It
+   disappears when compaction completes.
+
+2. **Message actions**: Press `o` on any user message to open an action menu
+   with four new options: **Rewind** (restore code, conversation, or both to
+   that point), **Fork** (branch the conversation from that message), **Edit
+   Message** (load the original text into the editor for re-submission), and
+   **Message Options** (opens a detailed dialog for the selected message).
+
+3. **Repo map refresh**: The command palette (Ctrl+P) includes a "Refresh
+   Repository Map" entry that triggers an asynchronous repo map rebuild and
+   shows a success or error notification.
+
+4. **Delayed click handling**: Click handling on chat messages is deferred to
+   ensure the correct message is targeted, improving reliability of click-based
+   interactions in the message list.
+
+### Configuration
+
+No configuration is required. All TUI enhancements are active by default. The
+compaction pill appears automatically when LCM is configured and compaction is
+running. Message actions require the rewind system to be enabled via
+`options.snapshot` in `crush.json`.
+
+### Usage
+
+- **Compaction pill**: Visible automatically in the status bar when LCM
+  compaction is running. No user action needed.
+- **Message actions**: Navigate to a user message in the chat and press `o` to
+  open the action menu. Select Rewind, Fork, Edit Message, or Message Options.
+- **Repo map refresh**: Open the command palette with Ctrl+P and search for
+  "Refresh Repository Map".
+- **Message click**: Single-click on user messages to open the message options
+  dialog directly.
+
+### Default Behavior
+
+The compaction pill is visible whenever LCM compaction is active (requires LCM
+to be configured). Message actions are available on all user messages when the
+rewind system is enabled (`options.snapshot` in `crush.json`). The repo map
+refresh command is always available in the command palette. If rewind is not
+enabled, pressing `o` shows a "Rewind is not available" warning.
+
+---
+
 ## Appendix: Additional Components
 
 | Component | Description |
@@ -1689,7 +2415,7 @@ active agent work to avoid data corruption.
 | `RateLimiting` (180L) | Reactive 429-backoff rate limit coordination |
 | `ModelRouter` + `TierRouter` | Model routing with tier-based selection; `ModelRouter` deprecated, `TierRouter` active |
 | `ConfigLoader` (253L) | Dynamic agent configuration from `crush.json` |
-| `ToolSurface` (343L) | Tool registry and surface description for prompts |
+| `ToolSurface` (405L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; ~40 tools registered |
 | `Session` (349L) | Session management (`session/session.go`) |
 | `Completer` (88L) | Shell command completion |
 | `WrittenFiles` (79L) | Track files written during a session |
@@ -1709,8 +2435,16 @@ Several internal components support the fork's features:
   based on configurable tiers (e.g., route simple tasks to a cheaper model).
 - **ConfigLoader** dynamically loads agent configuration from `crush.json`,
   enabling per-agent settings.
-- **ToolSurface** maintains the tool registry and generates surface
-  descriptions for agent prompts.
+- **ToolSurface** maintains the tool registry (~40 built-in tools) and
+  generates surface descriptions for agent prompts. Each tool carries a
+  6-bit capability bitmask (`FS`, `Network`, `CodeIntelligence`, `Execution`,
+  `Memory`, `Observation`) and optional behavioral markers (`CanEdit`,
+  `SymbolicRead`, `SymbolicEdit`, `Optional`, `Beta`,
+  `DoesNotRequireActiveProject`). Dynamic visibility hides tools whose
+  runtime dependencies are unsatisfied (e.g., LSP tools when no LSP is
+  running, LCM tools when LCM is disabled). Phase filtering further hides
+  write tools (`edit`, `multiedit`, `write`) during the Planning phase,
+  classifying phases by keyword analysis of the current prompt.
 - **WrittenFiles** tracks which files were written during a session for
   cleanup and rollback.
 - **regexp adapters** (`regexp_modernc`, `ncruces`) provide pure-Go regexp
