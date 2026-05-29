@@ -70,7 +70,7 @@ functional groups:
 | P4 | `post-compact-cleaner` | Cleans orphaned references after compaction |
 | P5 | `AdjacentCondensationLayer` | Merges adjacent summary blocks into unified summaries |
 | P5b | `pressure-compaction-selector` | Selects compaction strategy based on memory pressure |
-| P6–P7 | `CacheOptimizer` | Optimizes cached content for retrieval performance |
+| P6–P7 | `CacheOptimizer` | P6: `compact-prompt-structure` (9-section prompt assembly); P7: `anthropic-cache-management` (Anthropic prefix cache optimization) |
 
 ### Observation System
 
@@ -85,8 +85,8 @@ persist across compaction cycles.
 - `AutoMemoryExtractor` fires every 5 turns
 - Extracts 4 memory types: **fact**, **decision**, **preference**, **lesson**
 - TF-IDF ranking for relevance scoring
-- ~60 KB per-session memory budget (`MemorySessionMaxChars=60000`,
-  `MemoryFileConfig.SessionBudget=61440` by default)
+- ~60 KB per-session memory budget (`MemorySessionMaxChars=60000`;
+  `MemoryFileConfig.SessionBudget=61440` default exists but is unenforced)
 - Persists across sessions to `CRUSH.memory.md`
 
 ### Content Replacement
@@ -107,17 +107,15 @@ content on demand.
 
 ### LCM Agent Tools (14)
 
-5 tools via tool factory (registered in standard tool surface):
+3 LCM tools via tool factory (registered in standard tool surface):
 
 | Tool | Description |
 |------|-------------|
 | `lcm_grep` | Search conversation history (full-text and regex) |
 | `lcm_describe` | Describe a file or summary by LCM identifier |
 | `lcm_expand` | Expand an LCM summary to its original messages |
-| `llm_map` | Apply LLM transformation per JSONL item |
-| `agentic_map` | Run sub-agent on each JSONL item |
 
-9 tools via `ExtraAgentTools()` (injected directly into the coder agent):
+11 tools via `ExtraAgentTools()` (injected directly into the coder agent):
 
 | Tool | Description |
 |------|-------------|
@@ -130,6 +128,8 @@ content on demand.
 | `lcm_file_search` | Search files referenced in conversation history |
 | `lcm_active_context` | Show currently active LCM context window |
 | `lcm_lineage` | Trace compaction lineage for a content block |
+| `llm_map` | Apply LLM transformation per JSONL item (read-only) |
+| `agentic_map` | Run sub-agent on each JSONL item, write results |
 
 ### User-Facing Description
 
@@ -175,8 +175,8 @@ you always know when context management is active.
       "nudge": {
         "min_context_limit": 0,     // minimum context usage to start nudging
         "max_context_limit": 0,     // maximum context before forced nudge
-        "frequency": 0,             // how often to nudge (in turns)
-        "force": false              // force nudge regardless of usage
+        "nudge_frequency": 5,       // how often to nudge (in turns, default 5)
+        "nudge_force": "soft"       // "soft" (nudge) or "hard" (force), default "soft"
       }
     }
   }
