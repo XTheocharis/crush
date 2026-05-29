@@ -367,7 +367,7 @@ func wireMessageDecorator(app *App, q db.Querier, conn *sql.DB, store *config.Co
 
 	queries, ok := q.(*db.Queries)
 	if !ok {
-		slog.Warn("db.Querier is not *db.Queries, skipping message decorator wiring")
+		slog.Warn("DB Querier is not *db.Queries, skipping message decorator wiring")
 		return
 	}
 

@@ -123,6 +123,18 @@ func (m *editMockQuerier) GetAverageResponseTime(ctx context.Context) (int64, er
 	return 0, nil
 }
 
+func (m *editMockQuerier) GetContentReplacement(ctx context.Context, id int64) (db.LcmContentReplacement, error) {
+	return db.LcmContentReplacement{}, nil
+}
+
+func (m *editMockQuerier) GetContentReplacementsByFileID(ctx context.Context, arg db.GetContentReplacementsByFileIDParams) ([]db.LcmContentReplacement, error) {
+	return nil, nil
+}
+
+func (m *editMockQuerier) GetContentReplacementsBySessionPosition(ctx context.Context, arg db.GetContentReplacementsBySessionPositionParams) ([]db.LcmContentReplacement, error) {
+	return nil, nil
+}
+
 func (m *editMockQuerier) GetFile(ctx context.Context, id string) (db.File, error) {
 	return db.File{}, nil
 }
@@ -173,6 +185,14 @@ func (m *editMockQuerier) GetLcmSummary(ctx context.Context, id string) (db.LcmS
 
 func (m *editMockQuerier) GetMessage(ctx context.Context, id string) (db.Message, error) {
 	return db.Message{}, nil
+}
+
+func (m *editMockQuerier) GetMessageCountByTimeRange(ctx context.Context, arg db.GetMessageCountByTimeRangeParams) (int64, error) {
+	return 0, nil
+}
+
+func (m *editMockQuerier) GetMessagesByTimeRange(ctx context.Context, arg db.GetMessagesByTimeRangeParams) ([]db.Message, error) {
+	return nil, nil
 }
 
 func (m *editMockQuerier) GetRecentActivity(ctx context.Context) ([]db.GetRecentActivityRow, error) {
@@ -260,6 +280,14 @@ func (m *editMockQuerier) InsertRepoMapTag(ctx context.Context, arg db.InsertRep
 }
 
 func (m *editMockQuerier) ListAllUserMessages(ctx context.Context) ([]db.Message, error) {
+	return nil, nil
+}
+
+func (m *editMockQuerier) ListContentReplacementsByRound(ctx context.Context, arg db.ListContentReplacementsByRoundParams) ([]db.LcmContentReplacement, error) {
+	return nil, nil
+}
+
+func (m *editMockQuerier) ListContentReplacementsByState(ctx context.Context, arg db.ListContentReplacementsByStateParams) ([]db.LcmContentReplacement, error) {
 	return nil, nil
 }
 
@@ -351,6 +379,10 @@ func (m *editMockQuerier) ListUserMessagesBySession(ctx context.Context, id stri
 	return nil, nil
 }
 
+func (m *editMockQuerier) RecordContentReplacement(ctx context.Context, arg db.RecordContentReplacementParams) (int64, error) {
+	return 0, nil
+}
+
 func (m *editMockQuerier) RecordFileRead(ctx context.Context, arg db.RecordFileReadParams) error {
 	return nil
 }
@@ -365,6 +397,10 @@ func (m *editMockQuerier) RenameSession(ctx context.Context, arg db.RenameSessio
 
 func (m *editMockQuerier) SearchLcmSummaries(ctx context.Context, arg db.SearchLcmSummariesParams) ([]db.SearchLcmSummariesRow, error) {
 	return nil, nil
+}
+
+func (m *editMockQuerier) UpdateContentReplacementState(ctx context.Context, arg db.UpdateContentReplacementStateParams) error {
+	return nil
 }
 
 func (m *editMockQuerier) UpdateLcmLargeFileExploration(ctx context.Context, arg db.UpdateLcmLargeFileExplorationParams) error {

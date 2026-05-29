@@ -193,6 +193,33 @@ func (m *mockQuerier) GetAverageResponseTime(ctx context.Context) (int64, error)
 	return zero, args.Error(1)
 }
 
+func (m *mockQuerier) GetContentReplacement(ctx context.Context, id int64) (db.LcmContentReplacement, error) {
+	args := m.Called(ctx, id)
+	var zero db.LcmContentReplacement
+	if v := args.Get(0); v != nil {
+		return v.(db.LcmContentReplacement), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) GetContentReplacementsByFileID(ctx context.Context, arg db.GetContentReplacementsByFileIDParams) ([]db.LcmContentReplacement, error) {
+	args := m.Called(ctx, arg)
+	var zero []db.LcmContentReplacement
+	if v := args.Get(0); v != nil {
+		return v.([]db.LcmContentReplacement), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) GetContentReplacementsBySessionPosition(ctx context.Context, arg db.GetContentReplacementsBySessionPositionParams) ([]db.LcmContentReplacement, error) {
+	args := m.Called(ctx, arg)
+	var zero []db.LcmContentReplacement
+	if v := args.Get(0); v != nil {
+		return v.([]db.LcmContentReplacement), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
 func (m *mockQuerier) GetFile(ctx context.Context, id string) (db.File, error) {
 	args := m.Called(ctx, id)
 	var zero db.File
@@ -311,6 +338,24 @@ func (m *mockQuerier) GetMessageBySessionAndSeq(ctx context.Context, arg db.GetM
 	var zero db.Message
 	if v := args.Get(0); v != nil {
 		return v.(db.Message), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) GetMessageCountByTimeRange(ctx context.Context, arg db.GetMessageCountByTimeRangeParams) (int64, error) {
+	args := m.Called(ctx, arg)
+	var zero int64
+	if v := args.Get(0); v != nil {
+		return v.(int64), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) GetMessagesByTimeRange(ctx context.Context, arg db.GetMessagesByTimeRangeParams) ([]db.Message, error) {
+	args := m.Called(ctx, arg)
+	var zero []db.Message
+	if v := args.Get(0); v != nil {
+		return v.([]db.Message), args.Error(1)
 	}
 	return zero, args.Error(1)
 }
@@ -477,6 +522,24 @@ func (m *mockQuerier) ListAllUserMessages(ctx context.Context) ([]db.Message, er
 	var zero []db.Message
 	if v := args.Get(0); v != nil {
 		return v.([]db.Message), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) ListContentReplacementsByRound(ctx context.Context, arg db.ListContentReplacementsByRoundParams) ([]db.LcmContentReplacement, error) {
+	args := m.Called(ctx, arg)
+	var zero []db.LcmContentReplacement
+	if v := args.Get(0); v != nil {
+		return v.([]db.LcmContentReplacement), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) ListContentReplacementsByState(ctx context.Context, arg db.ListContentReplacementsByStateParams) ([]db.LcmContentReplacement, error) {
+	args := m.Called(ctx, arg)
+	var zero []db.LcmContentReplacement
+	if v := args.Get(0); v != nil {
+		return v.([]db.LcmContentReplacement), args.Error(1)
 	}
 	return zero, args.Error(1)
 }
@@ -688,6 +751,15 @@ func (m *mockQuerier) ListUserMessagesBySession(ctx context.Context, sessionID s
 	return zero, args.Error(1)
 }
 
+func (m *mockQuerier) RecordContentReplacement(ctx context.Context, arg db.RecordContentReplacementParams) (int64, error) {
+	args := m.Called(ctx, arg)
+	var zero int64
+	if v := args.Get(0); v != nil {
+		return v.(int64), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
 func (m *mockQuerier) RecordFileRead(ctx context.Context, arg db.RecordFileReadParams) error {
 	args := m.Called(ctx, arg)
 	return args.Error(0)
@@ -710,6 +782,11 @@ func (m *mockQuerier) SearchLcmSummaries(ctx context.Context, arg db.SearchLcmSu
 		return v.([]db.SearchLcmSummariesRow), args.Error(1)
 	}
 	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) UpdateContentReplacementState(ctx context.Context, arg db.UpdateContentReplacementStateParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
 }
 
 func (m *mockQuerier) UpdateLcmLargeFileExploration(ctx context.Context, arg db.UpdateLcmLargeFileExplorationParams) error {
