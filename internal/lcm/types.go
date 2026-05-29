@@ -100,6 +100,23 @@ type SummarySearchResult struct {
 	Kind      string
 }
 
+// LargeFileSearchResult is a ranked result from large file FTS search.
+type LargeFileSearchResult struct {
+	FileID  string
+	Path    string
+	Rank    float64
+	Snippet string
+}
+
+// RankedSearchResult is a result from ranked FTS5 search with bm25() scoring
+// and snippet highlighting.
+type RankedSearchResult struct {
+	RowID     int64
+	SummaryID string
+	Rank      float64
+	Snippet   string
+}
+
 // TimeQueryMessage is a message returned by time-range queries.
 type TimeQueryMessage struct {
 	ID        string

@@ -3,7 +3,9 @@ package lcm
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -139,6 +141,15 @@ type MicroCompactorConfig struct {
 	// SessionID is the session this compactor operates on. Set via
 	// WithSessionID before calling Compact.
 	SessionID string
+
+	// ReplacementStore is an optional ContentReplacementStore for
+	// recording content replacements during compaction. When nil,
+	// replacement recording is skipped (nil-safe).
+	ReplacementStore ContentReplacementStore
+
+	// Round is the current compaction round number, used when recording
+	// replacements.
+	Round int
 }
 
 func (c MicroCompactorConfig) threshold() int64 {
@@ -226,6 +237,10 @@ func (m *MicroCompactor) Compact(ctx context.Context, budget Budget) (*Compactio
 			continue
 		}
 
+		if m.isPinned(ctx, entry) {
+			continue
+		}
+
 		// Fetch the message content.
 		msgs, err := m.cfg.Store.GetMessages(ctx, m.cfg.SessionID)
 		if err != nil {
@@ -266,6 +281,8 @@ func (m *MicroCompactor) Compact(ctx context.Context, budget Budget) (*Compactio
 		newTokens := EstimateTokens(ref)
 		freed := max(entry.TokenCount-newTokens, 0)
 
+		m.recordReplacement(ctx, entry, fileID, int(entry.TokenCount), int(newTokens))
+
 		totalFreed += freed
 		affected++
 	}
@@ -286,6 +303,49 @@ func isAlreadyReferenced(text string) bool {
 	return strings.Contains(text, "[Large File Stored:") ||
 		strings.Contains(text, "[Large Tool Output Stored:") ||
 		strings.Contains(text, "[Large User Text Stored:")
+}
+
+// isPinned checks whether the context entry has an active pinned replacement
+// in the ReplacementStore, meaning it should be skipped during compaction.
+func (m *MicroCompactor) isPinned(ctx context.Context, entry ContextEntry) bool {
+	if m.cfg.ReplacementStore == nil {
+		return false
+	}
+	replacements, err := m.cfg.ReplacementStore.GetBySessionPosition(ctx, m.cfg.SessionID, entry.Position)
+	if err != nil {
+		return false
+	}
+	for _, r := range replacements {
+		if r.State == ReplacementPinned {
+			return true
+		}
+	}
+	return false
+}
+
+// recordReplacement records a content replacement in the ReplacementStore.
+// Failures are logged but do not abort compaction.
+func (m *MicroCompactor) recordReplacement(ctx context.Context, entry ContextEntry, fileID string, originalTokens, replacementTokens int) {
+	if m.cfg.ReplacementStore == nil {
+		return
+	}
+	_, err := m.cfg.ReplacementStore.RecordReplacement(ctx, ContentReplacement{
+		SessionID:             m.cfg.SessionID,
+		Position:              entry.Position,
+		MessageID:             sql.NullString{String: entry.MessageID, Valid: entry.MessageID != ""},
+		FileID:                sql.NullString{String: fileID, Valid: fileID != ""},
+		State:                 ReplacementActive,
+		Round:                 m.cfg.Round,
+		OriginalTokenCount:    originalTokens,
+		ReplacementTokenCount: replacementTokens,
+	})
+	if err != nil {
+		slog.Warn("Micro-compactor: failed to record content replacement",
+			slog.String("session_id", m.cfg.SessionID),
+			slog.Int64("position", entry.Position),
+			slog.String("error", err.Error()),
+		)
+	}
 }
 
 // ---------------------------------------------------------------------------

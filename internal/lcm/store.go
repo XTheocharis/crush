@@ -357,6 +357,44 @@ func (s *Store) GetContextTokenCount(ctx context.Context, sessionID string) (int
 	}
 }
 
+// SearchSummariesRanked performs FTS5 search with bm25() relevance ranking and
+// snippet highlighting. Results are sorted by relevance (most negative rank =
+// most relevant). Uses raw SQL because bm25() and snippet() are not supported
+// by sqlc.
+func (s *Store) SearchSummariesRanked(ctx context.Context, query string, limit int) ([]RankedSearchResult, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	const sqlQuery = `
+		SELECT fts.rowid, ls.summary_id, bm25(lcm_summaries_fts) AS rank,
+		       snippet(lcm_summaries_fts, 0, '>>>', '<<<', '...', 32) AS snippet
+		FROM lcm_summaries_fts fts
+		JOIN lcm_summaries ls ON ls.rowid = fts.rowid
+		WHERE lcm_summaries_fts MATCH ?
+		ORDER BY rank
+		LIMIT ?`
+
+	rows, err := s.rawDB.QueryContext(ctx, sqlQuery, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("ranked FTS search: %w", err)
+	}
+	defer rows.Close()
+
+	var results []RankedSearchResult
+	for rows.Next() {
+		var r RankedSearchResult
+		if err := rows.Scan(&r.RowID, &r.SummaryID, &r.Rank, &r.Snippet); err != nil {
+			return nil, fmt.Errorf("scanning ranked search result: %w", err)
+		}
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating ranked search results: %w", err)
+	}
+	return results, nil
+}
+
 // SearchSummaries performs FTS search using db.SearchLcmSummaries.
 func (s *Store) SearchSummaries(ctx context.Context, sessionID, ftsQuery string) ([]SummarySearchResult, error) {
 	rows, err := s.q.SearchLcmSummaries(ctx, db.SearchLcmSummariesParams{
@@ -553,6 +591,52 @@ func (s *Store) QueryByTime(ctx context.Context, sessionID string, startTime, en
 		})
 	}
 	return msgs, nil
+}
+
+// SearchLargeFiles performs FTS5 search over large file content scoped to a
+// session. Returns ranked results with snippets.
+func (s *Store) SearchLargeFiles(ctx context.Context, sessionID, query string, limit int) ([]LargeFileSearchResult, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	ftsQuery := preprocessLargeFileFTS(query)
+
+	const q = `
+		SELECT lf.file_id, lf.original_path, bm25(lcm_large_files_fts) AS rank,
+		       snippet(lcm_large_files_fts, 0, '>>>', '<<<', '...', 64) AS snippet
+		FROM lcm_large_files_fts fts
+		JOIN lcm_large_files lf ON lf.rowid = fts.rowid
+		WHERE lcm_large_files_fts MATCH ? AND lf.session_id = ?
+		ORDER BY rank
+		LIMIT ?`
+
+	rows, err := s.rawDB.QueryContext(ctx, q, ftsQuery, sessionID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("searching large files: %w", err)
+	}
+	defer rows.Close()
+
+	var results []LargeFileSearchResult
+	for rows.Next() {
+		var r LargeFileSearchResult
+		if err := rows.Scan(&r.FileID, &r.Path, &r.Rank, &r.Snippet); err != nil {
+			return nil, fmt.Errorf("scanning large file search result: %w", err)
+		}
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating large file search results: %w", err)
+	}
+	return results, nil
+}
+
+func preprocessLargeFileFTS(pattern string) string {
+	fields := strings.Fields(pattern)
+	if len(fields) == 0 {
+		return pattern
+	}
+	return strings.Join(fields, " AND ")
 }
 
 // GetLargeFilesBySession returns all large files for a session.

@@ -23,6 +23,8 @@ type doltParams struct {
 type archiveParams struct {
 	SessionID string `json:"session_id" description:"Session ID to search within"`
 	Pattern   string `json:"pattern"   description:"Full-text search pattern"`
+	Ranked    bool   `json:"ranked"    description:"Use bm25() relevance ranking with snippet highlighting (default true)"`
+	Limit     int    `json:"limit"     description:"Maximum number of results (default 10, only used with ranked=true)"`
 }
 
 type sprigParams struct {
@@ -92,7 +94,7 @@ func newDoltTool(store *Store) fantasy.AgentTool {
 func newArchiveTool(store *Store) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		"lcm_archive",
-		"Search summary content using full-text search within a session. Returns matching summaries with their IDs and kinds.",
+		"Search summary content using full-text search. When ranked=true (default), results include bm25() relevance scores and highlighted snippets.",
 		func(ctx context.Context, params archiveParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.SessionID == "" {
 				return fantasy.NewTextErrorResponse("session_id is required"), nil
@@ -100,11 +102,30 @@ func newArchiveTool(store *Store) fantasy.AgentTool {
 			if params.Pattern == "" {
 				return fantasy.NewTextErrorResponse("pattern is required"), nil
 			}
-			result, err := store.Archive(ctx, params.SessionID, params.Pattern)
+
+			if !params.Ranked {
+				result, err := store.Archive(ctx, params.SessionID, params.Pattern)
+				if err != nil {
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("Error searching summaries: %v", err)), nil
+				}
+				return fantasy.NewTextResponse(result), nil
+			}
+
+			results, err := store.SearchSummariesRanked(ctx, params.Pattern, params.Limit)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Error searching summaries: %v", err)), nil
 			}
-			return fantasy.NewTextResponse(result), nil
+			if len(results) == 0 {
+				return fantasy.NewTextResponse(fmt.Sprintf("No summaries matching %q found.", params.Pattern)), nil
+			}
+
+			var b strings.Builder
+			fmt.Fprintf(&b, "Found %d summaries matching %q (ranked by relevance):\n\n", len(results), params.Pattern)
+			for i, r := range results {
+				fmt.Fprintf(&b, "  [%d] %s  (rank=%.4f)\n", i, r.SummaryID, r.Rank)
+				fmt.Fprintf(&b, "      %s\n", r.Snippet)
+			}
+			return fantasy.NewTextResponse(b.String()), nil
 		})
 }
 
@@ -230,6 +251,43 @@ func newLineageTool(store *Store) fantasy.AgentTool {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Error tracing lineage: %v", err)), nil
 			}
 			return fantasy.NewTextResponse(result), nil
+		})
+}
+
+type fileSearchParams struct {
+	SessionID string `json:"session_id" description:"Session ID to search large files in"`
+	Query     string `json:"query"      description:"Full-text search query for large file content"`
+	Limit     int    `json:"limit"      description:"Maximum number of results (default 20)"`
+}
+
+func newFileSearchTool(store *Store) fantasy.AgentTool {
+	return fantasy.NewAgentTool(
+		"lcm_file_search",
+		"Search large file content stored in LCM using full-text search. Returns ranked results with file paths and snippets.",
+		func(ctx context.Context, params fileSearchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+			if params.SessionID == "" {
+				return fantasy.NewTextErrorResponse("session_id is required"), nil
+			}
+			if params.Query == "" {
+				return fantasy.NewTextErrorResponse("query is required"), nil
+			}
+			limit := params.Limit
+			if limit <= 0 {
+				limit = 20
+			}
+			results, err := store.SearchLargeFiles(ctx, params.SessionID, params.Query, limit)
+			if err != nil {
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("Error searching large files: %v", err)), nil
+			}
+			if len(results) == 0 {
+				return fantasy.NewTextResponse("No matching large files found."), nil
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "Found %d matching files:\n\n", len(results))
+			for i, r := range results {
+				fmt.Fprintf(&b, "[%d] %s (file_id=%s, rank=%.2f)\n    %s\n\n", i+1, r.Path, r.FileID, r.Rank, r.Snippet)
+			}
+			return fantasy.NewTextResponse(b.String()), nil
 		})
 }
 
