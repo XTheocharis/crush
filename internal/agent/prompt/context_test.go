@@ -194,6 +194,45 @@ func TestContextCacheMissingFile(t *testing.T) {
 	require.Nil(t, cf)
 }
 
+func TestProcessFileWithInclude(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	subfilePath := filepath.Join(dir, "subfile.md")
+	if err := os.WriteFile(subfilePath, []byte("included-content-here"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainPath := filepath.Join(dir, "main.md")
+	mainContent := "before\n@include subfile.md\nafter"
+	if err := os.WriteFile(mainPath, []byte(mainContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := processFile(mainPath)
+	require.NotNil(t, result)
+	require.Contains(t, result.Content, "included-content-here")
+	require.Contains(t, result.Content, "before")
+	require.Contains(t, result.Content, "after")
+	require.NotContains(t, result.Content, "@include")
+}
+
+func TestProcessFileWithMissingInclude(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	mainPath := filepath.Join(dir, "main.md")
+	mainContent := "before\n@include nonexistent.md\nafter"
+	if err := os.WriteFile(mainPath, []byte(mainContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := processFile(mainPath)
+	require.NotNil(t, result)
+	require.Contains(t, result.Content, "before")
+	require.Contains(t, result.Content, "@include nonexistent.md")
+	require.Contains(t, result.Content, "after")
+}
+
 func TestContextCacheInvalidate(t *testing.T) {
 	t.Parallel()
 

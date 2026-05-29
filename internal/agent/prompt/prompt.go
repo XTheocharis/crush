@@ -102,9 +102,18 @@ func processFile(filePath string) *ContextFile {
 	if err != nil {
 		return nil
 	}
+	processed, err := config.ProcessIncludes(string(content), filepath.Dir(filePath), 0, make(map[string]bool), config.FileAwareEvaluator(filePath))
+	if err != nil {
+		slog.Warn("Failed to process includes", "path", filePath, "error", err)
+		// Graceful fallback: use raw content.
+		return &ContextFile{
+			Path:    filePath,
+			Content: string(content),
+		}
+	}
 	return &ContextFile{
 		Path:    filePath,
-		Content: string(content),
+		Content: processed,
 	}
 }
 
