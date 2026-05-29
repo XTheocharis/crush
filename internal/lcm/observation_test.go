@@ -2,6 +2,7 @@ package lcm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -318,4 +319,40 @@ type countingMockLLMClient struct {
 func (m *countingMockLLMClient) Complete(_ context.Context, _, _ string) (string, error) {
 	m.callCount.Add(1)
 	return m.response, nil
+}
+
+func TestObservationPriorityRoundTrip(t *testing.T) {
+	t.Parallel()
+	obs := Observation{
+		Event:       "test event",
+		Context:     "test context",
+		Implication: "test implication",
+		TokenCount:  100,
+		Priority:    0.8,
+	}
+	data, err := json.Marshal(obs)
+	require.NoError(t, err)
+	var decoded Observation
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Equal(t, 0.8, decoded.Priority)
+	require.Equal(t, "test event", decoded.Event)
+}
+
+func TestParseObservationsWithPriority(t *testing.T) {
+	t.Parallel()
+	input := `[{"event":"test","context":"ctx","implication":"impl","priority":0.75}]`
+	observations, err := parseObservations(input)
+	require.NoError(t, err)
+	require.Len(t, observations, 1)
+	require.Equal(t, 0.75, observations[0].Priority)
+	require.Equal(t, "test", observations[0].Event)
+}
+
+func TestParseObservationsWithoutPriority(t *testing.T) {
+	t.Parallel()
+	input := `[{"event":"test","context":"ctx","implication":"impl"}]`
+	observations, err := parseObservations(input)
+	require.NoError(t, err)
+	require.Len(t, observations, 1)
+	require.Equal(t, 0.0, observations[0].Priority, "Priority should be Go zero value for missing field")
 }

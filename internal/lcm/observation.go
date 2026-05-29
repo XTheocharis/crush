@@ -20,10 +20,11 @@ const DefaultObservationTokenThreshold = 30_000
 // Observation is a single (event, context, implication) tuple extracted by the
 // observer agent from the conversation history.
 type Observation struct {
-	Event       string `json:"event"`
-	Context     string `json:"context"`
-	Implication string `json:"implication"`
-	TokenCount  int64  `json:"token_count"`
+	Event       string  `json:"event"`
+	Context     string  `json:"context"`
+	Implication string  `json:"implication"`
+	TokenCount  int64   `json:"token_count"`
+	Priority    float64 `json:"priority"`
 }
 
 // ObservationResult is the output of a single observation cycle.
@@ -268,9 +269,10 @@ func parseObservations(raw string) ([]Observation, error) {
 	raw = strings.TrimSpace(raw)
 
 	var parsed []struct {
-		Event       string `json:"event"`
-		Context     string `json:"context"`
-		Implication string `json:"implication"`
+		Event       string  `json:"event"`
+		Context     string  `json:"context"`
+		Implication string  `json:"implication"`
+		Priority    float64 `json:"priority"`
 	}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return nil, fmt.Errorf("parsing observations JSON: %w", err)
@@ -282,6 +284,7 @@ func parseObservations(raw string) ([]Observation, error) {
 			Event:       truncateObservationField(p.Event, 500),
 			Context:     truncateObservationField(p.Context, 2000),
 			Implication: truncateObservationField(p.Implication, 2000),
+			Priority:    p.Priority,
 		}
 		observations = append(observations, obs)
 	}
@@ -315,15 +318,17 @@ Analyze the conversation and extract key observations. Each observation should c
 - "event": What happened or what was discussed (brief, 1-2 sentences)
 - "context": The relevant context or background (file paths, function names, technical details)
 - "implication": What this means for future work or potential issues to watch for
+- "priority": Importance of this observation as a number from 0.0 to 1.0 (>=0.7 is high, >=0.3 is medium, <0.3 is low)
 
-Return a JSON array of observation objects. Each object must have exactly these three fields: "event", "context", "implication".
+Return a JSON array of observation objects. Each object must have exactly these four fields: "event", "context", "implication", "priority".
 
 Example format:
 [
   {
     "event": "User decided to use PostgreSQL instead of SQLite for the database",
     "context": "Discussed in context of internal/db/store.go, affects migration strategy in internal/db/migrations/",
-    "implication": "Future migrations need to account for PostgreSQL-specific syntax, connection pooling changes needed"
+    "implication": "Future migrations need to account for PostgreSQL-specific syntax, connection pooling changes needed",
+    "priority": 0.8
   }
 ]
 

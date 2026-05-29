@@ -348,6 +348,18 @@ func parseReflections(raw string) ([]Reflection, error) {
 	return reflections, nil
 }
 
+// observationPriorityText converts a numeric priority score to a text label.
+func observationPriorityText(p float64) string {
+	switch {
+	case p >= 0.7:
+		return "high"
+	case p >= 0.3:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
 // formatObservationsForReflection formats observations into the user prompt
 // for the reflector LLM call.
 func formatObservationsForReflection(observations []Observation) string {
@@ -357,7 +369,8 @@ func formatObservationsForReflection(observations []Observation) string {
 		fmt.Fprintf(&sb, "--- Observation #%d ---\n", i+1)
 		fmt.Fprintf(&sb, "Event: %s\n", obs.Event)
 		fmt.Fprintf(&sb, "Context: %s\n", obs.Context)
-		fmt.Fprintf(&sb, "Implication: %s\n\n", obs.Implication)
+		fmt.Fprintf(&sb, "Implication: %s\n", obs.Implication)
+		fmt.Fprintf(&sb, "Priority: %s\n\n", observationPriorityText(obs.Priority))
 	}
 	sb.WriteString("</observations>")
 	return sb.String()
