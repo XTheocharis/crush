@@ -28,14 +28,14 @@ architect_plan.go                 Structured planning before code changes
 autofix.go                        Iterative lint → fix → test → reflect cycle
 go_linter.go                      Go-specific vet/staticcheck integration
 
-model_router.go                   Route requests to model by token count/tier
+model_router.go                   Deprecated model router; fallback for TierRouter when no RouterTiers configured
 router_tier.go                    Tier definitions for model routing
-ratelimit.go                      Token-rate and request-rate limiting
+ratelimit.go                      Reactive 429-backoff rate limit coordination
 resource_limits.go                Concurrency caps, token budgets, escalation
 
-cache_share.go                    Cross-agent cache sharing via content-addressed keys
+cache_share.go                    Cross-agent cache sharing via colon-separated string keys
 config_loader.go                  Dynamic agent configuration from crush.json
-prompt_assembly.go                Compose system prompts at runtime
+prompt_assembly.go                → moved to internal/extensions/prompt_assembly_ext.go (PromptAssemblyExtension)
 structured_subagent.go            Typed-output forked child agents
 structured_types.go               Shared types for structured sub-agents
 forked.go                         Forked session support for parallel branches
@@ -140,13 +140,14 @@ Key types:
 
 ### model_router.go
 
-Selects the best model for a request based on input token count. Small
-inputs route to the editor model; large inputs route to the architect
-model. Falls back to the default model if tiers are not configured.
+Deprecated model router; kept for compatibility. Active routing via
+`router_tier.go` `TierRouter`, with `ModelRouter` used as runtime fallback
+via `ModelRouterExtension` when no `RouterTiers` are configured.
 
 Key types:
-- `ModelRouter` — model selection logic.
-- `RouteDecision` — routing result with reason.
+- `TierRouter` — N-tier model routing with configurable thresholds.
+- `RoutingTier` — tier definition with model ID and token thresholds.
+- `ModelRouter` — deprecated model selection logic (binary threshold).
 
 ### router_tier.go
 
@@ -157,12 +158,12 @@ Key types:
 
 ### ratelimit.go
 
-Token-rate and request-rate limiter for LLM API calls. Uses a sliding
-window algorithm. Returns `ErrRateLimited` when limits are exceeded.
+Reactive 429-backoff coordination for LLM API calls. When one call
+receives a 429, all concurrent calls to the same provider respect the
+shared backoff rather than independently racing.
 
 Key types:
-- `RateLimiter` — per-session rate limiter.
-- `RateLimitConfig` — tokens-per-minute and requests-per-minute.
+- `RateLimitCoordinator` — per-provider backoff coordination.
 
 ### resource_limits.go
 
@@ -171,19 +172,21 @@ token budget, and maximum conversation turns. Escalates from warning to
 hard limit.
 
 Key types:
-- `ResourceLimits` — limit enforcement.
-- `LimitConfig` — configurable thresholds.
+- `ResourceUsage` — real-time resource consumption tracker.
+- `ResourceLimit` — soft/hard limit for a single resource dimension.
+- `SubagentLimits` — per-subagent-type resource limits.
+- `ResourceLimitedTask` — task wrapper with limit enforcement.
 
 ## Context and Caching
 
 ### cache_share.go
 
-Content-addressed cache shared across agent sessions. Keys are SHA-256
-hashes of the input. Used to avoid re-computing expensive operations
-(like repo map generation) across parallel agents.
+Thread-safe, TTL-aware key-value store shared across agent sessions.
+Keys are colon-separated strings with a category prefix (e.g.,
+`"diagnostics:session-abc"`) supporting wildcard invalidation.
 
 Key types:
-- `CacheShare` — shared cache instance.
+- `SharedCache` — shared cache instance.
 
 ### config_loader.go
 
@@ -192,16 +195,16 @@ Supports per-agent overrides, tool allow/deny lists, and model routing
 configuration.
 
 Key types:
-- `ConfigLoader` — configuration loading and validation.
+- `AgentConfigLoader` — configuration loading and validation.
 
 ### prompt_assembly.go
 
 Assembles the full system prompt at runtime from template, context files,
 tool descriptions, and dynamic instructions. Handles token budget
-truncation.
+truncation. Now located at `internal/extensions/prompt_assembly_ext.go`.
 
 Key types:
-- `PromptAssembler` — prompt composition engine.
+- `PromptAssemblyExtension` — prompt composition engine.
 
 ### lcm_client.go
 

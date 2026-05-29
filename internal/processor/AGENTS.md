@@ -1,8 +1,9 @@
 # Processor Pipeline
 
 Message processing pipeline that intercepts LLM input and output across four
-sequential phases. 16 processor implementations exist; 3 are active in
-production.
+sequential phases. 16 processor implementations exist; 3 active by default
+(TokenLimiter, SystemPromptScrubber, PIIDetector), 10 activatable via config
+(`ProcessorsOptions.Enabled`), 6 never-wirable.
 
 ## Structure
 
@@ -55,14 +56,23 @@ Registration happens via `RunnerOption` functions: `WithInputProcessors()`,
 | `SystemPromptScrubber` | OutputStream, OutputResult | Noop without LLM client; sends output to LLM to detect/strip leaked system prompts |
 | `PIIDetector` | Input, OutputStream, OutputResult | Regex PII redaction (SSN, CC, email, phone). LLM-based contextual detection at high sensitivity |
 
-## Disabled Processors
+## Config-Activatable Processors (10)
 
-These are implemented but not wired in production. Most require an LLM client
-that has not been integrated yet:
+These are the safe processors that can be enabled via
+`ProcessorsOptions.Enabled` in `crush.json`. Three of them are active by
+default (marked with *):
 
-MessageSelection, PromptInjection, Moderation, LanguageDetector, Skills,
-SkillSearch, ToolSearch, StructuredOutput, UnicodeNormalizer,
-WorkspaceInstructions, BatchParts, ToolCallFilter, MessageHistory
+TokenLimiter*, SystemPromptScrubber*, PIIDetector*, UnicodeNormalizer,
+BatchParts, MessageSelection, ToolCallFilter, ToolSearch, Skills,
+SkillSearch
+
+## Never-Wirable Processors (6)
+
+These are implemented but cannot be enabled at runtime. They require
+infrastructure not yet integrated:
+
+Moderation, PromptInjection, LanguageDetector, StructuredOutput,
+WorkspaceInstructions, MessageHistory
 
 ## Testing
 

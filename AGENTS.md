@@ -37,13 +37,13 @@ internal/
     architect_plan.go              Structured planning before code changes
     autofix.go                     Iterative lint → fix → test → reflect cycle
     go_linter.go                   Go-specific vet/staticcheck integration
-    model_router.go                Route requests to model by token count/tier
+    model_router.go                Deprecated model router; kept for compatibility. Active routing via router_tier.go TierRouter, with ModelRouter as runtime fallback when no RouterTiers configured
     router_tier.go                 Tier definitions for model routing
-    ratelimit.go                   Token-rate and request-rate limiting
+    ratelimit.go                      Reactive 429-backoff rate limit coordination
     resource_limits.go             Concurrency caps, token budgets, escalation
-    cache_share.go                 Cross-agent cache sharing via content-addressed keys
+    cache_share.go                    Cross-agent cache sharing via colon-separated string keys
     config_loader.go               Dynamic agent configuration from crush.json
-    prompt_assembly.go             Compose system prompts at runtime
+    prompt_assembly.go             → moved to internal/extensions/prompt_assembly_ext.go (PromptAssemblyExtension)
     structured_subagent.go         Typed-output forked child agents
     structured_types.go            Shared types for structured sub-agents
     forked.go                      Forked session support for parallel branches
@@ -114,6 +114,8 @@ internal/
     harness.go                     EvalHarness: parallel scorer registration and execution
     runner.go                      EvalRunner: loads JSON datasets, runs through harness
     scorers/                       Scorer sub-packages (metric, judge, mastra)
+  extensions/                      Runtime extension packages
+    prompt_assembly_ext.go         PromptAssemblyExtension for system prompt assembly
   rewind/                          Turn-based snapshot and rewind (see internal/rewind/AGENTS.md)
     snapshot.go                    Snapshotter: capture and retrieve turn snapshots
     rewind.go                      Rewinder: rewind code, conversation, or both
@@ -181,7 +183,7 @@ internal/
   See `internal/treesitter/AGENTS.md`.
 - **Processor Pipeline**: message intercept pipeline with four sequential
   phases (input, output stream, output result, API error). 16 processor
-  implementations; 3 active in production.
+  implementations; 3 active by default (TokenLimiter, SystemPromptScrubber, PIIDetector), with 10 activatable via config and 6 never-wirable.
   See `internal/processor/AGENTS.md`.
 - **Eval**: agent evaluation harness. Scorers assess output quality across
   metric, LLM-judge, and Mastra dimensions. Invoked via
