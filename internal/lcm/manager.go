@@ -177,6 +177,23 @@ type Manager interface {
 
 	// ListOMEntries returns all operational memory entries for a session.
 	ListOMEntries(ctx context.Context, sessionID string) ([]session.OMEntry, error)
+
+	// RestoreReplacement restores a single content replacement by ID,
+	// transitioning it from active to restored state. Returns
+	// ErrNoActiveReplacement if the replacement is not in active state.
+	RestoreReplacement(ctx context.Context, id int64) error
+
+	// RestoreAllByRound restores all content replacements for a session in a
+	// specific compaction round. Already-restored entries are skipped.
+	RestoreAllByRound(ctx context.Context, sessionID string, round int) error
+
+	// PinEntry pins a context entry by recording a pinned replacement at the
+	// given position. Pinned entries are skipped by the MicroCompactor.
+	PinEntry(ctx context.Context, sessionID string, position int64) error
+
+	// CleanOrphanedReplacements removes replacement records whose referenced
+	// context entry no longer exists. Should be called after compaction.
+	CleanOrphanedReplacements(ctx context.Context, sessionID string) (int, error)
 }
 
 type compactionManager struct {
@@ -186,6 +203,8 @@ type compactionManager struct {
 	sqlDB      *sql.DB
 	broker     *pubsub.Broker[CompactionEvent]
 	summarizer *Summarizer
+
+	contentReplacements ContentReplacementStore
 
 	inFlight      sync.Map // sessionID -> struct{} (deduplication)
 	budgetCache   sync.Map // sessionID -> Budget
@@ -260,24 +279,25 @@ func NewManager(queries *db.Queries, rawDB *sql.DB, toolFactory ...types.LCMTool
 	cueInjector := NewCueInjector()
 
 	return &compactionManager{
-		store:                 store,
-		querier:               queries,
-		queries:               queries,
-		sqlDB:                 rawDB,
-		broker:                pubsub.NewBroker[CompactionEvent](),
-		summarizer:            NewSummarizer(nil),
-		defaultContextWindow:  128000,
-		defaultCutoff:         0.6,
-		retrieval:             store,
-		cueInjector:           cueInjector,
+		store:                store,
+		querier:              queries,
+		queries:              queries,
+		sqlDB:                rawDB,
+		broker:               pubsub.NewBroker[CompactionEvent](),
+		summarizer:           NewSummarizer(nil),
+		defaultContextWindow: 128000,
+		defaultCutoff:        0.6,
+		retrieval:            store,
+		cueInjector:          cueInjector,
 		preservedContextStore: preservedStore,
-		observer:              NewObservationCoordinator(store, nil, 0, nil),
-		reflector:             NewReflectorAgent(store, nil, 0),
-		bufferingCoordinator:  NewBufferingCoordinator(store, nil),
-		autoMemoryExtractor:   NewAutoMemoryExtractor(store, nil, 0),
-		reversibleCompactor:   NewReversibleCompactor(store),
-		blockTracker:          NewBlockIDTracker("blk"),
-		toolFactory:           factory,
+		observer:             NewObservationCoordinator(store, nil, 0, nil),
+		reflector:            NewReflectorAgent(store, nil, 0),
+		bufferingCoordinator: NewBufferingCoordinator(store, nil),
+		autoMemoryExtractor:  NewAutoMemoryExtractor(store, nil, 0),
+		reversibleCompactor:  NewReversibleCompactor(store),
+		blockTracker:         NewBlockIDTracker("blk"),
+		toolFactory:          factory,
+		contentReplacements:  newContentReplacementStore(queries, rawDB),
 	}
 }
 
@@ -294,25 +314,26 @@ func NewManagerWithLLM(queries *db.Queries, rawDB *sql.DB, llm LLMClient, toolFa
 	reflector := NewReflectorAgent(store, llm, 0)
 
 	return &compactionManager{
-		store:                 store,
-		querier:               queries,
-		queries:               queries,
-		sqlDB:                 rawDB,
-		broker:                pubsub.NewBroker[CompactionEvent](),
-		summarizer:            NewSummarizer(llm),
-		defaultContextWindow:  128000,
-		defaultCutoff:         0.6,
-		compressor:            NewMessageCompression(llm),
-		retrieval:             store,
-		cueInjector:           cueInjector,
+		store:                store,
+		querier:              queries,
+		queries:              queries,
+		sqlDB:                rawDB,
+		broker:               pubsub.NewBroker[CompactionEvent](),
+		summarizer:           NewSummarizer(llm),
+		defaultContextWindow: 128000,
+		defaultCutoff:        0.6,
+		compressor:           NewMessageCompression(llm),
+		retrieval:            store,
+		cueInjector:          cueInjector,
 		preservedContextStore: preservedStore,
-		observer:              observer,
-		reflector:             reflector,
-		bufferingCoordinator:  NewBufferingCoordinator(store, reflector),
-		autoMemoryExtractor:   NewAutoMemoryExtractor(store, llm, 0),
-		reversibleCompactor:   NewReversibleCompactor(store),
-		blockTracker:          NewBlockIDTracker("blk"),
-		toolFactory:           factory,
+		observer:             observer,
+		reflector:            reflector,
+		bufferingCoordinator: NewBufferingCoordinator(store, reflector),
+		autoMemoryExtractor:  NewAutoMemoryExtractor(store, llm, 0),
+		reversibleCompactor:  NewReversibleCompactor(store),
+		blockTracker:         NewBlockIDTracker("blk"),
+		toolFactory:          factory,
+		contentReplacements:  newContentReplacementStore(queries, rawDB),
 	}
 }
 
@@ -1472,4 +1493,99 @@ func (m *compactionManager) FlushReflections(ctx context.Context, sessionID stri
 			}
 		}
 	}
+}
+
+// RestoreReplacement restores a single content replacement by ID.
+func (m *compactionManager) RestoreReplacement(ctx context.Context, id int64) error {
+	if m.contentReplacements == nil {
+		return fmt.Errorf("RestoreReplacement: %w", ErrNoActiveReplacement)
+	}
+	row, err := m.querier.GetContentReplacement(ctx, id)
+	if err != nil {
+		return fmt.Errorf("RestoreReplacement: getting replacement %d: %w", id, err)
+	}
+	if ReplacementState(row.State) != ReplacementActive {
+		return ErrNoActiveReplacement
+	}
+	return m.contentReplacements.UpdateState(ctx, id, ReplacementRestored)
+}
+
+// RestoreAllByRound restores all content replacements for a session round.
+func (m *compactionManager) RestoreAllByRound(ctx context.Context, sessionID string, round int) error {
+	if m.contentReplacements == nil {
+		return nil
+	}
+	replacements, err := m.contentReplacements.ListByRound(ctx, sessionID, round)
+	if err != nil {
+		return fmt.Errorf("RestoreAllByRound: listing round %d: %w", round, err)
+	}
+	for _, r := range replacements {
+		if r.State != ReplacementActive {
+			continue
+		}
+		if err := m.contentReplacements.UpdateState(ctx, r.ID, ReplacementRestored); err != nil {
+			slog.Warn("RestoreAllByRound: failed to restore",
+				"session_id", sessionID, "id", r.ID, "error", err)
+		}
+	}
+	return nil
+}
+
+// PinEntry pins a context entry at the given position.
+func (m *compactionManager) PinEntry(ctx context.Context, sessionID string, position int64) error {
+	if m.contentReplacements == nil {
+		return fmt.Errorf("PinEntry: content replacement store not configured")
+	}
+	id, err := m.contentReplacements.RecordReplacement(ctx, ContentReplacement{
+		SessionID:             sessionID,
+		Position:              position,
+		State:                 ReplacementActive,
+		Round:                 0,
+		OriginalTokenCount:    0,
+		ReplacementTokenCount: 0,
+	})
+	if err != nil {
+		return fmt.Errorf("PinEntry: recording pin: %w", err)
+	}
+	return m.contentReplacements.UpdateState(ctx, id, ReplacementPinned)
+}
+
+// CleanOrphanedReplacements removes replacement records whose referenced
+// context entry no longer exists.
+func (m *compactionManager) CleanOrphanedReplacements(ctx context.Context, sessionID string) (int, error) {
+	if m.sqlDB == nil {
+		return 0, nil
+	}
+	rows, err := m.sqlDB.QueryContext(ctx,
+		`SELECT cr.id FROM lcm_content_replacements cr
+		 LEFT JOIN lcm_context_items ci ON cr.session_id = ci.session_id AND cr.position = ci.position
+		 WHERE cr.session_id = ? AND ci.session_id IS NULL`,
+		sessionID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("CleanOrphanedReplacements: querying orphans: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return 0, fmt.Errorf("CleanOrphanedReplacements: scanning: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("CleanOrphanedReplacements: iterating: %w", err)
+	}
+
+	for _, id := range ids {
+		if _, err := m.sqlDB.ExecContext(ctx,
+			"DELETE FROM lcm_content_replacements WHERE id = ?", id,
+		); err != nil {
+			slog.Warn("CleanOrphanedReplacements: failed to delete",
+				"session_id", sessionID, "id", id, "error", err)
+		}
+	}
+	return len(ids), nil
 }
