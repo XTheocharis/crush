@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
@@ -211,15 +212,32 @@ func TestAutoMemoryTruncateContent(t *testing.T) {
 	require.Equal(t, content, truncateMemoryContent(content))
 
 	// Over byte limit.
-	longContent := strings.Repeat("x", MemoryMaxBytes+100)
+	longContent := strings.Repeat("x", MemoryMaxChars+100)
 	result := truncateMemoryContent(longContent)
-	require.Equal(t, MemoryMaxBytes, len(result))
+	require.Equal(t, MemoryMaxChars, utf8.RuneCountInString(result))
 
 	// Over line limit.
 	manyLines := strings.Repeat("line\n", MemoryMaxLines+10)
 	result = truncateMemoryContent(manyLines)
 	lines := strings.Split(result, "\n")
 	require.LessOrEqual(t, len(lines), MemoryMaxLines+1) // trailing newline adds one
+}
+
+func TestAutoMemoryTruncateContent_Multibyte(t *testing.T) {
+	t.Parallel()
+
+	// Japanese characters are 3 bytes each in UTF-8.
+	// Build a string longer than MemoryMaxChars in character count.
+	input := strings.Repeat("日本語テスト", MemoryMaxChars/5+100)
+	result := truncateMemoryContent(input)
+
+	// Verify truncation happened and produces valid UTF-8.
+	require.LessOrEqual(t, utf8.RuneCountInString(result), MemoryMaxChars)
+	require.True(t, utf8.ValidString(result))
+	// Verify no partial rune — each rune should be a complete character.
+	for _, r := range result {
+		require.NotEqual(t, utf8.RuneError, r)
+	}
 }
 
 func TestAutoMemorySessionBudget(t *testing.T) {
@@ -233,7 +251,7 @@ func TestAutoMemorySessionBudget(t *testing.T) {
 	createTestMessage(t, queries, sessionID, "msg_budg_00000000", "user", "test message for budget")
 
 	// Pre-fill the table to near the 60 KB limit.
-	largeContent := strings.Repeat("a", MemorySessionMaxBytes-100)
+	largeContent := strings.Repeat("a", MemorySessionMaxChars-100)
 	_, err := rawDB.ExecContext(context.Background(),
 		`INSERT INTO lcm_auto_memory (id, session_id, memory_type, content, source_message_ids)
 		 VALUES (?, ?, ?, ?, ?)`,

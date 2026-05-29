@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // DefaultObservationTokenThreshold is the token count at which the observer
@@ -194,9 +195,9 @@ func (oc *ObservationCoordinator) insertObservationBuffer(ctx context.Context, s
 	tokenCount := EstimateTokens(string(content))
 
 	_, err := oc.store.rawDB.ExecContext(ctx,
-		`INSERT INTO lcm_observation_buffer (id, session_id, buffer_type, content, token_count)
-		 VALUES (?, ?, 'observation', ?, ?)`,
-		id, sessionID, string(content), tokenCount,
+		`INSERT INTO lcm_observation_buffer (id, session_id, buffer_type, content, token_count, priority)
+		 VALUES (?, ?, 'observation', ?, ?, ?)`,
+		id, sessionID, string(content), tokenCount, observationPriorityText(obs.Priority),
 	)
 	if err != nil {
 		return fmt.Errorf("inserting observation buffer: %w", err)
@@ -210,7 +211,12 @@ func (oc *ObservationCoordinator) ListObservations(ctx context.Context, sessionI
 	rows, err := oc.store.rawDB.QueryContext(ctx,
 		`SELECT content, token_count FROM lcm_observation_buffer
 		 WHERE session_id = ? AND buffer_type = 'observation'
-		 ORDER BY created_at ASC`,
+		 ORDER BY CASE priority
+		     WHEN 'high' THEN 0
+		     WHEN 'medium' THEN 1
+		     WHEN 'low' THEN 2
+		     ELSE 1
+		 END ASC, created_at ASC`,
 		sessionID,
 	)
 	if err != nil {
@@ -293,10 +299,10 @@ func parseObservations(raw string) ([]Observation, error) {
 
 // truncateObservationField truncates a field to maxLen characters.
 func truncateObservationField(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen]
+	return string([]rune(s)[:maxLen])
 }
 
 // formatMessagesForObservation formats conversation messages into the user

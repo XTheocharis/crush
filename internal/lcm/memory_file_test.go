@@ -65,7 +65,7 @@ func TestWriteMemoryFile_ByteLimitEnforced(t *testing.T) {
 		{Type: MemoryFact, Content: strings.Repeat("x", 5000), Confidence: 0.9},
 	}
 
-	n, err := WriteMemoryFile(context.Background(), memories, dir, MemoryFileConfig{MaxBytes: 100})
+	n, err := WriteMemoryFile(context.Background(), memories, dir, MemoryFileConfig{MaxChars: 100})
 	require.NoError(t, err)
 	require.LessOrEqual(t, n, 100)
 

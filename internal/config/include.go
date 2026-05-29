@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -165,10 +166,10 @@ func resolveIncludePath(includePath, basePath string) (string, error) {
 // truncate truncates content to maxContentChars and appends the truncation
 // marker if needed.
 func truncate(content string) string {
-	if len(content) <= maxContentChars {
+	if utf8.RuneCountInString(content) <= maxContentChars {
 		return content
 	}
-	return content[:maxContentChars] + truncationMarker
+	return string([]rune(content)[:maxContentChars]) + truncationMarker
 }
 
 // isSubPath returns true if sub is within or equal to parent. Both paths

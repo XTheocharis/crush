@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/stretchr/testify/require"
@@ -355,4 +357,50 @@ func TestParseObservationsWithoutPriority(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, observations, 1)
 	require.Equal(t, 0.0, observations[0].Priority, "Priority should be Go zero value for missing field")
+}
+
+func TestObservationPriorityColumn(t *testing.T) {
+	t.Parallel()
+	queries, store := setupObservationTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "obs-test-priority-sort"
+	createTestSession(t, queries, sessionID)
+	createTestMessage(t, queries, sessionID, "msg-1", "user", "priority test")
+	createTestMessage(t, queries, sessionID, "msg-2", "assistant", "noted")
+
+	// Insert three observations with different priorities: low, high, medium.
+	// They arrive in this order so we can verify that sorting reorders them.
+	obsJSON := `[
+		{"event":"low priority event","context":"c1","implication":"i1","priority":0.1},
+		{"event":"high priority event","context":"c2","implication":"i2","priority":0.9},
+		{"event":"medium priority event","context":"c3","implication":"i3","priority":0.5}
+	]`
+	mockLLM := &mockLLMClient{response: obsJSON}
+	oc := NewObservationCoordinator(store, mockLLM, 0, nil)
+	ch := oc.Observe(ctx, sessionID)
+	require.NotNil(t, ch)
+	result := <-ch
+	require.NoError(t, result.Error)
+	require.Len(t, result.Observations, 3)
+
+	// Verify that ListObservations returns them in priority order.
+	stored, err := oc.ListObservations(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, stored, 3)
+
+	require.Equal(t, "high priority event", stored[0].Event, "high priority should sort first")
+	require.Equal(t, "medium priority event", stored[1].Event, "medium priority should sort second")
+	require.Equal(t, "low priority event", stored[2].Event, "low priority should sort last")
+}
+
+func TestTruncateObservationField_Multibyte(t *testing.T) {
+	t.Parallel()
+
+	// Korean characters are 3 bytes each in UTF-8.
+	input := strings.Repeat("한글테스트", 200)
+	result := truncateObservationField(input, 100)
+
+	require.Equal(t, 100, utf8.RuneCountInString(result))
+	require.True(t, utf8.ValidString(result))
 }

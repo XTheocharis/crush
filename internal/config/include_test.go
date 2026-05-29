@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
@@ -300,6 +301,20 @@ func TestTruncateFunction(t *testing.T) {
 	result := truncate(long)
 	require.Contains(t, result, "<!-- truncated at 40K -->")
 	require.Equal(t, maxContentChars, strings.Index(result, truncationMarker))
+}
+
+func TestTruncateFunction_Multibyte(t *testing.T) {
+	t.Parallel()
+
+	// Japanese characters are 3 bytes each in UTF-8.
+	input := strings.Repeat("日本語テスト", maxContentChars/5+100)
+	result := truncate(input)
+	require.Contains(t, result, "<!-- truncated at 40K -->")
+	require.True(t, utf8.ValidString(result))
+	// Verify the content before the marker has exactly maxContentChars runes.
+	markerIdx := strings.Index(result, truncationMarker)
+	content := result[:markerIdx]
+	require.Equal(t, maxContentChars, utf8.RuneCountInString(content))
 }
 
 func TestIsSubPath(t *testing.T) {

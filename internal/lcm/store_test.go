@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/pressly/goose/v3"
@@ -48,6 +49,26 @@ func TestStore_GetLargeFileContent_Truncation(t *testing.T) {
 	truncated, err := store.GetLargeFileContent(ctx, fileID, sessionID, 100)
 	require.NoError(t, err)
 	require.Len(t, truncated, 100)
+}
+
+func TestStore_GetLargeFileContent_Truncation_Multibyte(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	store := newStore(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-truncate-mb"
+	createTestSession(t, queries, sessionID)
+
+	// Chinese characters are 3 bytes each in UTF-8.
+	content := strings.Repeat("中文测试内容", 500)
+	fileID, err := store.InsertLargeTextContent(ctx, sessionID, content, "big.txt")
+	require.NoError(t, err)
+
+	truncated, err := store.GetLargeFileContent(ctx, fileID, sessionID, 100)
+	require.NoError(t, err)
+	require.Equal(t, 100, utf8.RuneCountInString(truncated))
+	require.True(t, utf8.ValidString(truncated))
 }
 
 func TestStore_LargeFileExists(t *testing.T) {

@@ -193,7 +193,12 @@ func (ra *ReflectorAgent) listUnreflectedObservations(ctx context.Context, sessi
 	rows, err := ra.store.rawDB.QueryContext(ctx,
 		`SELECT content, token_count FROM lcm_observation_buffer
 		 WHERE session_id = ? AND buffer_type = 'observation'
-		 ORDER BY created_at ASC`,
+		 ORDER BY CASE priority
+		     WHEN 'high' THEN 0
+		     WHEN 'medium' THEN 1
+		     WHEN 'low' THEN 2
+		     ELSE 1
+		 END ASC, created_at ASC`,
 		sessionID,
 	)
 	if err != nil {
@@ -248,8 +253,8 @@ func (ra *ReflectorAgent) insertReflectionBuffer(ctx context.Context, sessionID 
 	tokenCount := EstimateTokens(string(content))
 
 	_, err = ra.store.rawDB.ExecContext(ctx,
-		`INSERT INTO lcm_observation_buffer (id, session_id, buffer_type, content, token_count)
-		 VALUES (?, ?, 'insight', ?, ?)`,
+		`INSERT INTO lcm_observation_buffer (id, session_id, buffer_type, content, token_count, priority)
+		 VALUES (?, ?, 'insight', ?, ?, 'medium')`,
 		id, sessionID, string(content), tokenCount,
 	)
 	if err != nil {

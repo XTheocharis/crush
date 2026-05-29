@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/crush/internal/db"
 )
@@ -120,8 +121,8 @@ func (s *Store) GetLargeFileContent(ctx context.Context, fileID, sessionID strin
 	}
 
 	content := file.Content.String
-	if maxBytes > 0 && len(content) > maxBytes {
-		content = content[:maxBytes]
+	if maxBytes > 0 && utf8.RuneCountInString(content) > maxBytes {
+		content = string([]rune(content)[:maxBytes])
 	}
 	return content, nil
 }

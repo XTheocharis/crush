@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Memory type constants matching the CHECK constraint in lcm_auto_memory.
@@ -30,10 +31,10 @@ const (
 const (
 	// MemoryMaxLines is the maximum number of lines per memory content.
 	MemoryMaxLines = 200
-	// MemoryMaxBytes is the maximum size in bytes per memory content (4 KB).
-	MemoryMaxBytes = 4096
-	// MemorySessionMaxBytes is the maximum total memory size per session (60 KB).
-	MemorySessionMaxBytes = 60000
+	// MemoryMaxChars is the maximum size in characters per memory content (4 KB).
+	MemoryMaxChars = 4096
+	// MemorySessionMaxChars is the maximum total memory size per session (60 KB).
+	MemorySessionMaxChars = 60000
 	// DefaultMemoryInterval is the default number of turns between extraction triggers.
 	DefaultMemoryInterval = 5
 	// MemoryMaxTurnsPerTrigger is the maximum number of recent conversation turns
@@ -204,7 +205,7 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 		mem.Content = content
 		memSize := len(content)
 
-		if currentSize+memSize > MemorySessionMaxBytes {
+		if currentSize+memSize > MemorySessionMaxChars {
 			// Session budget exhausted — stop storing.
 			break
 		}
@@ -500,7 +501,7 @@ func generateMemoryID(sessionID string, mem ExtractedMemory) string {
 	return "mem_" + hex.EncodeToString(h[:])[:16]
 }
 
-// truncateMemoryContent enforces the per-memory line and byte limits.
+// truncateMemoryContent enforces the per-memory line and character limits.
 func truncateMemoryContent(content string) string {
 	// Enforce line limit.
 	lines := strings.Split(content, "\n")
@@ -508,9 +509,9 @@ func truncateMemoryContent(content string) string {
 		lines = lines[:MemoryMaxLines]
 		content = strings.Join(lines, "\n")
 	}
-	// Enforce byte limit.
-	if len(content) > MemoryMaxBytes {
-		content = content[:MemoryMaxBytes]
+	// Enforce character limit.
+	if utf8.RuneCountInString(content) > MemoryMaxChars {
+		content = string([]rune(content)[:MemoryMaxChars])
 	}
 	return content
 }
@@ -595,9 +596,9 @@ type MemoryFileConfig struct {
 	FilePath string
 	// MaxLines is the maximum number of lines per file. Default: 200.
 	MaxLines int
-	// MaxBytes is the maximum file size in bytes. Default: 4096.
-	MaxBytes int
-	// SessionBudget is the maximum total memory content per session in bytes.
+	// MaxChars is the maximum file size in characters. Default: 4096.
+	MaxChars int
+	// SessionBudget is the maximum total memory content per session in characters.
 	// Default: 61440 (60 KB).
 	SessionBudget int
 }
@@ -618,8 +619,8 @@ func WriteMemoryFile(ctx context.Context, memories []ExtractedMemory, workingDir
 	if cfg.MaxLines == 0 {
 		cfg.MaxLines = MemoryMaxLines
 	}
-	if cfg.MaxBytes == 0 {
-		cfg.MaxBytes = MemoryMaxBytes
+	if cfg.MaxChars == 0 {
+		cfg.MaxChars = MemoryMaxChars
 	}
 
 	fullPath := filepath.Join(workingDir, cfg.FilePath)
@@ -651,8 +652,8 @@ func WriteMemoryFile(ctx context.Context, memories []ExtractedMemory, workingDir
 		content = strings.Join(lines, "\n")
 	}
 
-	if len(content) > cfg.MaxBytes {
-		content = content[:cfg.MaxBytes]
+	if utf8.RuneCountInString(content) > cfg.MaxChars {
+		content = string([]rune(content)[:cfg.MaxChars])
 	}
 
 	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
