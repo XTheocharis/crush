@@ -425,10 +425,10 @@ Edges between files are weighted by multiple factors:
 | Factor | Multiplier | Description |
 |--------|-----------|-------------|
 | Chat origin | 50x | Files discussed in conversation |
-| Mentioned | 10x | Explicitly referenced in code |
-| Long names | 10x | Files with descriptive names |
-| >5 definitions | 0.1x | Dampen heavily-defined files |
-| Underscore prefix | 0.1x | Internal/private files |
+| Mentioned | 10x | Identifiers explicitly referenced in code |
+| Long names | 10x | Identifiers with descriptive/structured names |
+| >5 definitions | 0.1x | Dampen multiply-defined identifiers |
+| Underscore prefix | 0.1x | Internal/private identifiers |
 | Reference count | `sqrt(count)` | Square-root scaling for connectivity |
 
 ### Rendering
