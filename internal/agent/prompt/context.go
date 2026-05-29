@@ -1,11 +1,15 @@
 package prompt
 
 import (
+	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/crush/internal/config"
 )
 
 var (
@@ -73,7 +77,20 @@ func (c *ContextCache) Get(path string) *ContextFile {
 		return nil
 	}
 
-	processed := SanitizeContent(string(raw))
+	// Resolve @include directives and conditional blocks before sanitization.
+	// Must run before SanitizeContent which strips HTML comments (conditional blocks).
+	included, err := config.ProcessIncludes(
+		string(raw),
+		filepath.Dir(path),
+		0,
+		make(map[string]bool),
+		config.FileAwareEvaluator(path),
+	)
+	if err != nil {
+		slog.Warn("Failed to process includes in context file", "path", path, "error", err)
+		included = string(raw)
+	}
+	processed := SanitizeContent(included)
 	newEntry := &cacheEntry{content: processed, modTime: mt}
 
 	c.mu.Lock()

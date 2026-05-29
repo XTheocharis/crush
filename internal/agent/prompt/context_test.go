@@ -154,7 +154,7 @@ func TestContextCacheBasics(t *testing.T) {
 	// First read: should read from disk and sanitize.
 	cf := cache.Get(path)
 	require.NotNil(t, cf)
-	require.Equal(t, "Hello  world\n", cf.Content)
+	require.Equal(t, "Hello  world\n\n", cf.Content)
 
 	// Second read: should return cached version.
 	cf2 := cache.Get(path)
@@ -231,6 +231,43 @@ func TestProcessFileWithMissingInclude(t *testing.T) {
 	require.Contains(t, result.Content, "before")
 	require.Contains(t, result.Content, "@include nonexistent.md")
 	require.Contains(t, result.Content, "after")
+}
+
+func TestContextCacheProcessIncludes(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	subPath := filepath.Join(dir, "sub.md")
+	require.NoError(t, os.WriteFile(subPath, []byte("included-content-here"), 0o644))
+
+	mainPath := filepath.Join(dir, "main.md")
+	mainContent := "before\n@include sub.md\nafter"
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainContent), 0o644))
+
+	cache := NewContextCache()
+	cf := cache.Get(mainPath)
+	require.NotNil(t, cf)
+	require.Contains(t, cf.Content, "included-content-here")
+	require.Contains(t, cf.Content, "before")
+	require.Contains(t, cf.Content, "after")
+	require.NotContains(t, cf.Content, "@include")
+}
+
+func TestContextCacheProcessIncludesConditional(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "AGENTS.md")
+	content := "header\n<!-- if: language:go -->\ngo-specific\n<!-- endif -->\ntrailer\n"
+	require.NoError(t, os.WriteFile(filePath, []byte(content), 0o644))
+
+	cache := NewContextCache()
+	cf := cache.Get(filePath)
+	require.NotNil(t, cf)
+	require.NotContains(t, cf.Content, "<!-- if:")
+	require.NotContains(t, cf.Content, "<!-- endif")
+	require.Contains(t, cf.Content, "header")
+	require.Contains(t, cf.Content, "trailer")
 }
 
 func TestContextCacheInvalidate(t *testing.T) {
