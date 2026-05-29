@@ -545,10 +545,11 @@ files in this package (entire package added by the fork).
 
 #### Pipeline Configuration
 
-The pipeline is enabled by default (`*bool nil` = enabled). **3 processors
-are active by default** (`TokenLimiter`, `SystemPromptScrubber`,
-`PIIDetector` — marked with \* below). The remaining 7 configurable
-processors must be explicitly listed in `crush.json` to activate.
+The pipeline requires explicit `processors` configuration in `crush.json` to
+activate. When `ProcessorsOptions` is nil (the default), the entire processor
+extension is inactive. When configured, **3 processors are active by default**
+(`TokenLimiter`, `SystemPromptScrubber`, `PIIDetector` — marked with \* below).
+The remaining 7 configurable processors must be explicitly listed to activate.
 
 #### Configurable Processors (10)
 
