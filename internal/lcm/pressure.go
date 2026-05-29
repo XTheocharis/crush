@@ -45,29 +45,54 @@ func (t PressureTier) String() string {
 // PressureConfig
 // ---------------------------------------------------------------------------
 
-// PressureConfig holds configurable percentage thresholds that map context
-// usage to pressure tiers. All values are percentages in [0, 100].
+// PressureConfig holds configurable thresholds that map context usage to
+// pressure tiers. When UseAbsoluteOffsets is true (default), thresholds are
+// computed as absolute token offsets from the context window limit. Otherwise,
+// the legacy percentage-based thresholds (LowThreshold, MediumThreshold,
+// HighThreshold) are used.
 type PressureConfig struct {
-	// LowThreshold is the percentage at which Low pressure begins.
+	// UseAbsoluteOffsets selects absolute-offset mode (true) or legacy
+	// percentage mode (false). Default: true.
+	UseAbsoluteOffsets bool
+
+	// SoftOffset is the absolute token count reserved below the context
+	// window limit at which Low pressure begins. Default: 20000.
+	SoftOffset int64
+
+	// CompactOffset is the absolute token count reserved below the context
+	// window limit at which Medium pressure begins. Default: 13000.
+	CompactOffset int64
+
+	// HardOffset is the absolute token count reserved below the context
+	// window limit at which High pressure begins. A minimum floor of 1000
+	// is enforced: effective hard offset = max(HardOffset, 1000). Default: 3000.
+	HardOffset int64
+
+	// LowThreshold is the percentage at which Low pressure begins (legacy mode).
 	// Below this value no compaction is needed at all. Default: 70.
 	LowThreshold float64
 
-	// MediumThreshold is the percentage at which Medium pressure begins.
+	// MediumThreshold is the percentage at which Medium pressure begins (legacy mode).
 	// Default: 85.
 	MediumThreshold float64
 
-	// HighThreshold is the percentage at which High pressure begins.
+	// HighThreshold is the percentage at which High pressure begins (legacy mode).
 	// Default: 95.
 	HighThreshold float64
 }
 
-// DefaultPressureConfig returns the standard three-tier threshold
-// configuration: 70% / 85% / 95%.
+// DefaultPressureConfig returns the standard configuration with absolute
+// offsets enabled: SoftOffset=20000, CompactOffset=13000, HardOffset=3000.
+// Legacy percentage thresholds (70/85/95) are also populated for fallback.
 func DefaultPressureConfig() PressureConfig {
 	return PressureConfig{
-		LowThreshold:    70.0,
-		MediumThreshold: 85.0,
-		HighThreshold:   95.0,
+		UseAbsoluteOffsets: true,
+		SoftOffset:         20000,
+		CompactOffset:      13000,
+		HardOffset:         3000,
+		LowThreshold:       70.0,
+		MediumThreshold:    85.0,
+		HighThreshold:      95.0,
 	}
 }
 
@@ -86,10 +111,31 @@ func CalculatePressure(currentTokens, contextWindow int64) float64 {
 }
 
 // CalculatePressureTier determines the pressure tier from current token usage
-// and the context window, using the supplied threshold configuration. Returns
-// the raw pressure percentage alongside the tier.
+// and the context window, using the supplied threshold configuration. When
+// cfg.UseAbsoluteOffsets is true, thresholds are computed as absolute token
+// offsets from the context window limit. Otherwise, legacy percentage-based
+// thresholds are used. Returns the raw pressure percentage alongside the tier.
 func CalculatePressureTier(currentTokens, contextWindow int64, cfg PressureConfig) (pressure float64, tier PressureTier) {
 	pressure = CalculatePressure(currentTokens, contextWindow)
+	if cfg.UseAbsoluteOffsets {
+		effectiveHard := cfg.HardOffset
+		if effectiveHard < 1000 {
+			effectiveHard = 1000
+		}
+		softThreshold := contextWindow - cfg.SoftOffset
+		compactThreshold := contextWindow - cfg.CompactOffset
+		hardThreshold := contextWindow - effectiveHard
+		switch {
+		case currentTokens >= hardThreshold:
+			return pressure, PressureHigh
+		case currentTokens >= compactThreshold:
+			return pressure, PressureMedium
+		case currentTokens >= softThreshold:
+			return pressure, PressureLow
+		default:
+			return pressure, PressureLow
+		}
+	}
 	switch {
 	case pressure >= cfg.HighThreshold:
 		return pressure, PressureHigh
@@ -147,9 +193,18 @@ func NewPressureCompactionSelector(
 	}
 }
 
-// fillDefaults replaces zero-valued threshold fields with the defaults.
+// fillDefaults replaces zero-valued fields with the defaults.
 func fillDefaults(cfg PressureConfig) PressureConfig {
 	defs := DefaultPressureConfig()
+	if cfg.SoftOffset == 0 {
+		cfg.SoftOffset = defs.SoftOffset
+	}
+	if cfg.CompactOffset == 0 {
+		cfg.CompactOffset = defs.CompactOffset
+	}
+	if cfg.HardOffset == 0 {
+		cfg.HardOffset = defs.HardOffset
+	}
 	if cfg.LowThreshold == 0 {
 		cfg.LowThreshold = defs.LowThreshold
 	}

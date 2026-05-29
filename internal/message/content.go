@@ -419,10 +419,24 @@ func (m *Message) SetToolResults(tr []ToolResult) {
 
 // Clone returns a deep copy of the message with an independent Parts slice.
 // This prevents race conditions when the message is modified concurrently.
+// BinaryContent parts have their Data []byte field deep-copied so that
+// mutations to one copy do not affect the other.
 func (m *Message) Clone() Message {
 	clone := *m
 	clone.Parts = make([]ContentPart, len(m.Parts))
-	copy(clone.Parts, m.Parts)
+	for i, part := range m.Parts {
+		switch p := part.(type) {
+		case BinaryContent:
+			if p.Data != nil {
+				copied := make([]byte, len(p.Data))
+				copy(copied, p.Data)
+				p.Data = copied
+			}
+			clone.Parts[i] = p
+		default:
+			clone.Parts[i] = p
+		}
+	}
 	return clone
 }
 

@@ -60,6 +60,11 @@ type AutoMemoryExtractor struct {
 	// pending tracks session IDs with an in-flight extraction to prevent
 	// stacking duplicate goroutines.
 	pending map[string]struct{}
+	// lastProcessedIndex is a cursor tracking how many messages have been
+	// examined by extractCycle. Only messages after this index are considered
+	// in subsequent extractions, preventing redundant LLM calls on already-
+	// processed conversation turns.
+	lastProcessedIndex int
 }
 
 // NewAutoMemoryExtractor creates a new extractor. If llm is nil, Extract is a
@@ -88,6 +93,13 @@ func (e *AutoMemoryExtractor) Interval() int {
 	return e.interval
 }
 
+// LastProcessedIndex returns the cursor position for incremental extraction.
+func (e *AutoMemoryExtractor) LastProcessedIndex() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.lastProcessedIndex
+}
+
 // ExtractResult is the output of an asynchronous extraction cycle.
 type ExtractResult struct {
 	Memories []ExtractedMemory
@@ -111,7 +123,6 @@ func (e *AutoMemoryExtractor) Extract(ctx context.Context, sessionID string) <-c
 	if e.llm == nil {
 		e.mu.Unlock()
 		ch <- ExtractResult{Error: fmt.Errorf("auto-memory: %w", ErrLLMClientNil)}
-		// closed in Extract
 		close(ch)
 		return ch
 	}
@@ -132,7 +143,6 @@ func (e *AutoMemoryExtractor) Extract(ctx context.Context, sessionID string) <-c
 
 		result := e.extractCycle(ctx, sessionID, llm)
 		ch <- result
-		// closed in Extract
 		close(ch)
 	}()
 
@@ -152,7 +162,8 @@ func (e *AutoMemoryExtractor) ExtractSync(ctx context.Context, sessionID string)
 }
 
 // extractCycle fetches recent messages, calls the LLM, parses memories,
-// enforces limits, and persists them.
+// enforces limits, and persists them. It uses lastProcessedIndex as a cursor
+// to skip messages that were already examined in a previous extraction cycle.
 func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string, llm LLMClient) ExtractResult {
 	// Fetch recent conversation messages.
 	messages, err := e.store.GetMessages(ctx, sessionID)
@@ -163,9 +174,17 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 		return ExtractResult{}
 	}
 
-	// Use only the most recent turns (bounded by MemoryMaxTurnsPerTrigger).
-	start := max(len(messages)-MemoryMaxTurnsPerTrigger, 0)
-	recent := messages[start:]
+	e.mu.Lock()
+	cursor := e.lastProcessedIndex
+	e.mu.Unlock()
+
+	if cursor >= len(messages) {
+		return ExtractResult{}
+	}
+
+	remaining := messages[cursor:]
+	start := max(len(remaining)-MemoryMaxTurnsPerTrigger, 0)
+	recent := remaining[start:]
 
 	// Build user prompt from recent conversation.
 	userPrompt := formatMessagesForMemory(recent)
@@ -175,6 +194,10 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 	if err != nil {
 		return ExtractResult{Error: fmt.Errorf("LLM memory extraction call: %w", err)}
 	}
+
+	e.mu.Lock()
+	e.lastProcessedIndex = len(messages)
+	e.mu.Unlock()
 
 	// Parse the LLM response.
 	memories, err := parseMemories(raw)
@@ -206,7 +229,6 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 		memSize := len(content)
 
 		if currentSize+memSize > MemorySessionMaxChars {
-			// Session budget exhausted — stop storing.
 			break
 		}
 
@@ -253,7 +275,6 @@ func (e *AutoMemoryExtractor) ExtractForked(ctx context.Context, sessionID strin
 		forkedLLM := factory()
 		if forkedLLM == nil {
 			ch <- ExtractResult{Error: fmt.Errorf("auto-memory: %w", ErrLLMClientNil)}
-			// closed in ExtractWithFactory
 			close(ch)
 			return
 		}
@@ -266,7 +287,6 @@ func (e *AutoMemoryExtractor) ExtractForked(ctx context.Context, sessionID strin
 		}
 
 		ch <- result
-		// closed in ExtractWithFactory
 		close(ch)
 	}()
 

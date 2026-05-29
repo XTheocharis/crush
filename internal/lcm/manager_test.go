@@ -196,6 +196,66 @@ func TestManager_IsOverHardLimit(t *testing.T) {
 	require.True(t, check.OverHard)
 }
 
+func TestIsOverHardLimitNotEqualToIsOverSoftThreshold(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	mgr.SetDefaultContextWindow(200000)
+	ctx := context.Background()
+
+	sessionID := "sess-hard-vs-soft"
+	createTestSession(t, queries, sessionID)
+	err := mgr.InitSession(ctx, sessionID)
+	require.NoError(t, err)
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+	require.Less(t, budget.SoftThreshold, budget.HardLimit)
+
+	tokenCount := budget.SoftThreshold + 1000
+	require.Less(t, tokenCount, budget.HardLimit, "token count must be below hard limit for this test")
+
+	msgID := "msg-mid"
+	createTestMessage(t, queries, sessionID, msgID, "user", "mid message")
+	err = queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID, Valid: true},
+		TokenCount: tokenCount,
+	})
+	require.NoError(t, err)
+
+	softCheck, err := mgr.IsOverSoftThreshold(ctx, sessionID)
+	require.NoError(t, err)
+	require.True(t, softCheck.OverSoft, "should be over soft threshold at %d tokens (soft=%d)", tokenCount, budget.SoftThreshold)
+
+	hardCheck, err := mgr.IsOverHardLimit(ctx, sessionID)
+	require.NoError(t, err)
+	require.False(t, hardCheck.OverHard, "should NOT be over hard limit at %d tokens (hard=%d)", tokenCount, budget.HardLimit)
+
+	sessionID2 := "sess-hard-vs-soft-over"
+	createTestSession(t, queries, sessionID2)
+	err = mgr.InitSession(ctx, sessionID2)
+	require.NoError(t, err)
+
+	hardTokenCount := budget.HardLimit + 1000
+	msgID2 := "msg-over-hard"
+	createTestMessage(t, queries, sessionID2, msgID2, "user", "over hard message")
+	err = queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID2,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID2, Valid: true},
+		TokenCount: hardTokenCount,
+	})
+	require.NoError(t, err)
+
+	hardCheck2, err := mgr.IsOverHardLimit(ctx, sessionID2)
+	require.NoError(t, err)
+	require.True(t, hardCheck2.OverHard, "should be over hard limit at %d tokens (hard=%d)", hardTokenCount, budget.HardLimit)
+}
+
 func TestManager_GetContextFiles(t *testing.T) {
 	t.Parallel()
 	queries, sqlDB := setupTestDB(t)

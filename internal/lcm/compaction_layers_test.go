@@ -243,16 +243,16 @@ func TestMicroCompactor_ShouldCompact_OverThreshold(t *testing.T) {
 
 	store := newStore(queries, sqlDB)
 
-	// Insert a large message (15000 tokens, over the 10000 default).
+	// Insert a large message (55000 tokens, over the 50000 threshold).
 	msgID := "msg-large"
-	largeContent := strings.Repeat("content word ", 60000)
+	largeContent := strings.Repeat("content word ", 220000)
 	createTestMessage(t, queries, sessionID, msgID, "assistant", largeContent)
 	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
 		SessionID:  sessionID,
 		Position:   0,
 		ItemType:   "message",
 		MessageID:  sql.NullString{String: msgID, Valid: true},
-		TokenCount: 15000,
+		TokenCount: 55000,
 	})
 	require.NoError(t, err)
 
@@ -272,14 +272,14 @@ func TestMicroCompactor_Compact_StoresLargeContent(t *testing.T) {
 
 	// Insert a large message.
 	msgID := "msg-big"
-	largeContent := strings.Repeat("large output data ", 5000)
+	largeContent := strings.Repeat("large output data ", 22000)
 	createTestMessage(t, queries, sessionID, msgID, "tool", largeContent)
 	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
 		SessionID:  sessionID,
 		Position:   0,
 		ItemType:   "message",
 		MessageID:  sql.NullString{String: msgID, Valid: true},
-		TokenCount: 25000,
+		TokenCount: 55000,
 	})
 	require.NoError(t, err)
 
@@ -421,14 +421,14 @@ func TestMicroCompactor_Compact_MultipleOversized(t *testing.T) {
 
 	for i := range 3 {
 		msgID := fmt.Sprintf("msg-big-%d", i)
-		content := strings.Repeat(fmt.Sprintf("output %d ", i), 5000)
+		content := strings.Repeat(fmt.Sprintf("output %d ", i), 22000)
 		createTestMessage(t, queries, sessionID, msgID, "tool", content)
 		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
 			SessionID:  sessionID,
 			Position:   int64(i),
 			ItemType:   "message",
 			MessageID:  sql.NullString{String: msgID, Valid: true},
-			TokenCount: 12000,
+			TokenCount: 55000,
 		})
 		require.NoError(t, err)
 	}
@@ -475,14 +475,14 @@ func TestLayerManager_Integration_WithMicroCompactor(t *testing.T) {
 
 	// Insert a large message.
 	msgID := "msg-int-big"
-	largeContent := strings.Repeat("integration test data ", 5000)
+	largeContent := strings.Repeat("integration test data ", 22000)
 	createTestMessage(t, queries, sessionID, msgID, "tool", largeContent)
 	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
 		SessionID:  sessionID,
 		Position:   0,
 		ItemType:   "message",
 		MessageID:  sql.NullString{String: msgID, Valid: true},
-		TokenCount: 25000,
+		TokenCount: 55000,
 	})
 	require.NoError(t, err)
 

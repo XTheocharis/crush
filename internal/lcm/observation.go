@@ -34,6 +34,10 @@ type ObservationResult struct {
 	Error        error
 }
 
+// degenerateRingSize is the number of recent observation summaries tracked for
+// degenerate detection.
+const degenerateRingSize = 5
+
 // ObservationCoordinator manages the observer agent lifecycle. It triggers
 // asynchronous observation cycles when a session's token count crosses the
 // configured threshold.
@@ -46,6 +50,9 @@ type ObservationCoordinator struct {
 	// pending tracks session IDs with an in-flight observation to avoid
 	// stacking duplicate goroutines for the same session.
 	pending map[string]struct{}
+	// recentObs tracks the last N observation summaries per session for
+	// degenerate detection. Keyed by session ID.
+	recentObs map[string]*degenerateRing
 }
 
 // NewObservationCoordinator creates a coordinator using the given store and LLM
@@ -64,6 +71,115 @@ func NewObservationCoordinator(store *Store, llm LLMClient, threshold int64, str
 		threshold: threshold,
 		strategy:  strategy,
 		pending:   make(map[string]struct{}),
+		recentObs: make(map[string]*degenerateRing),
+	}
+}
+
+// degenerateRing is a fixed-size ring buffer that tracks the most recent
+// observation summaries for a session.
+type degenerateRing struct {
+	buf  [degenerateRingSize]string
+	pos  int
+	full bool
+}
+
+func (r *degenerateRing) push(summary string) {
+	r.buf[r.pos] = summary
+	r.pos = (r.pos + 1) % degenerateRingSize
+	if r.pos == 0 {
+		r.full = true
+	}
+}
+
+func (r *degenerateRing) items() []string {
+	if !r.full {
+		return r.buf[:r.pos]
+	}
+	all := make([]string, degenerateRingSize)
+	copy(all, r.buf[r.pos:])
+	copy(all[degenerateRingSize-r.pos:], r.buf[:r.pos])
+	return all
+}
+
+func (r *degenerateRing) reset() {
+	r.pos = 0
+	r.full = false
+}
+
+func (r *degenerateRing) len() int {
+	if r.full {
+		return degenerateRingSize
+	}
+	return r.pos
+}
+
+// observationSummary produces a short fingerprint string for degenerate
+// comparison. Two observations with the same summary are considered identical
+// for degenerate detection purposes.
+func observationSummary(obs Observation) string {
+	return obs.Event + "|" + obs.Context
+}
+
+// isDegenerate returns true when the new observations represent a degenerate
+// case: repeated identical observations, all-empty observations, or an
+// observation loop (A→B→A→B pattern).
+func isDegenerate(ring *degenerateRing, newObs []Observation) bool {
+	if len(newObs) == 0 {
+		return true
+	}
+
+	summaries := make([]string, len(newObs))
+	for i, obs := range newObs {
+		s := observationSummary(obs)
+		if s == "|" {
+			return true
+		}
+		summaries[i] = s
+	}
+
+	if ring != nil && ring.len() > 0 {
+		allSame := true
+		for _, s := range summaries[1:] {
+			if s != summaries[0] {
+				allSame = false
+				break
+			}
+		}
+		if allSame {
+			past := ring.items()
+			for _, ps := range past {
+				if ps == summaries[0] {
+					return true
+				}
+			}
+		}
+
+		if ring.len() >= 4 {
+			past := ring.items()
+			// Detect A→B→A→B loop: last 4 past entries form a 2-cycle.
+			n := len(past)
+			if past[n-1] == past[n-3] && past[n-2] == past[n-4] {
+				// Only degenerate if new observations repeat the same pattern.
+				for _, s := range summaries {
+					if s == past[n-1] || s == past[n-2] {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func (oc *ObservationCoordinator) recordObservations(sessionID string, observations []Observation) {
+	ring, ok := oc.recentObs[sessionID]
+	if !ok {
+		ring = &degenerateRing{}
+		oc.recentObs[sessionID] = ring
+	}
+	for _, obs := range observations {
+		ring.push(observationSummary(obs))
 	}
 }
 
@@ -99,7 +215,6 @@ func (oc *ObservationCoordinator) Observe(ctx context.Context, sessionID string)
 	if oc.llm == nil {
 		oc.mu.Unlock()
 		ch <- ObservationResult{Error: fmt.Errorf("observation: %w", ErrLLMClientNil)}
-		// closed in Observe
 		close(ch)
 		return ch
 	}
@@ -121,7 +236,6 @@ func (oc *ObservationCoordinator) Observe(ctx context.Context, sessionID string)
 
 		result := oc.observeCycle(ctx, sessionID, llm)
 		ch <- result
-		// closed in Observe
 		close(ch)
 	}()
 
@@ -161,7 +275,6 @@ func (oc *ObservationCoordinator) observeCycle(ctx context.Context, sessionID st
 			"session_id", sessionID,
 			"error", err,
 		)
-		// Store the raw response as a single observation as a fallback.
 		tokenCount := EstimateTokens(raw)
 		observations = []Observation{{
 			Event:       "raw_observation",
@@ -169,6 +282,23 @@ func (oc *ObservationCoordinator) observeCycle(ctx context.Context, sessionID st
 			Implication: "",
 			TokenCount:  tokenCount,
 		}}
+	}
+
+	// Check for degenerate observations.
+	var degenerate bool
+	func() {
+		oc.mu.Lock()
+		defer oc.mu.Unlock()
+		ring := oc.recentObs[sessionID]
+		degenerate = isDegenerate(ring, observations)
+	}()
+
+	if degenerate {
+		slog.Warn("Skipping degenerate observation cycle",
+			"session_id", sessionID,
+			"observation_count", len(observations),
+		)
+		return ObservationResult{}
 	}
 
 	// Persist each observation to the buffer table.
@@ -183,6 +313,13 @@ func (oc *ObservationCoordinator) observeCycle(ctx context.Context, sessionID st
 		}
 		stored = append(stored, obs)
 	}
+
+	// Record successful observations for future degenerate detection.
+	func() {
+		oc.mu.Lock()
+		defer oc.mu.Unlock()
+		oc.recordObservations(sessionID, stored)
+	}()
 
 	return ObservationResult{Observations: stored}
 }
@@ -215,6 +352,7 @@ func (oc *ObservationCoordinator) ListObservations(ctx context.Context, sessionI
 		     WHEN 'high' THEN 0
 		     WHEN 'medium' THEN 1
 		     WHEN 'low' THEN 2
+		     WHEN 'info' THEN 3
 		     ELSE 1
 		 END ASC, created_at ASC`,
 		sessionID,

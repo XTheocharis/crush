@@ -62,13 +62,14 @@ func TestGraduatedPressureSystem_TierForTokens(t *testing.T) {
 		currentTokens int64
 		wantTier      PressureTier
 	}{
-		{"below 70%", 50000, PressureLow},
-		{"at 70%", 70000, PressureLow},
-		{"at 75%", 75000, PressureLow},
-		{"at 85%", 85000, PressureMedium},
-		{"at 90%", 90000, PressureMedium},
-		{"at 95%", 95000, PressureHigh},
-		{"at 99%", 99000, PressureHigh},
+		{"well below soft offset", 50000, PressureLow},
+		{"below soft offset (80000)", 79000, PressureLow},
+		{"at soft offset (80000)", 80000, PressureLow},
+		{"above soft offset", 82000, PressureLow},
+		{"at compact offset (87000)", 87000, PressureMedium},
+		{"between compact and hard", 90000, PressureMedium},
+		{"at hard offset (97000)", 97000, PressureHigh},
+		{"above hard offset", 99000, PressureHigh},
 	}
 
 	for _, tc := range tests {
@@ -104,15 +105,15 @@ func TestGraduatedPressureSystem_StrategiesForTokens(t *testing.T) {
 		require.Equal(t, "purge_errors", strats[0].Name())
 	})
 
-	t.Run("85k tokens returns 3 strategies", func(t *testing.T) {
+	t.Run("88k tokens returns 3 strategies", func(t *testing.T) {
 		t.Parallel()
-		strats := gps.StrategiesForTokens(85000)
+		strats := gps.StrategiesForTokens(88000)
 		require.Len(t, strats, 3)
 	})
 
-	t.Run("96k tokens returns 4 strategies", func(t *testing.T) {
+	t.Run("98k tokens returns 4 strategies", func(t *testing.T) {
 		t.Parallel()
-		strats := gps.StrategiesForTokens(96000)
+		strats := gps.StrategiesForTokens(98000)
 		require.Len(t, strats, 4)
 	})
 }
@@ -121,9 +122,10 @@ func TestGraduatedPressureSystem_CustomThresholds(t *testing.T) {
 	t.Parallel()
 
 	cfg := PressureConfig{
-		LowThreshold:    50.0,
-		MediumThreshold: 75.0,
-		HighThreshold:   90.0,
+		UseAbsoluteOffsets: false,
+		LowThreshold:       50.0,
+		MediumThreshold:    75.0,
+		HighThreshold:      90.0,
 	}
 	gps := NewGraduatedPressureSystem(cfg, DefaultContextLimits(100000), &mockLLMClient{})
 

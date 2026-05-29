@@ -267,7 +267,8 @@ func TestIntegration_LayeredCompaction_PressureTiers(t *testing.T) {
 	// Insert enough tokens to trigger medium pressure.
 	budget, err := mgr.GetBudget(ctx, sessionID)
 	require.NoError(t, err)
-	mediumThreshold := int64(float64(budget.ContextWindow) * 0.85)
+	cfg := DefaultPressureConfig()
+	compactThreshold := budget.ContextWindow - cfg.CompactOffset
 	msgID := "msg-pressure-big"
 	createTestMessage(t, queries, sessionID, msgID, "user", "pressure test")
 	require.NoError(t, queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
@@ -275,11 +276,11 @@ func TestIntegration_LayeredCompaction_PressureTiers(t *testing.T) {
 		Position:   0,
 		ItemType:   "message",
 		MessageID:  sql.NullString{String: msgID, Valid: true},
-		TokenCount: mediumThreshold + 1000,
+		TokenCount: compactThreshold + 1000,
 	}))
 
 	// Set provider-reported tokens to simulate being over medium threshold.
-	mgr.SetActualPromptTokens(sessionID, mediumThreshold+1000)
+	mgr.SetActualPromptTokens(sessionID, compactThreshold+1000)
 	tier, err = cm.GetPressureTier(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, PressureMedium, tier)

@@ -77,10 +77,66 @@ func (p ArchitectPlan) String() string {
 	return b.String()
 }
 
+// TaskCategory represents the classified intent of a user prompt.
+type TaskCategory string
+
+const (
+	CategoryUnknown  TaskCategory = "unknown"
+	CategoryBug      TaskCategory = "bug"
+	CategoryFeature  TaskCategory = "feature"
+	CategoryRefactor TaskCategory = "refactor"
+)
+
+// categoryKeywords maps each TaskCategory to the lowercase keywords that
+// signal that intent.
+var categoryKeywords = map[TaskCategory][]string{
+	CategoryBug: {
+		"fix", "bug", "error", "crash", "broken", "regression", "issue",
+	},
+	CategoryFeature: {
+		"add", "implement", "create", "build", "new", "support",
+	},
+	CategoryRefactor: {
+		"refactor", "restructure", "clean up", "simplify", "optimize",
+	},
+}
+
+// IsPlanningCategory classifies a user prompt into a TaskCategory using
+// keyword heuristics. The category with the highest keyword count wins; ties
+// are broken in declaration order (bug, feature, refactor). Returns
+// CategoryUnknown when no keywords match.
+func IsPlanningCategory(prompt string) TaskCategory {
+	lower := strings.ToLower(prompt)
+
+	best := CategoryUnknown
+	bestCount := 0
+
+	for _, cat := range []TaskCategory{CategoryBug, CategoryFeature, CategoryRefactor} {
+		count := 0
+		for _, kw := range categoryKeywords[cat] {
+			if strings.Contains(lower, kw) {
+				count++
+			}
+		}
+		if count > bestCount {
+			bestCount = count
+			best = cat
+		}
+	}
+
+	return best
+}
+
 // IsPlanningTask classifies a user prompt as planning-worthy (complex) or
-// simple (direct execution). It uses keyword heuristics and prompt length to
-// decide whether the two-phase architect→editor flow should kick in.
+// simple (direct execution). It uses category heuristics, explicit planning
+// indicators, and prompt length to decide whether the two-phase
+// architect→editor flow should kick in.
 func IsPlanningTask(prompt string) bool {
+	// Fast path: any recognised category triggers planning.
+	if IsPlanningCategory(prompt) != CategoryUnknown {
+		return true
+	}
+
 	lower := strings.ToLower(prompt)
 
 	planningIndicators := []string{

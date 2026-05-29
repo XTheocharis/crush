@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,6 +109,135 @@ func TestArchitectPlanString(t *testing.T) {
 	require.Contains(t, s, "[pending]")
 }
 
+func TestIsPlanningCategory(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		prompt   string
+		expected TaskCategory
+	}{
+		{
+			name:     "bug fix",
+			prompt:   "fix the nil pointer dereference in handler.go",
+			expected: CategoryBug,
+		},
+		{
+			name:     "bug crash",
+			prompt:   "the app crashes on startup",
+			expected: CategoryBug,
+		},
+		{
+			name:     "bug regression",
+			prompt:   "this is a regression from last week",
+			expected: CategoryBug,
+		},
+		{
+			name:     "bug broken",
+			prompt:   "the login flow is broken",
+			expected: CategoryBug,
+		},
+		{
+			name:     "bug error",
+			prompt:   "getting an error when parsing JSON",
+			expected: CategoryBug,
+		},
+		{
+			name:     "bug issue",
+			prompt:   "resolve the issue with timeouts",
+			expected: CategoryBug,
+		},
+		{
+			name:     "feature add",
+			prompt:   "add pagination to the user list endpoint",
+			expected: CategoryFeature,
+		},
+		{
+			name:     "feature implement",
+			prompt:   "implement OAuth2 login",
+			expected: CategoryFeature,
+		},
+		{
+			name:     "feature create",
+			prompt:   "create a dashboard component",
+			expected: CategoryFeature,
+		},
+		{
+			name:     "feature build",
+			prompt:   "build a notification system",
+			expected: CategoryFeature,
+		},
+		{
+			name:     "feature new",
+			prompt:   "new endpoint for exporting data",
+			expected: CategoryFeature,
+		},
+		{
+			name:     "feature support",
+			prompt:   "support dark mode in the settings",
+			expected: CategoryFeature,
+		},
+		{
+			name:     "refactor keyword",
+			prompt:   "refactor the database access layer",
+			expected: CategoryRefactor,
+		},
+		{
+			name:     "restructure",
+			prompt:   "restructure the packages for clarity",
+			expected: CategoryRefactor,
+		},
+		{
+			name:     "clean up",
+			prompt:   "clean up the unused imports",
+			expected: CategoryRefactor,
+		},
+		{
+			name:     "simplify",
+			prompt:   "simplify the config loading logic",
+			expected: CategoryRefactor,
+		},
+		{
+			name:     "optimize",
+			prompt:   "optimize the query performance",
+			expected: CategoryRefactor,
+		},
+		{
+			name:     "mixed bug and feature",
+			prompt:   "fix the error and add logging",
+			expected: CategoryBug,
+		},
+		{
+			name:     "mixed feature and refactor",
+			prompt:   "add caching and optimize the rendering pipeline",
+			expected: CategoryFeature,
+		},
+		{
+			name:     "unknown empty string",
+			prompt:   "",
+			expected: CategoryUnknown,
+		},
+		{
+			name:     "unknown no keywords",
+			prompt:   "what is 2+2?",
+			expected: CategoryUnknown,
+		},
+		{
+			name:     "unknown conversational",
+			prompt:   "hello, how are you doing today?",
+			expected: CategoryUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := IsPlanningCategory(tt.prompt)
+			require.Equal(t, tt.expected, result, "IsPlanningCategory(%q) = %q, want %q", tt.prompt, result, tt.expected)
+		})
+	}
+}
+
 func TestIsPlanningTask(t *testing.T) {
 	t.Parallel()
 
@@ -117,17 +247,27 @@ func TestIsPlanningTask(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "simple edit",
-			prompt:   "fix the typo in main.go",
-			expected: false,
+			name:     "bug fix triggers planning via category",
+			prompt:   "fix the nil pointer dereference in handler.go",
+			expected: true,
 		},
 		{
-			name:     "plan and implement",
+			name:     "feature add triggers planning via category",
+			prompt:   "add pagination to the user list",
+			expected: true,
+		},
+		{
+			name:     "refactor triggers planning via category",
+			prompt:   "refactor the database layer",
+			expected: true,
+		},
+		{
+			name:     "plan and implement indicator",
 			prompt:   "plan and implement a new auth system",
 			expected: true,
 		},
 		{
-			name:     "design and implement",
+			name:     "design and implement indicator",
 			prompt:   "design and implement a caching layer",
 			expected: true,
 		},
@@ -142,22 +282,17 @@ func TestIsPlanningTask(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "refactor the",
-			prompt:   "refactor the entire module structure",
-			expected: true,
-		},
-		{
-			name:     "implement a new feature",
+			name:     "implement a new feature indicator",
 			prompt:   "implement a new feature for user management",
 			expected: true,
 		},
 		{
-			name:     "implement a complete",
+			name:     "implement a complete indicator",
 			prompt:   "implement a complete REST API",
 			expected: true,
 		},
 		{
-			name:     "short simple prompt",
+			name:     "short simple prompt is unknown",
 			prompt:   "what is 2+2?",
 			expected: false,
 		},
@@ -181,14 +316,93 @@ func TestSimpleTaskSkipsPlanning(t *testing.T) {
 	t.Parallel()
 
 	simplePrompts := []string{
-		"fix the typo",
-		"change the variable name",
-		"add a comment",
-		"update the readme",
 		"what does this function do?",
 	}
 
 	for _, p := range simplePrompts {
 		require.False(t, IsPlanningTask(p), "expected simple prompt to skip planning: %q", p)
 	}
+}
+
+func TestArchitectEditorTwoPhase_Feature(t *testing.T) {
+	t.Parallel()
+
+	withArch := &coordinator{
+		cfg: config.NewTestStore(&config.Config{
+			Options: &config.Options{
+				ArchitectModel: &config.SelectedModel{
+					Provider: "anthropic",
+					Model:    "claude-opus-4",
+				},
+			},
+		}),
+	}
+	require.True(t, withArch.shouldUseTwoPhase("add a new authentication endpoint"),
+		"feature prompt with ArchitectModel configured should use two-phase")
+
+	withoutArch := &coordinator{
+		cfg: config.NewTestStore(&config.Config{
+			Options: &config.Options{},
+		}),
+	}
+	require.False(t, withoutArch.shouldUseTwoPhase("add a new authentication endpoint"),
+		"feature prompt without ArchitectModel should not use two-phase")
+}
+
+func TestArchitectEditorTwoPhase_Bug(t *testing.T) {
+	t.Parallel()
+
+	c := &coordinator{
+		cfg: config.NewTestStore(&config.Config{
+			Options: &config.Options{
+				ArchitectModel: &config.SelectedModel{
+					Provider: "anthropic",
+					Model:    "claude-opus-4",
+				},
+			},
+		}),
+	}
+
+	require.False(t, c.shouldUseTwoPhase("fix the nil pointer crash in handler"),
+		"bug prompt should never use two-phase even with ArchitectModel")
+}
+
+func TestArchitectEditorTwoPhase_Fallback(t *testing.T) {
+	t.Parallel()
+
+	archModel := &config.SelectedModel{Provider: "anthropic", Model: "claude-opus-4"}
+
+	withArch := &coordinator{
+		cfg: config.NewTestStore(&config.Config{
+			Options: &config.Options{ArchitectModel: archModel},
+		}),
+	}
+
+	require.False(t, withArch.shouldUseTwoPhase("refactor the database layer"),
+		"refactor prompt should never use two-phase even with ArchitectModel")
+	require.False(t, withArch.shouldUseTwoPhase("what is 2+2?"),
+		"unknown category should never use two-phase")
+
+	nilOptions := &coordinator{
+		cfg: config.NewTestStore(&config.Config{}),
+	}
+	require.False(t, nilOptions.shouldUseTwoPhase("add a new feature"),
+		"nil options should not use two-phase")
+}
+
+func TestArchitectPlanExecutionPrompt(t *testing.T) {
+	t.Parallel()
+
+	plan := ArchitectPlan{
+		Steps: []PlanStep{
+			{Description: "Read coordinator.go", Status: PlanStepCompleted, TargetFiles: []string{"coordinator.go"}},
+			{Description: "Add two-phase flow", Status: PlanStepPending, Dependencies: []int{1}},
+		},
+		Rationale: "Separate planning from execution",
+	}
+
+	s := plan.String()
+	require.Contains(t, s, "Read coordinator.go")
+	require.Contains(t, s, "Add two-phase flow")
+	require.Contains(t, s, "Separate planning from execution")
 }

@@ -203,6 +203,11 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 		return nil, fmt.Errorf("failed to update models: %w", err)
 	}
 
+	// Two-phase architect→editor routing for feature tasks.
+	if c.shouldUseTwoPhase(prompt) {
+		return c.executeWithArchitectEditor(ctx, sessionID, prompt, attachments...)
+	}
+
 	model := c.currentAgent.Model()
 	maxTokens := model.CatwalkCfg.DefaultMaxTokens
 	if model.ModelCfg.MaxTokens != 0 {
@@ -259,6 +264,170 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 	}
 
 	return result, originalErr
+}
+
+// shouldUseTwoPhase returns true when the prompt is a CategoryFeature task
+// and the ArchitectModel is configured in the options.
+func (c *coordinator) shouldUseTwoPhase(prompt string) bool {
+	if IsPlanningCategory(prompt) != CategoryFeature {
+		return false
+	}
+	cfg := c.cfg.Config()
+	return cfg.Options != nil && cfg.Options.ArchitectModel != nil
+}
+
+// executeWithArchitectEditor runs the two-phase architect→editor flow.
+// Phase 1 uses the ArchitectModel to produce a structured plan. Phase 2
+// feeds that plan to the current agent (using EditorModel or large model)
+// for execution.
+func (c *coordinator) executeWithArchitectEditor(
+	ctx context.Context,
+	sessionID string,
+	prompt string,
+	attachments ...message.Attachment,
+) (*fantasy.AgentResult, error) {
+	cfg := c.cfg.Config()
+
+	archModelCfg := *cfg.Options.ArchitectModel
+	archProviderCfg, ok := cfg.Providers.Get(archModelCfg.Provider)
+	if !ok {
+		slog.Warn("ArchitectModel provider not configured, falling back to single model", "provider", archModelCfg.Provider)
+		return c.Run(ctx, sessionID, prompt, attachments...)
+	}
+
+	archProvider, err := c.buildProvider(archProviderCfg, archModelCfg, false)
+	if err != nil {
+		slog.Warn("Failed to build architect provider, falling back to single model", "error", err)
+		return c.Run(ctx, sessionID, prompt, attachments...)
+	}
+
+	archCatwalk := cfg.GetModel(archModelCfg.Provider, archModelCfg.Model)
+	if archCatwalk == nil {
+		slog.Warn("ArchitectModel not found in provider, falling back to single model", "model", archModelCfg.Model)
+		return c.Run(ctx, sessionID, prompt, attachments...)
+	}
+
+	archLM, err := archProvider.LanguageModel(ctx, archModelCfg.Model)
+	if err != nil {
+		slog.Warn("Failed to create architect language model, falling back to single model", "error", err)
+		return c.Run(ctx, sessionID, prompt, attachments...)
+	}
+
+	archModel := Model{
+		Model:      archLM,
+		CatwalkCfg: *archCatwalk,
+		ModelCfg:   archModelCfg,
+		FlatRate:   archProviderCfg.FlatRate,
+	}
+
+	// Phase 1: Architect generates a plan.
+	archPrompt := fmt.Sprintf(
+		"Analyze this task and produce a structured execution plan as JSON.\n\nTask: %s\n\n"+
+			"Respond with a JSON object containing:\n"+
+			"- \"steps\": array of {\"description\": string, \"target_files\": [string], \"dependencies\": [int], \"status\": \"pending\"}\n"+
+			"- \"rationale\": string explaining the approach\n"+
+			"- \"approval_required\": boolean",
+		prompt,
+	)
+
+	maxArchTokens := archCatwalk.DefaultMaxTokens
+	if archModelCfg.MaxTokens != 0 {
+		maxArchTokens = archModelCfg.MaxTokens
+	}
+
+	archResult, err := c.currentAgent.Run(ctx, SessionAgentCall{
+		SessionID:        sessionID,
+		Prompt:           archPrompt,
+		Attachments:      attachments,
+		MaxOutputTokens:  maxArchTokens,
+		ProviderOptions:  getProviderOptions(archModel, archProviderCfg),
+		Temperature:      archModelCfg.Temperature,
+		TopP:             archModelCfg.TopP,
+		TopK:             archModelCfg.TopK,
+		FrequencyPenalty: archModelCfg.FrequencyPenalty,
+		PresencePenalty:  archModelCfg.PresencePenalty,
+		SubmittedAt:      time.Now().Unix(),
+	})
+	if err != nil {
+		slog.Warn("Architect phase failed, falling back to single model", "error", err)
+		return c.Run(ctx, sessionID, prompt, attachments...)
+	}
+
+	plan, err := ParseArchitectPlan(archResult.Response.Content.Text())
+	if err != nil {
+		slog.Warn("Failed to parse architect plan, using raw output", "error", err)
+		plan = ArchitectPlan{
+			Steps:     []PlanStep{{Description: prompt, Status: PlanStepPending}},
+			Rationale: "Fallback: architect output was not valid JSON",
+		}
+	}
+	plan.ModelID = archModelCfg.Model
+
+	slog.Info("Architect plan generated",
+		"steps", len(plan.Steps),
+		"rationale", plan.Rationale,
+	)
+
+	// Check approval gate.
+	approvalRequired := cfg.Options.Architect != nil && cfg.Options.Architect.ApprovalRequired
+	if approvalRequired && plan.ApprovalRequired {
+		slog.Info("Architect plan requires approval", "steps", len(plan.Steps))
+	}
+
+	// Phase 2: Editor executes the plan.
+	editorPrompt := fmt.Sprintf(
+		"Execute the following plan step by step.\n\nPlan:\n%s\n\nOriginal task: %s",
+		plan.String(), prompt,
+	)
+
+	// Determine editor model: use EditorModel if configured, else use large.
+	editorModel := c.currentAgent.Model()
+	if cfg.Options.EditorModel != nil {
+		editCfg := *cfg.Options.EditorModel
+		editProviderCfg, ok := cfg.Providers.Get(editCfg.Provider)
+		if ok {
+			editProvider, err := c.buildProvider(editProviderCfg, editCfg, false)
+			if err == nil {
+				editCatwalk := cfg.GetModel(editCfg.Provider, editCfg.Model)
+				if editCatwalk != nil {
+					editLM, err := editProvider.LanguageModel(ctx, editCfg.Model)
+					if err == nil {
+						editorModel = Model{
+							Model:      editLM,
+							CatwalkCfg: *editCatwalk,
+							ModelCfg:   editCfg,
+							FlatRate:   editProviderCfg.FlatRate,
+						}
+					}
+				}
+			}
+		}
+	}
+
+	maxEditTokens := editorModel.CatwalkCfg.DefaultMaxTokens
+	if editorModel.ModelCfg.MaxTokens != 0 {
+		maxEditTokens = editorModel.ModelCfg.MaxTokens
+	}
+
+	editProviderCfg, _ := cfg.Providers.Get(editorModel.ModelCfg.Provider)
+
+	beforeLoaded := c.skillTracker.LoadedNames()
+	result, err := c.currentAgent.Run(ctx, SessionAgentCall{
+		SessionID:        sessionID,
+		Prompt:           editorPrompt,
+		Attachments:      attachments,
+		MaxOutputTokens:  maxEditTokens,
+		ProviderOptions:  getProviderOptions(editorModel, editProviderCfg),
+		Temperature:      editorModel.ModelCfg.Temperature,
+		TopP:             editorModel.ModelCfg.TopP,
+		TopK:             editorModel.ModelCfg.TopK,
+		FrequencyPenalty: editorModel.ModelCfg.FrequencyPenalty,
+		PresencePenalty:  editorModel.ModelCfg.PresencePenalty,
+		SubmittedAt:      time.Now().Unix(),
+	})
+	logTurnSkillUsage(sessionID, prompt, c.activeSkills, c.skillTracker, beforeLoaded)
+
+	return result, err
 }
 
 func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.ProviderOptions {

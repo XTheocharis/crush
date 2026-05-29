@@ -592,7 +592,7 @@ func TestLayerManager_Integration_WithSessionCompactor(t *testing.T) {
 			Position:   int64(i),
 			ItemType:   "message",
 			MessageID:  sql.NullString{String: msgID, Valid: true},
-			TokenCount: 50000,
+			TokenCount: 55000,
 		})
 		require.NoError(t, err)
 	}
@@ -650,7 +650,7 @@ func TestLayerManager_Integration_BothLayers(t *testing.T) {
 		Position:   0,
 		ItemType:   "message",
 		MessageID:  sql.NullString{String: largeMsgID, Valid: true},
-		TokenCount: 50000,
+		TokenCount: 55000,
 	})
 	require.NoError(t, err)
 

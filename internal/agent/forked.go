@@ -507,12 +507,7 @@ func (fa *ForkedAgent) Close() {
 }
 
 func deepCopyMessage(msg message.Message) message.Message {
-	copied := msg
-	if len(msg.Parts) > 0 {
-		copied.Parts = make([]message.ContentPart, len(msg.Parts))
-		copy(copied.Parts, msg.Parts)
-	}
-	return copied
+	return msg.Clone()
 }
 
 var (

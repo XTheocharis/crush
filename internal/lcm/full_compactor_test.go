@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/db"
@@ -535,4 +536,351 @@ func TestFormatEntriesForFullSummary_Empty(t *testing.T) {
 	result := f.formatEntriesForFullSummary(nil)
 	require.Contains(t, result, "<conversation-context>")
 	require.Contains(t, result, "</conversation-context>")
+}
+
+// ---------------------------------------------------------------------------
+// TargetReduction config override
+// ---------------------------------------------------------------------------
+
+func TestFullCompactor_TargetReduction_DefaultUsesConstant(t *testing.T) {
+	t.Parallel()
+	cfg := FullCompactorConfig{}
+	require.InDelta(t, FullCompactorTargetReduction, cfg.targetReduction(), 0.001)
+}
+
+func TestFullCompactor_TargetReduction_ConfigOverride(t *testing.T) {
+	t.Parallel()
+	cfg := FullCompactorConfig{TargetReduction: 0.50}
+	require.InDelta(t, 0.50, cfg.targetReduction(), 0.001)
+}
+
+func TestFullCompactor_TargetReduction_ZeroFallsBackToConstant(t *testing.T) {
+	t.Parallel()
+	cfg := FullCompactorConfig{TargetReduction: 0}
+	require.InDelta(t, FullCompactorTargetReduction, cfg.targetReduction(), 0.001)
+}
+
+func TestFullCompactor_ConstantValues(t *testing.T) {
+	t.Parallel()
+	require.InDelta(t, 0.98, FullCompactorTargetReduction, 0.001)
+	require.Equal(t, int64(5000), FullCompactorMinTokens)
+	require.Equal(t, int64(4000), FullCompactorMaxSummaryTokens)
+}
+
+// ---------------------------------------------------------------------------
+// Cache-safe compaction (compactWithFork)
+// ---------------------------------------------------------------------------
+
+// cacheAwareMockReplacementStore tracks state transitions for cache-safe
+// compaction tests. It supports ListByState and UpdateState with real state
+// tracking.
+type cacheAwareMockReplacementStore struct {
+	mu           sync.Mutex
+	replacements map[int64]*ContentReplacement
+	nextID       int64
+	listErr      error
+	updateErr    error
+}
+
+func newCacheAwareMockReplacementStore() *cacheAwareMockReplacementStore {
+	return &cacheAwareMockReplacementStore{
+		replacements: make(map[int64]*ContentReplacement),
+		nextID:       1,
+	}
+}
+
+func (s *cacheAwareMockReplacementStore) addReplacement(r ContentReplacement) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextID
+	r.ID = id
+	s.replacements[id] = &r
+	s.nextID++
+	return id
+}
+
+func (s *cacheAwareMockReplacementStore) RecordReplacement(_ context.Context, r ContentReplacement) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextID
+	r.ID = id
+	s.replacements[id] = &r
+	s.nextID++
+	return id, nil
+}
+
+func (s *cacheAwareMockReplacementStore) GetBySessionPosition(_ context.Context, _ string, _ int64) ([]ContentReplacement, error) {
+	return nil, nil
+}
+
+func (s *cacheAwareMockReplacementStore) GetByFileID(_ context.Context, _ string, _ string) ([]ContentReplacement, error) {
+	return nil, nil
+}
+
+func (s *cacheAwareMockReplacementStore) ListByState(_ context.Context, _ string, state ReplacementState) ([]ContentReplacement, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	var result []ContentReplacement
+	for _, r := range s.replacements {
+		if r.State == state {
+			cp := *r
+			result = append(result, cp)
+		}
+	}
+	return result, nil
+}
+
+func (s *cacheAwareMockReplacementStore) UpdateState(_ context.Context, id int64, newState ReplacementState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.updateErr != nil {
+		return s.updateErr
+	}
+	r, ok := s.replacements[id]
+	if !ok {
+		return fmt.Errorf("replacement %d not found", id)
+	}
+	r.State = newState
+	return nil
+}
+
+func (s *cacheAwareMockReplacementStore) ListByRound(_ context.Context, _ string, _ int) ([]ContentReplacement, error) {
+	return nil, nil
+}
+
+func (s *cacheAwareMockReplacementStore) getState(id int64) ReplacementState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.replacements[id].State
+}
+
+func setupFullCompactorSession(t *testing.T) (*db.Queries, *sql.DB, *Store, string) {
+	t.Helper()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := fmt.Sprintf("sess-cache-safe-%s", t.Name())
+	createTestSession(t, queries, sessionID)
+
+	store := newStore(queries, sqlDB)
+
+	for i := range 5 {
+		msgID := fmt.Sprintf("msg-cs-%d", i)
+		content := fmt.Sprintf("Cache-safe compaction message %d: %s", i, strings.Repeat("data ", 1000))
+		createTestMessage(t, queries, sessionID, msgID, "user", content)
+		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+			SessionID:  sessionID,
+			Position:   int64(i),
+			ItemType:   "message",
+			MessageID:  sql.NullString{String: msgID, Valid: true},
+			TokenCount: 5000,
+		})
+		require.NoError(t, err)
+	}
+
+	return queries, sqlDB, store, sessionID
+}
+
+func TestFullCompactionCacheSafe_PreservesParentState(t *testing.T) {
+	t.Parallel()
+	_, _, store, sessionID := setupFullCompactorSession(t)
+	ctx := context.Background()
+
+	replStore := newCacheAwareMockReplacementStore()
+	id1 := replStore.addReplacement(ContentReplacement{
+		SessionID: sessionID, State: ReplacementActive, Round: 1,
+	})
+	id2 := replStore.addReplacement(ContentReplacement{
+		SessionID: sessionID, State: ReplacementPinned, Round: 1,
+	})
+
+	denseSummary := "Condensed: completed feature A, B, C. Files: x.go, y.go."
+	mockLLM := &mockLLMClient{response: denseSummary}
+
+	f := NewFullCompactor(FullCompactorConfig{
+		LLM:              mockLLM,
+		Store:            store,
+		SessionID:        sessionID,
+		ReplacementStore: replStore,
+	})
+
+	result, err := f.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+
+	require.Equal(t, ReplacementActive, replStore.getState(id1))
+	require.Equal(t, ReplacementActive, replStore.getState(id2))
+}
+
+func TestFullCompactionCacheSafe_98PercentReduction(t *testing.T) {
+	t.Parallel()
+	_, _, store, sessionID := setupFullCompactorSession(t)
+	ctx := context.Background()
+
+	replStore := newCacheAwareMockReplacementStore()
+
+	denseSummary := "Key decisions: implemented X. Files: a.go."
+	mockLLM := &mockLLMClient{response: denseSummary}
+
+	f := NewFullCompactor(FullCompactorConfig{
+		LLM:              mockLLM,
+		Store:            store,
+		SessionID:        sessionID,
+		ReplacementStore: replStore,
+	})
+
+	result, err := f.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+
+	originalTokens := int64(5 * 5000)
+	reductionRatio := float64(result.TokensFreed) / float64(originalTokens)
+	require.True(t, reductionRatio > 0.90,
+		"token reduction should exceed 90%%, got %.2f%%", reductionRatio*100)
+}
+
+func TestFullCompactionCacheSafe_FallbackOnFreezeError(t *testing.T) {
+	t.Parallel()
+	_, _, store, sessionID := setupFullCompactorSession(t)
+	ctx := context.Background()
+
+	replStore := newCacheAwareMockReplacementStore()
+	replStore.listErr = fmt.Errorf("database connection lost")
+
+	denseSummary := "Summary despite freeze failure."
+	mockLLM := &mockLLMClient{response: denseSummary}
+
+	f := NewFullCompactor(FullCompactorConfig{
+		LLM:              mockLLM,
+		Store:            store,
+		SessionID:        sessionID,
+		ReplacementStore: replStore,
+	})
+
+	result, err := f.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+	require.Equal(t, 1, mockLLM.callCount)
+}
+
+func TestFullCompactionCacheSafe_NilReplacementStore_DirectPath(t *testing.T) {
+	t.Parallel()
+	_, _, store, sessionID := setupFullCompactorSession(t)
+	ctx := context.Background()
+
+	denseSummary := "Direct compaction without cache protection."
+	mockLLM := &mockLLMClient{response: denseSummary}
+
+	f := NewFullCompactor(FullCompactorConfig{
+		LLM:              mockLLM,
+		Store:            store,
+		SessionID:        sessionID,
+		ReplacementStore: nil,
+	})
+
+	result, err := f.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+	require.Equal(t, 1, mockLLM.callCount)
+}
+
+func TestFullCompactionCacheSafe_FreezeDuringCompaction(t *testing.T) {
+	t.Parallel()
+	_, _, store, sessionID := setupFullCompactorSession(t)
+	ctx := context.Background()
+
+	replStore := newCacheAwareMockReplacementStore()
+	id1 := replStore.addReplacement(ContentReplacement{
+		SessionID: sessionID, State: ReplacementActive, Round: 1,
+	})
+
+	var statesDuringCompaction []ReplacementState
+	trackingLLM := &trackingMockLLM{
+		fn: func() (string, error) {
+			statesDuringCompaction = append(statesDuringCompaction, replStore.getState(id1))
+			return "Tracking summary.", nil
+		},
+	}
+
+	f := NewFullCompactor(FullCompactorConfig{
+		LLM:              trackingLLM,
+		Store:            store,
+		SessionID:        sessionID,
+		ReplacementStore: replStore,
+	})
+
+	result, err := f.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+
+	require.Len(t, statesDuringCompaction, 1)
+	require.Equal(t, ReplacementFrozen, statesDuringCompaction[0],
+		"replacement should be frozen during LLM call")
+
+	require.Equal(t, ReplacementActive, replStore.getState(id1),
+		"replacement should be unfrozen after compaction")
+}
+
+type trackingMockLLM struct {
+	fn func() (string, error)
+}
+
+func (m *trackingMockLLM) Complete(_ context.Context, _, _ string) (string, error) {
+	return m.fn()
+}
+
+func TestCloneContextEntries_Nil(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, cloneContextEntries(nil))
+}
+
+func TestCloneContextEntries_DeepCopy(t *testing.T) {
+	t.Parallel()
+	original := []ContextEntry{
+		{
+			Position:       1,
+			ItemType:       "summary",
+			SummaryID:      "sum_abc",
+			TokenCount:     500,
+			SummaryContent: "content",
+			ParentIDs:      []string{"p1", "p2"},
+		},
+	}
+
+	cloned := cloneContextEntries(original)
+	require.Equal(t, original, cloned)
+
+	cloned[0].ParentIDs[0] = "modified"
+	require.Equal(t, "p1", original[0].ParentIDs[0],
+		"modifying clone should not affect original")
+}
+
+func TestFullCompactionCacheSafe_UpdateStateError_StillUnfreezes(t *testing.T) {
+	t.Parallel()
+	_, _, store, sessionID := setupFullCompactorSession(t)
+	ctx := context.Background()
+
+	replStore := newCacheAwareMockReplacementStore()
+	_ = replStore.addReplacement(ContentReplacement{
+		SessionID: sessionID, State: ReplacementActive, Round: 1,
+	})
+
+	denseSummary := "Summary for update error test."
+	mockLLM := &mockLLMClient{response: denseSummary}
+
+	f := NewFullCompactor(FullCompactorConfig{
+		LLM:              mockLLM,
+		Store:            store,
+		SessionID:        sessionID,
+		ReplacementStore: replStore,
+	})
+
+	replStore.updateErr = fmt.Errorf("connection lost during unfreeze")
+
+	result, err := f.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
 }

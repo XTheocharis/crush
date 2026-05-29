@@ -39,7 +39,12 @@ func TestCalculatePressure(t *testing.T) {
 func TestCalculatePressureTier(t *testing.T) {
 	t.Parallel()
 
-	cfg := DefaultPressureConfig()
+	cfg := PressureConfig{
+		UseAbsoluteOffsets: false,
+		LowThreshold:       70.0,
+		MediumThreshold:    85.0,
+		HighThreshold:      95.0,
+	}
 
 	tests := []struct {
 		name          string
@@ -96,9 +101,10 @@ func TestCalculatePressureTierCustomThresholds(t *testing.T) {
 	t.Parallel()
 
 	cfg := PressureConfig{
-		LowThreshold:    50.0,
-		MediumThreshold: 75.0,
-		HighThreshold:   90.0,
+		UseAbsoluteOffsets: false,
+		LowThreshold:       50.0,
+		MediumThreshold:    75.0,
+		HighThreshold:      90.0,
 	}
 
 	tests := []struct {
@@ -140,6 +146,10 @@ func TestDefaultPressureConfig(t *testing.T) {
 	require.InDelta(t, 70.0, cfg.LowThreshold, 0.01)
 	require.InDelta(t, 85.0, cfg.MediumThreshold, 0.01)
 	require.InDelta(t, 95.0, cfg.HighThreshold, 0.01)
+	require.True(t, cfg.UseAbsoluteOffsets)
+	require.Equal(t, int64(20000), cfg.SoftOffset)
+	require.Equal(t, int64(13000), cfg.CompactOffset)
+	require.Equal(t, int64(3000), cfg.HardOffset)
 }
 
 func TestNewPressureCompactionSelectorFillsDefaults(t *testing.T) {
@@ -153,6 +163,9 @@ func TestNewPressureCompactionSelectorFillsDefaults(t *testing.T) {
 	require.InDelta(t, 70.0, s.cfg.LowThreshold, 0.01)
 	require.InDelta(t, 85.0, s.cfg.MediumThreshold, 0.01)
 	require.InDelta(t, 95.0, s.cfg.HighThreshold, 0.01)
+	require.Equal(t, int64(20000), s.cfg.SoftOffset)
+	require.Equal(t, int64(13000), s.cfg.CompactOffset)
+	require.Equal(t, int64(3000), s.cfg.HardOffset)
 }
 
 type pressureStubLayer struct {
@@ -317,7 +330,7 @@ func TestPressureCompactionSelectorCompact(t *testing.T) {
 		}
 
 		s := NewPressureCompactionSelector(DefaultPressureConfig(), func(_ context.Context) (int64, int64, error) {
-			return 96000, 100000, nil
+			return 98000, 100000, nil
 		}, map[PressureTier][]CompactionLayer{
 			PressureHigh: {highLayer},
 		})
@@ -334,7 +347,7 @@ func TestPressureCompactionSelectorCompact(t *testing.T) {
 		t.Parallel()
 
 		s := NewPressureCompactionSelector(DefaultPressureConfig(), func(_ context.Context) (int64, int64, error) {
-			return 96000, 100000, nil
+			return 98000, 100000, nil
 		}, nil)
 
 		result, err := s.Compact(ctx, budget)
@@ -354,7 +367,7 @@ func TestPressureCompactionSelectorCompact(t *testing.T) {
 		}
 
 		s := NewPressureCompactionSelector(DefaultPressureConfig(), func(_ context.Context) (int64, int64, error) {
-			return 96000, 100000, nil
+			return 98000, 100000, nil
 		}, map[PressureTier][]CompactionLayer{
 			PressureHigh: {failLayer},
 		})
@@ -381,7 +394,7 @@ func TestPressureCompactionSelectorCompact(t *testing.T) {
 		}
 
 		s := NewPressureCompactionSelector(DefaultPressureConfig(), func(_ context.Context) (int64, int64, error) {
-			return 96000, 100000, nil
+			return 98000, 100000, nil
 		}, map[PressureTier][]CompactionLayer{
 			PressureHigh: {ineligible, eligible},
 		})
@@ -457,6 +470,170 @@ func TestPressureCompactionSelectorCompactUsageError(t *testing.T) {
 
 	_, err := s.Compact(ctx, budget)
 	require.ErrorIs(t, err, errTestUsage)
+}
+
+func TestAbsoluteOffsetThresholds(t *testing.T) {
+	t.Parallel()
+
+	cfg := PressureConfig{
+		UseAbsoluteOffsets: true,
+		SoftOffset:         20000,
+		CompactOffset:      13000,
+		HardOffset:         3000,
+	}
+
+	tests := []struct {
+		name          string
+		currentTokens int64
+		contextWindow int64
+		wantTier      PressureTier
+	}{
+		{
+			name:          "well below soft offset: 160k/200k",
+			currentTokens: 160000,
+			contextWindow: 200000,
+			wantTier:      PressureLow,
+		},
+		{
+			name:          "at soft offset boundary: 180k/200k triggers low",
+			currentTokens: 180000,
+			contextWindow: 200000,
+			wantTier:      PressureLow,
+		},
+		{
+			name:          "above soft offset: 185k/200k still low",
+			currentTokens: 185000,
+			contextWindow: 200000,
+			wantTier:      PressureLow,
+		},
+		{
+			name:          "at compact offset: 187k/200k triggers medium",
+			currentTokens: 187000,
+			contextWindow: 200000,
+			wantTier:      PressureMedium,
+		},
+		{
+			name:          "between compact and hard: 193k/200k still medium",
+			currentTokens: 193000,
+			contextWindow: 200000,
+			wantTier:      PressureMedium,
+		},
+		{
+			name:          "at hard offset: 197k/200k triggers high",
+			currentTokens: 197000,
+			contextWindow: 200000,
+			wantTier:      PressureHigh,
+		},
+		{
+			name:          "above hard offset: 199k/200k still high",
+			currentTokens: 199000,
+			contextWindow: 200000,
+			wantTier:      PressureHigh,
+		},
+		{
+			name:          "below all offsets: 50000/200k is low",
+			currentTokens: 50000,
+			contextWindow: 200000,
+			wantTier:      PressureLow,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, tier := CalculatePressureTier(tt.currentTokens, tt.contextWindow, cfg)
+			require.Equal(t, tt.wantTier, tier)
+		})
+	}
+}
+
+func TestAbsoluteOffsetFloorEnforcement(t *testing.T) {
+	t.Parallel()
+
+	cfg := PressureConfig{
+		UseAbsoluteOffsets: true,
+		SoftOffset:         20000,
+		CompactOffset:      13000,
+		HardOffset:         3000,
+	}
+
+	// hard=4000-3000=1000, compact=4000-13000=-9000: 500 < 1000 but >= -9000 → medium.
+	_, tier := CalculatePressureTier(500, 4000, cfg)
+	require.Equal(t, PressureMedium, tier)
+
+	// 1500 >= 1000 (hard threshold) → high.
+	_, tier = CalculatePressureTier(1500, 4000, cfg)
+	require.Equal(t, PressureHigh, tier)
+}
+
+func TestAbsoluteOffsetBackwardCompat(t *testing.T) {
+	t.Parallel()
+
+	// UseAbsoluteOffsets=false falls back to percentage logic.
+	cfg := PressureConfig{
+		UseAbsoluteOffsets: false,
+		LowThreshold:       70.0,
+		MediumThreshold:    85.0,
+		HighThreshold:      95.0,
+	}
+
+	tests := []struct {
+		name          string
+		currentTokens int64
+		contextWindow int64
+		wantTier      PressureTier
+	}{
+		{name: "50% is low", currentTokens: 50000, contextWindow: 100000, wantTier: PressureLow},
+		{name: "70% is low", currentTokens: 70000, contextWindow: 100000, wantTier: PressureLow},
+		{name: "85% is medium", currentTokens: 85000, contextWindow: 100000, wantTier: PressureMedium},
+		{name: "95% is high", currentTokens: 95000, contextWindow: 100000, wantTier: PressureHigh},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, tier := CalculatePressureTier(tt.currentTokens, tt.contextWindow, cfg)
+			require.Equal(t, tt.wantTier, tier)
+		})
+	}
+}
+
+func TestDefaultPressureConfigAbsoluteOffsets(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultPressureConfig()
+	require.True(t, cfg.UseAbsoluteOffsets)
+	require.Equal(t, int64(20000), cfg.SoftOffset)
+	require.Equal(t, int64(13000), cfg.CompactOffset)
+	require.Equal(t, int64(3000), cfg.HardOffset)
+	// Percentage fields still present for backward compat.
+	require.InDelta(t, 70.0, cfg.LowThreshold, 0.01)
+	require.InDelta(t, 85.0, cfg.MediumThreshold, 0.01)
+	require.InDelta(t, 95.0, cfg.HighThreshold, 0.01)
+}
+
+func TestFillDefaultsAbsoluteOffsets(t *testing.T) {
+	t.Parallel()
+
+	// Empty config gets offset and percentage defaults filled, but
+	// UseAbsoluteOffsets stays false (bool zero value is ambiguous with
+	// "explicitly false"). Use DefaultPressureConfig() for absolute offsets.
+	cfg := PressureConfig{}
+	filled := fillDefaults(cfg)
+	require.Equal(t, int64(20000), filled.SoftOffset)
+	require.Equal(t, int64(13000), filled.CompactOffset)
+	require.Equal(t, int64(3000), filled.HardOffset)
+	require.InDelta(t, 70.0, filled.LowThreshold, 0.01)
+
+	// Explicit UseAbsoluteOffsets=false should be preserved.
+	cfg = PressureConfig{UseAbsoluteOffsets: false}
+	filled = fillDefaults(cfg)
+	require.False(t, filled.UseAbsoluteOffsets)
+
+	// Explicit UseAbsoluteOffsets=true should be preserved.
+	cfg = PressureConfig{UseAbsoluteOffsets: true}
+	filled = fillDefaults(cfg)
+	require.True(t, filled.UseAbsoluteOffsets)
 }
 
 // Sentinel errors for tests.

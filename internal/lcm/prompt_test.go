@@ -35,7 +35,7 @@ func TestLCMSystemPrompt_ContainsMapTools(t *testing.T) {
 func TestConstants(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, 4, CharsPerToken)
-	require.Equal(t, 10000, LargeOutputThreshold)
+	require.Equal(t, 50000, LargeOutputThreshold)
 	require.Equal(t, 10, MaxCompactionRounds)
 	require.Equal(t, 3, MinMessagesToSummarize)
 	require.Equal(t, 2048, FallbackMaxChars)

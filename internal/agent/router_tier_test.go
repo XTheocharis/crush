@@ -111,3 +111,127 @@ func TestTierRouterResolveByCharCount(t *testing.T) {
 	require.Equal(t, config.SelectedModelTypeLarge, r.ResolveByCharCount(4000))
 	require.Equal(t, config.SelectedModelTypeLarge, r.ResolveByCharCount(50000))
 }
+
+func TestPerAgentTierTables(t *testing.T) {
+	t.Parallel()
+
+	globalTiers := []config.RoutingTier{
+		{UpToTokens: 100000, ModelType: config.SelectedModelTypeSmall},
+		{UpToTokens: 100000 * 100, ModelType: config.SelectedModelTypeLarge},
+	}
+
+	agentTiers := map[string][]config.RoutingTier{
+		"heavy": {
+			{UpToTokens: 50000, ModelType: config.SelectedModelType("medium")},
+			{UpToTokens: 50000 * 100, ModelType: config.SelectedModelType("ultra")},
+		},
+	}
+
+	r := NewTierRouterWithAgentTiers(globalTiers, agentTiers)
+
+	// Scenario 1: Agent "heavy" with custom tiers routes to different model.
+	// At 40000 tokens, heavy uses "medium"; global would use "small".
+	require.Equal(
+		t,
+		config.SelectedModelType("medium"),
+		r.RouteForAgent("heavy", 40000),
+	)
+	require.Equal(
+		t,
+		config.SelectedModelTypeSmall,
+		r.Resolve(40000),
+	)
+
+	// Scenario 2: Unknown agent falls back to global tier table.
+	require.Equal(
+		t,
+		config.SelectedModelTypeSmall,
+		r.RouteForAgent("unknown", 40000),
+	)
+
+	// Scenario 3: Empty agent name falls back to global.
+	require.Equal(
+		t,
+		config.SelectedModelTypeSmall,
+		r.RouteForAgent("", 40000),
+	)
+
+	// Scenario 4: Agent-specific override — "heavy" at 60000 uses "ultra".
+	require.Equal(
+		t,
+		config.SelectedModelType("ultra"),
+		r.RouteForAgent("heavy", 60000),
+	)
+	// Global at 60000 still uses "small" (under 100000 threshold).
+	require.Equal(
+		t,
+		config.SelectedModelTypeSmall,
+		r.Resolve(60000),
+	)
+}
+
+func TestPerAgentTierTables_SortsAgentTiers(t *testing.T) {
+	t.Parallel()
+
+	globalTiers := []config.RoutingTier{
+		{UpToTokens: 1000, ModelType: config.SelectedModelTypeSmall},
+		{UpToTokens: 10000, ModelType: config.SelectedModelTypeLarge},
+	}
+
+	// Pass agent tiers in reverse order; constructor should sort them.
+	agentTiers := map[string][]config.RoutingTier{
+		"worker": {
+			{UpToTokens: 5000, ModelType: config.SelectedModelTypeLarge},
+			{UpToTokens: 1000, ModelType: config.SelectedModelTypeSmall},
+		},
+	}
+
+	r := NewTierRouterWithAgentTiers(globalTiers, agentTiers)
+
+	require.Equal(
+		t,
+		config.SelectedModelTypeSmall,
+		r.RouteForAgent("worker", 800),
+	)
+	require.Equal(
+		t,
+		config.SelectedModelTypeLarge,
+		r.RouteForAgent("worker", 3000),
+	)
+}
+
+func TestPerAgentTierTables_NilAgentTiers(t *testing.T) {
+	t.Parallel()
+
+	globalTiers := []config.RoutingTier{
+		{UpToTokens: 1000, ModelType: config.SelectedModelTypeSmall},
+		{UpToTokens: 10000, ModelType: config.SelectedModelTypeLarge},
+	}
+
+	r := NewTierRouterWithAgentTiers(globalTiers, nil)
+
+	// All agents fall back to global.
+	require.Equal(
+		t,
+		config.SelectedModelTypeSmall,
+		r.RouteForAgent("any-agent", 500),
+	)
+	require.Equal(
+		t,
+		config.SelectedModelTypeLarge,
+		r.RouteForAgent("any-agent", 5000),
+	)
+}
+
+func TestPerAgentTierTables_BackwardCompat(t *testing.T) {
+	t.Parallel()
+
+	// NewTierRouter still works exactly as before (no agent tiers).
+	r := NewTierRouter([]config.RoutingTier{
+		{UpToTokens: 1000, ModelType: config.SelectedModelTypeSmall},
+		{UpToTokens: 10000, ModelType: config.SelectedModelTypeLarge},
+	})
+
+	require.Equal(t, config.SelectedModelTypeSmall, r.Resolve(500))
+	require.Equal(t, config.SelectedModelTypeLarge, r.Resolve(5000))
+}

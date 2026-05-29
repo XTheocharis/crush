@@ -23,6 +23,67 @@ func makeTestAttachments(n int, contentSize int) []Attachment {
 	return attachments
 }
 
+func TestMessageCloneDeepCopy_BinaryContent(t *testing.T) {
+	t.Parallel()
+
+	original := Message{
+		Role: User,
+		Parts: []ContentPart{
+			TextContent{Text: "hello"},
+			BinaryContent{Path: "file.bin", MIMEType: "application/octet-stream", Data: []byte{0xDE, 0xAD, 0xBE, 0xEF}},
+			TextContent{Text: "world"},
+		},
+	}
+
+	cloned := original.Clone()
+
+	require.Equal(t, original.Parts, cloned.Parts)
+
+	bc, ok := cloned.Parts[1].(BinaryContent)
+	require.True(t, ok)
+	bc.Data[0] = 0xFF
+
+	origBC, ok := original.Parts[1].(BinaryContent)
+	require.True(t, ok)
+	require.Equal(t, byte(0xDE), origBC.Data[0], "modifying clone should not affect original")
+}
+
+func TestMessageCloneDeepCopy_NilBinaryData(t *testing.T) {
+	t.Parallel()
+
+	original := Message{
+		Role: User,
+		Parts: []ContentPart{
+			BinaryContent{Path: "empty.bin", MIMEType: "application/octet-stream", Data: nil},
+		},
+	}
+
+	cloned := original.Clone()
+
+	bc, ok := cloned.Parts[0].(BinaryContent)
+	require.True(t, ok)
+	require.Nil(t, bc.Data)
+}
+
+func TestMessageCloneDeepCopy_OtherPartTypes(t *testing.T) {
+	t.Parallel()
+
+	original := Message{
+		Role: Assistant,
+		Parts: []ContentPart{
+			TextContent{Text: "text"},
+			ToolCall{ID: "tc1", Name: "bash", Input: `{"cmd":"ls"}`},
+			ToolResult{ToolCallID: "tc1", Name: "bash", Content: "file.go"},
+			Finish{Reason: FinishReasonEndTurn, Time: 12345},
+		},
+	}
+
+	cloned := original.Clone()
+
+	require.Equal(t, original.Parts, cloned.Parts)
+	require.Equal(t, len(original.Parts), len(cloned.Parts))
+}
+
 func TestToAIMessage_CorruptedMediaData(t *testing.T) {
 	t.Parallel()
 

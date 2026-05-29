@@ -372,7 +372,7 @@ func TestObservationPriorityColumn(t *testing.T) {
 	// Insert three observations with different priorities: low, high, medium.
 	// They arrive in this order so we can verify that sorting reorders them.
 	obsJSON := `[
-		{"event":"low priority event","context":"c1","implication":"i1","priority":0.1},
+		{"event":"low priority event","context":"c1","implication":"i1","priority":0.2},
 		{"event":"high priority event","context":"c2","implication":"i2","priority":0.9},
 		{"event":"medium priority event","context":"c3","implication":"i3","priority":0.5}
 	]`
@@ -403,4 +403,205 @@ func TestTruncateObservationField_Multibyte(t *testing.T) {
 
 	require.Equal(t, 100, utf8.RuneCountInString(result))
 	require.True(t, utf8.ValidString(result))
+}
+
+func TestObservationPriorityText_FourLevels(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		priority float64
+		want     string
+	}{
+		{0.9, "high"},
+		{0.7, "high"},
+		{0.69, "medium"},
+		{0.5, "medium"},
+		{0.4, "medium"},
+		{0.39, "low"},
+		{0.15, "low"},
+		{0.149, "info"},
+		{0.0, "info"},
+	}
+	for _, tc := range tests {
+		require.Equal(t, tc.want, observationPriorityText(tc.priority), "priority=%.3f", tc.priority)
+	}
+}
+
+func TestObservationPriorityText_EmojiMapping(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		priority float64
+		want     string
+	}{
+		{0.8, "high"},
+		{0.45, "medium"},
+		{0.2, "low"},
+		{0.1, "info"},
+	}
+	for _, tc := range tests {
+		got := observationPriorityText(tc.priority)
+		require.Equal(t, tc.want, got, "priority=%.2f", tc.priority)
+	}
+}
+
+func TestObservationFourPriorityRoundTrip(t *testing.T) {
+	t.Parallel()
+	queries, store := setupObservationTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "obs-test-4priority"
+	createTestSession(t, queries, sessionID)
+	createTestMessage(t, queries, sessionID, "msg-1", "user", "4 priority levels test")
+	createTestMessage(t, queries, sessionID, "msg-2", "assistant", "acknowledged")
+
+	obsJSON := `[
+		{"event":"info event","context":"c1","implication":"i1","priority":0.05},
+		{"event":"low event","context":"c2","implication":"i2","priority":0.2},
+		{"event":"medium event","context":"c3","implication":"i3","priority":0.5},
+		{"event":"high event","context":"c4","implication":"i4","priority":0.9}
+	]`
+	mockLLM := &mockLLMClient{response: obsJSON}
+	oc := NewObservationCoordinator(store, mockLLM, 0, nil)
+	ch := oc.Observe(ctx, sessionID)
+	require.NotNil(t, ch)
+	result := <-ch
+	require.NoError(t, result.Error)
+	require.Len(t, result.Observations, 4)
+
+	stored, err := oc.ListObservations(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, stored, 4)
+
+	require.Equal(t, "high event", stored[0].Event)
+	require.Equal(t, "medium event", stored[1].Event)
+	require.Equal(t, "low event", stored[2].Event)
+	require.Equal(t, "info event", stored[3].Event)
+}
+
+func TestDegenerateRing_PushAndItems(t *testing.T) {
+	t.Parallel()
+	var r degenerateRing
+	r.push("a")
+	r.push("b")
+	r.push("c")
+	require.Equal(t, 3, r.len())
+	require.Equal(t, []string{"a", "b", "c"}, r.items())
+}
+
+func TestDegenerateRing_Wrap(t *testing.T) {
+	t.Parallel()
+	var r degenerateRing
+	for i := 0; i < degenerateRingSize+2; i++ {
+		r.push(fmt.Sprintf("item-%d", i))
+	}
+	require.True(t, r.full)
+	require.Equal(t, degenerateRingSize, r.len())
+
+	items := r.items()
+	require.Equal(t, degenerateRingSize, len(items))
+	require.Equal(t, "item-2", items[0])
+	require.Equal(t, "item-6", items[degenerateRingSize-1])
+}
+
+func TestDegenerateRing_Reset(t *testing.T) {
+	t.Parallel()
+	var r degenerateRing
+	r.push("a")
+	r.push("b")
+	r.reset()
+	require.Equal(t, 0, r.len())
+	require.False(t, r.full)
+}
+
+func TestIsDegenerate_EmptyObservations(t *testing.T) {
+	t.Parallel()
+	ring := &degenerateRing{}
+	require.True(t, isDegenerate(ring, nil))
+	require.True(t, isDegenerate(ring, []Observation{}))
+}
+
+func TestIsDegenerate_EmptyEventAndContext(t *testing.T) {
+	t.Parallel()
+	ring := &degenerateRing{}
+	obs := []Observation{{Event: "", Context: "", Implication: "irrelevant"}}
+	require.True(t, isDegenerate(ring, obs))
+}
+
+func TestIsDegenerate_RepeatedIdentical(t *testing.T) {
+	t.Parallel()
+	ring := &degenerateRing{}
+	obs := []Observation{
+		{Event: "same event", Context: "same ctx", Implication: "i1"},
+		{Event: "same event", Context: "same ctx", Implication: "i2"},
+	}
+	require.False(t, isDegenerate(ring, obs), "first occurrence should not be degenerate")
+
+	ring.push("same event|same ctx")
+	require.True(t, isDegenerate(ring, obs), "repeated should be degenerate")
+}
+
+func TestIsDegenerate_LoopPattern(t *testing.T) {
+	t.Parallel()
+	ring := &degenerateRing{}
+	ring.push("A|ctx")
+	ring.push("B|ctx")
+	ring.push("A|ctx")
+	ring.push("B|ctx")
+
+	obs := []Observation{{Event: "C", Context: "different"}}
+	require.False(t, isDegenerate(ring, obs), "new observation should break the loop pattern")
+
+	loopObs := []Observation{{Event: "A", Context: "ctx"}}
+	require.True(t, isDegenerate(ring, loopObs), "observation matching loop pattern should be degenerate")
+}
+
+func TestIsDegenerate_NotDegenerate(t *testing.T) {
+	t.Parallel()
+	ring := &degenerateRing{}
+	ring.push("old|ctx")
+	obs := []Observation{
+		{Event: "new event", Context: "new ctx", Implication: "something"},
+	}
+	require.False(t, isDegenerate(ring, obs))
+}
+
+func TestObservationCoordinator_Degenerate_SkipsStorage(t *testing.T) {
+	t.Parallel()
+	queries, store := setupObservationTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "obs-test-degenerate"
+	createTestSession(t, queries, sessionID)
+	createTestMessage(t, queries, sessionID, "msg-1", "user", "trigger observation")
+
+	sameObs := `[{"event":"repeated","context":"same","implication":"i","priority":0.5}]`
+	mockLLM := &mockLLMClient{response: sameObs}
+
+	oc := NewObservationCoordinator(store, mockLLM, 0, nil)
+
+	// First observation should succeed.
+	ch1 := oc.Observe(ctx, sessionID)
+	require.NotNil(t, ch1)
+	result1 := <-ch1
+	require.NoError(t, result1.Error)
+	require.Len(t, result1.Observations, 1)
+
+	// Insert a message to allow second observation.
+	createTestMessage(t, queries, sessionID, "msg-2", "assistant", "ok")
+
+	// Second observation with identical content should be degenerate.
+	ch2 := oc.Observe(ctx, sessionID)
+	require.NotNil(t, ch2)
+	result2 := <-ch2
+	require.NoError(t, result2.Error)
+	require.Empty(t, result2.Observations, "degenerate observation should be skipped")
+
+	stored, err := oc.ListObservations(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, stored, 1, "only first observation should be stored")
+}
+
+func TestObservationSummary(t *testing.T) {
+	t.Parallel()
+	obs := Observation{Event: "event", Context: "context", Implication: "ignored"}
+	require.Equal(t, "event|context", observationSummary(obs))
 }

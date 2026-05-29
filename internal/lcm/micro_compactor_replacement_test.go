@@ -85,14 +85,14 @@ func setupOversizedMessage(t *testing.T) (*Store, string, string) {
 	store := newStore(queries, sqlDB)
 
 	msgID := "msg-big"
-	largeContent := strings.Repeat("large output data ", 5000)
+	largeContent := strings.Repeat("large output data ", 22000)
 	createTestMessage(t, queries, sessionID, msgID, "tool", largeContent)
 	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
 		SessionID:  sessionID,
 		Position:   0,
 		ItemType:   "message",
 		MessageID:  sql.NullString{String: msgID, Valid: true},
-		TokenCount: 25000,
+		TokenCount: 55000,
 	})
 	require.NoError(t, err)
 
@@ -126,7 +126,7 @@ func TestMicroCompactor_Compact_RecordsReplacement(t *testing.T) {
 	require.Equal(t, int64(0), r.Position)
 	require.Equal(t, ReplacementActive, r.State)
 	require.Equal(t, 3, r.Round)
-	require.Equal(t, 25000, r.OriginalTokenCount)
+	require.Equal(t, 55000, r.OriginalTokenCount)
 	require.Greater(t, r.ReplacementTokenCount, 0)
 	require.Less(t, r.ReplacementTokenCount, r.OriginalTokenCount)
 	require.True(t, r.MessageID.Valid)
@@ -243,14 +243,14 @@ func TestMicroCompactor_Compact_MultipleOversized_RecordsAll(t *testing.T) {
 
 	for i := range 3 {
 		msgID := fmt.Sprintf("msg-big-%d", i)
-		content := strings.Repeat(fmt.Sprintf("output %d ", i), 5000)
+		content := strings.Repeat(fmt.Sprintf("output %d ", i), 22000)
 		createTestMessage(t, queries, sessionID, msgID, "tool", content)
 		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
 			SessionID:  sessionID,
 			Position:   int64(i),
 			ItemType:   "message",
 			MessageID:  sql.NullString{String: msgID, Valid: true},
-			TokenCount: 12000,
+			TokenCount: 55000,
 		})
 		require.NoError(t, err)
 	}
@@ -291,14 +291,14 @@ func TestMicroCompactor_Compact_MixedPinnedAndUnpinned(t *testing.T) {
 
 	for i := range 3 {
 		msgID := fmt.Sprintf("msg-mix-%d", i)
-		content := strings.Repeat(fmt.Sprintf("content %d ", i), 5000)
+		content := strings.Repeat(fmt.Sprintf("content %d ", i), 22000)
 		createTestMessage(t, queries, sessionID, msgID, "tool", content)
 		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
 			SessionID:  sessionID,
 			Position:   int64(i),
 			ItemType:   "message",
 			MessageID:  sql.NullString{String: msgID, Valid: true},
-			TokenCount: 12000,
+			TokenCount: 55000,
 		})
 		require.NoError(t, err)
 	}

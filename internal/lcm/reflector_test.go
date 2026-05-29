@@ -3,6 +3,7 @@ package lcm
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -743,7 +744,155 @@ func TestReflectorAgent_ReflectionQuality(t *testing.T) {
 	require.Contains(t, ref.ActionSuggestion, "migration files")
 }
 
+// --- CompressionLevel tests ---
+
+func TestDetermineCompressionLevel(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		tokenCount int
+		want       CompressionLevel
+	}{
+		{"zero tokens", 0, LevelNormal},
+		{"below 30K", 29_999, LevelNormal},
+		{"at 30K", 30_000, LevelExtractive},
+		{"below 40K", 39_999, LevelExtractive},
+		{"at 40K", 40_000, LevelAggressive},
+		{"below 50K", 49_999, LevelAggressive},
+		{"at 50K", 50_000, LevelSkeleton},
+		{"below 60K", 59_999, LevelSkeleton},
+		{"at 60K", 60_000, LevelDeterministic},
+		{"well above 60K", 100_000, LevelDeterministic},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := determineCompressionLevel(tt.tokenCount)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestReflectionPromptForLevel(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		lvl  CompressionLevel
+		want string
+	}{
+		{"normal returns default prompt", LevelNormal, reflectionSystemPrompt},
+		{"extractive", LevelExtractive, extractiveReflectionPrompt},
+		{"aggressive", LevelAggressive, aggressiveReflectionPrompt},
+		{"skeleton", LevelSkeleton, skeletonReflectionPrompt},
+		{"deterministic", LevelDeterministic, deterministicReflectionPrompt},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := reflectionPromptForLevel(tt.lvl)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestReflectorAgent_Reflect_UsesCompressionLevel(t *testing.T) {
+	t.Parallel()
+	queries, store := setupReflectorTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "refl-test-compression"
+	createTestSession(t, queries, sessionID)
+	createTestMessage(t, queries, sessionID, "msg-1", "user", "test compression")
+	createTestMessage(t, queries, sessionID, "msg-2", "assistant", "ok")
+
+	// Insert observations directly into the buffer instead of using
+	// ObservationCoordinator, which has a known goroutine leak in tests.
+	obs := Observation{Event: "compression test", Context: "test", Implication: "test"}
+	obsJSON, err := json.Marshal(obs)
+	require.NoError(t, err)
+	_, err = store.rawDB.ExecContext(ctx,
+		`INSERT INTO lcm_observation_buffer (id, session_id, buffer_type, content, token_count, priority)
+		 VALUES (?, ?, 'observation', ?, ?, 'medium')`,
+		"obs-compression-1", sessionID, string(obsJSON), 10,
+	)
+	require.NoError(t, err)
+
+	var capturedSystemPrompt string
+	captureLLM := &capturingMockLLMClient{
+		response: `[{"insight":"captured","confidence":0.8,"action_suggestion":"test"}]`,
+		onComplete: func(systemPrompt string) {
+			capturedSystemPrompt = systemPrompt
+		},
+	}
+	ra := NewReflectorAgent(store, captureLLM, 0)
+	ch := ra.Reflect(ctx, sessionID)
+	require.NotNil(t, ch)
+	result := <-ch
+	require.NoError(t, result.Error)
+	require.NotEmpty(t, capturedSystemPrompt)
+	require.Equal(t, reflectionSystemPrompt, capturedSystemPrompt,
+		"with low token count, should use normal (default) prompt")
+}
+
+// --- ReflectorThresholdPercent tests ---
+
+func TestBufferingCoordinator_50PercentIntervals(t *testing.T) {
+	t.Parallel()
+	_, store := setupReflectorTestDB(t)
+	ra := NewReflectorAgent(store, &mockLLMClient{}, 40_000)
+	bc := NewBufferingCoordinatorWithPercent(store, ra, ReflectorThresholdPercent)
+
+	require.Equal(t, -1, bc.CurrentInterval(0))
+	require.Equal(t, 0, bc.CurrentInterval(1))
+	require.Equal(t, 0, bc.CurrentInterval(19_999))
+	require.Equal(t, 1, bc.CurrentInterval(20_000))
+	require.Equal(t, 1, bc.CurrentInterval(39_999))
+	require.Equal(t, 1, bc.CurrentInterval(40_000))
+	require.Equal(t, 1, bc.CurrentInterval(100_000))
+}
+
+func TestBufferingCoordinator_20PercentIntervals(t *testing.T) {
+	t.Parallel()
+	_, store := setupReflectorTestDB(t)
+	ra := NewReflectorAgent(store, &mockLLMClient{}, 40_000)
+	bc := NewBufferingCoordinator(store, ra)
+
+	require.Equal(t, 0, bc.CurrentInterval(1))
+	require.Equal(t, 1, bc.CurrentInterval(8000))
+	require.Equal(t, 2, bc.CurrentInterval(16000))
+	require.Equal(t, 3, bc.CurrentInterval(24000))
+	require.Equal(t, 4, bc.CurrentInterval(32000))
+	require.Equal(t, 4, bc.CurrentInterval(100_000))
+}
+
+func TestNewBufferingCoordinatorWithPercent(t *testing.T) {
+	t.Parallel()
+	_, store := setupReflectorTestDB(t)
+	ra := NewReflectorAgent(store, &mockLLMClient{}, 40_000)
+
+	bc := NewBufferingCoordinatorWithPercent(store, ra, 0.5)
+	require.Equal(t, 0.5, bc.thresholdPercent)
+
+	bcDefault := NewBufferingCoordinator(store, ra)
+	require.Equal(t, BufferThresholdPercent, bcDefault.thresholdPercent)
+}
+
 // --- Helper ---
+
+type capturingMockLLMClient struct {
+	response   string
+	err        error
+	onComplete func(systemPrompt string)
+	callCount  int
+}
+
+func (m *capturingMockLLMClient) Complete(_ context.Context, systemPrompt, _ string) (string, error) {
+	m.callCount++
+	if m.onComplete != nil {
+		m.onComplete(systemPrompt)
+	}
+	return m.response, m.err
+}
 
 func setupReflectorTestDB(t *testing.T) (*db.Queries, *Store) {
 	t.Helper()

@@ -777,7 +777,23 @@ func (m *compactionManager) IsOverSoftThreshold(ctx context.Context, sessionID s
 
 // IsOverHardLimit checks if a session is over the hard limit.
 func (m *compactionManager) IsOverHardLimit(ctx context.Context, sessionID string) (ThresholdCheck, error) {
-	return m.IsOverSoftThreshold(ctx, sessionID)
+	budget, err := m.GetBudget(ctx, sessionID)
+	if err != nil {
+		return ThresholdCheck{}, err
+	}
+
+	tokenCount, err := m.store.GetContextTokenCount(ctx, sessionID)
+	if err != nil {
+		return ThresholdCheck{}, err
+	}
+
+	return ThresholdCheck{
+		CurrentTokens: tokenCount,
+		SoftLimit:     budget.SoftThreshold,
+		HardLimit:     budget.HardLimit,
+		OverSoft:      tokenCount > budget.SoftThreshold,
+		OverHard:      tokenCount > budget.HardLimit,
+	}, nil
 }
 
 // GetContextFiles returns LCM context files for injection into the system prompt.
@@ -1195,6 +1211,10 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 		SessionID:    sessionID,
 	})
 
+	microCompactor.cfg.CacheAware = true
+	microCompactor.cfg.ProviderType = m.providerType
+	microCompactor.cfg.CacheOptimizer = cacheOpt
+
 	llm := m.summarizer.llmClient()
 
 	sessionCompactor := NewSessionCompactor(SessionCompactorConfig{
@@ -1212,6 +1232,10 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 	dedupLayer := NewDedupCompactionLayer(m.store, sessionID)
 	staleLayer := NewStaleEvictionLayer(m.store, sessionID, 0)
 	adjacentLayer := NewAdjacentCondensationLayer(m.store, sessionID, 0)
+	timeGapLayer := NewTimeGapCompactor(TimeGapCompactorConfig{
+		Store:     m.store,
+		SessionID: sessionID,
+	})
 
 	usageFn := m.tokenUsageForSession(sessionID)
 	pressureSelector := NewPressureCompactionSelector(
@@ -1226,6 +1250,7 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 
 	return NewCompactionLayerManager(
 		microCompactor,
+		timeGapLayer,
 		dedupLayer,
 		staleLayer,
 		postCompactCleaner,

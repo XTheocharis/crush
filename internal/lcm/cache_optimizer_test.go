@@ -637,7 +637,7 @@ func TestAssembleSections_AllNinePopulated(t *testing.T) {
 	o.assembleSections(builder, entries)
 	sections := builder.Sections()
 
-	require.Equal(t, 9, builder.SectionCount(), "all 9 sections should be populated")
+	require.Equal(t, 9, builder.SectionCount(), "all 9 sections (without nudge) should be populated")
 
 	names := make(map[string]bool)
 	for _, s := range sections {
@@ -921,4 +921,365 @@ func TestAssembleSections_BuildPrompt_AllNineInOutput(t *testing.T) {
 	} {
 		require.Contains(t, prompt, section, "prompt should contain section %q", section)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// DREAM spec §B.1 reconciliation
+// ---------------------------------------------------------------------------
+
+func TestCompactPromptSectionsMatchSpec(t *testing.T) {
+	t.Parallel()
+
+	// DREAM spec §B.1 Layer 6 defines 9 canonical sections.
+	// This implementation adds 1 additional section (ghost-cues, from §B.4),
+	// for a total of 10 section constants.
+	const expectedSectionCount = 10
+
+	// All 10 section constants must exist with the correct names.
+	allSections := map[string]int{
+		SectionSystemInstructions: 10,
+		SectionRepoMap:            20,
+		SectionActiveFiles:        30,
+		SectionNudge:              35,
+		SectionRecentEdits:        40,
+		SectionTestResults:        50,
+		SectionLCMContext:         60,
+		SectionSessionMemory:      70,
+		SectionGhostCues:          80,
+		SectionUserRequest:        90,
+	}
+
+	// Verify section count.
+	require.Len(t, allSections, expectedSectionCount,
+		"expected %d section constants", expectedSectionCount)
+
+	// Verify DefaultStabilityScores has entries for all 10 sections.
+	require.Len(t, DefaultStabilityScores, expectedSectionCount,
+		"DefaultStabilityScores should have %d entries", expectedSectionCount)
+
+	for name, expectedScore := range allSections {
+		score, ok := DefaultStabilityScores[name]
+		require.True(t, ok, "DefaultStabilityScores missing entry for section %q", name)
+		require.Equal(t, expectedScore, score,
+			"stability score for section %q: got %d, want %d", name, score, expectedScore)
+	}
+
+	// Verify stability scores are strictly ascending (no duplicates) for
+	// deterministic cache ordering.
+	seen := make(map[int]string)
+	for name, score := range DefaultStabilityScores {
+		if prev, exists := seen[score]; exists {
+			t.Fatalf("duplicate stability score %d between %q and %q", score, prev, name)
+		}
+		seen[score] = name
+	}
+
+	// Verify ghost-cues is the documented deviation from the 9-section spec.
+	_, ok := DefaultStabilityScores[SectionGhostCues]
+	require.True(t, ok,
+		"ghost-cues section must be present (DREAM §B.4 enhancement, the 1 deviation from §B.1's 9 sections)")
+}
+
+// ---------------------------------------------------------------------------
+// ReorderForCache
+// ---------------------------------------------------------------------------
+
+func TestReorderForCache_NonAnthropic_NoOp(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "sess-reorder-nonanthro"
+	createTestSession(t, queries, sessionID)
+	store := newStore(queries, sqlDB)
+
+	for i := range 3 {
+		msgID := "msg-reorder-na-" + strings.Repeat("x", i)
+		createTestMessage(t, queries, sessionID, msgID, "assistant", "content")
+		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+			SessionID:  sessionID,
+			Position:   int64(i),
+			ItemType:   "message",
+			MessageID:  sql.NullString{String: msgID, Valid: true},
+			TokenCount: 100,
+		})
+		require.NoError(t, err)
+	}
+
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		ProviderType: "openai",
+		Store:        store,
+		SessionID:    sessionID,
+	})
+	result, err := o.ReorderForCache(ctx)
+	require.NoError(t, err)
+	require.False(t, result.ActionTaken)
+}
+
+func TestReorderForCache_Anthropic_WithEntries(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "sess-reorder-anthro"
+	createTestSession(t, queries, sessionID)
+	store := newStore(queries, sqlDB)
+
+	for i := range 3 {
+		msgID := "msg-reorder-an-" + strings.Repeat("y", i)
+		createTestMessage(t, queries, sessionID, msgID, "assistant", strings.Repeat("stable section content ", 50))
+		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+			SessionID:  sessionID,
+			Position:   int64(i),
+			ItemType:   "message",
+			MessageID:  sql.NullString{String: msgID, Valid: true},
+			TokenCount: int64(100 + i*50),
+		})
+		require.NoError(t, err)
+	}
+
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		ProviderType: "anthropic",
+		Store:        store,
+		SessionID:    sessionID,
+	})
+	result, err := o.ReorderForCache(ctx)
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+	require.True(t, result.TokensFreed > 0)
+	require.Equal(t, "anthropic-cache-management", result.LayerName)
+}
+
+func TestReorderForCache_NilStore_ReturnsError(t *testing.T) {
+	t.Parallel()
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		ProviderType: "anthropic",
+		SessionID:    "s1",
+	})
+	_, err := o.ReorderForCache(context.Background())
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrStoreIsNil))
+}
+
+func TestReorderForCache_EmptySessionID_ReturnsError(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	store := newStore(queries, sqlDB)
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		ProviderType: "anthropic",
+		Store:        store,
+	})
+	_, err := o.ReorderForCache(context.Background())
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSessionIDEmpty))
+}
+
+// ---------------------------------------------------------------------------
+// Anthropic Cache Integration: MicroCompactor + CacheOptimizer
+// ---------------------------------------------------------------------------
+
+func TestAnthropicCacheIntegration_CacheAwareTrue_AnthropicProvider(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "sess-integration-anthro"
+	createTestSession(t, queries, sessionID)
+	store := newStore(queries, sqlDB)
+
+	bigContent := strings.Repeat("large tool output content here ", 3000)
+	msgID := "msg-integration-big"
+	createTestMessage(t, queries, sessionID, msgID, "assistant", bigContent)
+	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID, Valid: true},
+		TokenCount: 80000,
+	})
+	require.NoError(t, err)
+
+	for i := range 3 {
+		smallMsgID := "msg-integration-small-" + strings.Repeat("s", i)
+		createTestMessage(t, queries, sessionID, smallMsgID, "assistant", "small content")
+		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+			SessionID:  sessionID,
+			Position:   int64(i + 1),
+			ItemType:   "message",
+			MessageID:  sql.NullString{String: smallMsgID, Valid: true},
+			TokenCount: 50,
+		})
+		require.NoError(t, err)
+	}
+
+	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
+		ProviderType: "anthropic",
+		Store:        store,
+		SessionID:    sessionID,
+	})
+
+	micro := NewMicroCompactor(MicroCompactorConfig{
+		Store:          store,
+		SessionID:      sessionID,
+		CacheAware:     true,
+		ProviderType:   "anthropic",
+		CacheOptimizer: cacheOpt,
+	})
+
+	result, err := micro.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+	require.True(t, result.ItemsAffected > 0)
+	require.True(t, result.TokensFreed > 0, "should free tokens from both large output replacement and cache re-ordering")
+}
+
+func TestAnthropicCacheIntegration_CacheAwareTrue_NonAnthropicProvider(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "sess-integration-openai"
+	createTestSession(t, queries, sessionID)
+	store := newStore(queries, sqlDB)
+
+	bigContent := strings.Repeat("large tool output content here ", 3000)
+	msgID := "msg-integration-openai-big"
+	createTestMessage(t, queries, sessionID, msgID, "assistant", bigContent)
+	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID, Valid: true},
+		TokenCount: 80000,
+	})
+	require.NoError(t, err)
+
+	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
+		ProviderType: "openai",
+		Store:        store,
+		SessionID:    sessionID,
+	})
+
+	micro := NewMicroCompactor(MicroCompactorConfig{
+		Store:          store,
+		SessionID:      sessionID,
+		CacheAware:     true,
+		ProviderType:   "openai",
+		CacheOptimizer: cacheOpt,
+	})
+
+	result, err := micro.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+	require.True(t, result.ItemsAffected > 0)
+}
+
+func TestAnthropicCacheIntegration_CacheAwareFalse_NoReordering(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "sess-integration-noaware"
+	createTestSession(t, queries, sessionID)
+	store := newStore(queries, sqlDB)
+
+	bigContent := strings.Repeat("large tool output content here ", 3000)
+	msgID := "msg-integration-noaware-big"
+	createTestMessage(t, queries, sessionID, msgID, "assistant", bigContent)
+	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID, Valid: true},
+		TokenCount: 80000,
+	})
+	require.NoError(t, err)
+
+	micro := NewMicroCompactor(MicroCompactorConfig{
+		Store:      store,
+		SessionID:  sessionID,
+		CacheAware: false,
+	})
+
+	result, err := micro.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+}
+
+func TestAnthropicCacheIntegration_NilCacheOptimizer_NoReordering(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "sess-integration-nilopt"
+	createTestSession(t, queries, sessionID)
+	store := newStore(queries, sqlDB)
+
+	bigContent := strings.Repeat("large tool output content here ", 3000)
+	msgID := "msg-integration-nilopt-big"
+	createTestMessage(t, queries, sessionID, msgID, "assistant", bigContent)
+	err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID, Valid: true},
+		TokenCount: 80000,
+	})
+	require.NoError(t, err)
+
+	micro := NewMicroCompactor(MicroCompactorConfig{
+		Store:          store,
+		SessionID:      sessionID,
+		CacheAware:     true,
+		ProviderType:   "anthropic",
+		CacheOptimizer: nil,
+	})
+
+	result, err := micro.Compact(ctx, Budget{})
+	require.NoError(t, err)
+	require.True(t, result.ActionTaken)
+}
+
+func TestAnthropicCacheIntegration_NoOversizedMessages_NoCacheReordering(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	ctx := context.Background()
+
+	sessionID := "sess-integration-nobig"
+	createTestSession(t, queries, sessionID)
+	store := newStore(queries, sqlDB)
+
+	for i := range 3 {
+		msgID := "msg-integration-small-" + strings.Repeat("z", i)
+		createTestMessage(t, queries, sessionID, msgID, "assistant", "small content")
+		err := queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+			SessionID:  sessionID,
+			Position:   int64(i),
+			ItemType:   "message",
+			MessageID:  sql.NullString{String: msgID, Valid: true},
+			TokenCount: 50,
+		})
+		require.NoError(t, err)
+	}
+
+	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
+		ProviderType: "anthropic",
+		Store:        store,
+		SessionID:    sessionID,
+	})
+
+	micro := NewMicroCompactor(MicroCompactorConfig{
+		Store:          store,
+		SessionID:      sessionID,
+		CacheAware:     true,
+		ProviderType:   "anthropic",
+		CacheOptimizer: cacheOpt,
+	})
+
+	budget := Budget{SoftThreshold: 50000, HardLimit: 60000, ContextWindow: 128000}
+	require.False(t, micro.ShouldCompact(ctx, budget), "no oversized messages, ShouldCompact should be false")
+
+	result, err := micro.Compact(ctx, budget)
+	require.NoError(t, err)
+	require.False(t, result.ActionTaken, "no oversized messages, nothing to compact")
 }

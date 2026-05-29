@@ -40,8 +40,22 @@ func (s PromptSection) EstimatedTokens() int64 {
 	return EstimateTokens(s.Content)
 }
 
-// SectionName constants identify the nine canonical prompt sections in the
-// compact prompt structure (Layer 6).
+// SectionName constants identify the ten prompt sections in the compact
+// prompt structure (Layer 6). Nine sections are defined by DREAM spec §B.1:
+//
+//  1. system-instructions (stability 10)
+//  2. repo-map            (stability 20)
+//  3. active-files        (stability 30)
+//  4. nudge               (stability 35)
+//  5. recent-edits        (stability 40)
+//  6. test-results        (stability 50)
+//  7. lcm-context         (stability 60)
+//  8. session-memory      (stability 70)
+//  9. user-request        (stability 90)
+//
+// One additional section comes from DREAM spec §B.4 (LCM context injection):
+//
+//  10. ghost-cues           (stability 80)
 const (
 	SectionSystemInstructions = "system-instructions"
 	SectionRepoMap            = "repo-map"
@@ -74,7 +88,7 @@ var DefaultStabilityScores = map[string]int{
 // CompactPromptBuilder (Layer 6)
 // ---------------------------------------------------------------------------
 
-// CompactPromptBuilder assembles the 9-section compact prompt structure
+// CompactPromptBuilder assembles the 10-section compact prompt structure
 // used by Layer 6. Sections are collected dynamically from available context
 // and ordered by cache stability score.
 type CompactPromptBuilder struct {
@@ -219,7 +233,7 @@ type CacheOptimizerConfig struct {
 
 // CacheOptimizer implements Layers 6 and 7 of the compaction framework.
 //
-// Layer 6 (priority 60): Assembles the 9-section compact prompt structure,
+// Layer 6 (priority 60): Assembles the 10-section compact prompt structure,
 // ordering sections by cache stability (stable sections first).
 //
 // Layer 7 (priority 70): Detects Anthropic providers and applies additional
@@ -594,6 +608,63 @@ func (o *CacheOptimizer) assembleSections(builder *CompactPromptBuilder, entries
 		builder.SetSection(SectionUserRequest,
 			fmt.Sprintf("Most recent activity: %s (tokens: %d)", last.MessageID, last.TokenCount))
 	}
+}
+
+// ReorderForCache performs cache-aware section re-ordering for Anthropic
+// providers. It fetches context entries from the store, assembles prompt
+// sections, sorts them by stability, and returns the estimated cache savings.
+// When the provider is not Anthropic or the store/session is not configured, it
+// returns a no-op result without error. This method is designed for integration
+// with the MicroCompactor layer — the standalone Layer 7 (anthropicCacheLayer)
+// remains unchanged.
+func (o *CacheOptimizer) ReorderForCache(ctx context.Context) (*CompactionLayerResult, error) {
+	if o.cfg.Store == nil {
+		return nil, fmt.Errorf("cache-optimizer: %w", ErrStoreIsNil)
+	}
+	if o.cfg.SessionID == "" {
+		return nil, fmt.Errorf("cache-optimizer: %w", ErrSessionIDEmpty)
+	}
+
+	if !o.isAnthropic() {
+		return &CompactionLayerResult{
+			LayerName:   "anthropic-cache-management",
+			ActionTaken: false,
+		}, nil
+	}
+
+	entries, err := o.cfg.Store.GetContextEntries(ctx, o.cfg.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("getting context entries: %w", err)
+	}
+
+	builder := NewCompactPromptBuilder()
+	o.assembleSections(builder, entries)
+
+	sections := builder.Sections()
+	if len(sections) == 0 {
+		return &CompactionLayerResult{
+			LayerName:   "anthropic-cache-management",
+			ActionTaken: false,
+		}, nil
+	}
+
+	SortSectionsByStability(sections)
+
+	var stableTokens int64
+	for _, s := range sections {
+		if s.StabilityScore <= 30 && s.Content != "" {
+			stableTokens += s.EstimatedTokens()
+		}
+	}
+
+	cacheSavings := stableTokens / 2
+
+	return &CompactionLayerResult{
+		LayerName:     "anthropic-cache-management",
+		TokensFreed:   cacheSavings,
+		ItemsAffected: builder.SectionCount(),
+		ActionTaken:   cacheSavings > 0,
+	}, nil
 }
 
 // SortSectionsByStability sorts a slice of PromptSection by stability score

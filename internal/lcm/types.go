@@ -12,7 +12,7 @@ const (
 const CharsPerToken = 4
 
 // LargeOutputThreshold is the token count above which tool output is stored in LCM.
-const LargeOutputThreshold = 10000
+const LargeOutputThreshold = 50000
 
 // MaxCompactionRounds is the maximum number of compaction rounds before giving up.
 const MaxCompactionRounds = 10

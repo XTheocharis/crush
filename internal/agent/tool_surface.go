@@ -18,6 +18,25 @@ const (
 	CapabilityObservation                             // 0x20
 )
 
+// ToolMarker is a bitmask identifying behavioral markers for a tool.
+// Markers occupy bits 6–11 and use uint16 to fit beyond the uint8 range
+// used by Capability (bits 0–5).
+type ToolMarker uint16
+
+const (
+	MarkerCanEdit                     ToolMarker = 1 << 6  // 0x0040
+	MarkerSymbolicRead                ToolMarker = 1 << 7  // 0x0080
+	MarkerSymbolicEdit                ToolMarker = 1 << 8  // 0x0100
+	MarkerOptional                    ToolMarker = 1 << 9  // 0x0200
+	MarkerBeta                        ToolMarker = 1 << 10 // 0x0400
+	MarkerDoesNotRequireActiveProject ToolMarker = 1 << 11 // 0x0800
+)
+
+// HasMarker checks whether a ToolMarker value has the given marker bit set.
+func (m ToolMarker) HasMarker(marker ToolMarker) bool {
+	return m&marker != 0
+}
+
 func (c Capability) String() string {
 	switch c {
 	case CapabilityFS:
@@ -49,6 +68,18 @@ func AllCapabilities() []Capability {
 	}
 }
 
+// AllMarkers returns all defined marker bits.
+func AllMarkers() []ToolMarker {
+	return []ToolMarker{
+		MarkerCanEdit,
+		MarkerSymbolicRead,
+		MarkerSymbolicEdit,
+		MarkerOptional,
+		MarkerBeta,
+		MarkerDoesNotRequireActiveProject,
+	}
+}
+
 // SurfaceContext describes the current runtime context that determines which
 // tools are visible. Fields mirror the conditions checked in buildTools.
 type SurfaceContext struct {
@@ -61,6 +92,7 @@ type SurfaceContext struct {
 // toolMeta holds the bitmask and visibility state for a registered tool.
 type toolMeta struct {
 	Capabilities Capability
+	Markers      ToolMarker
 	Visible      bool
 }
 
@@ -135,9 +167,18 @@ func (s *ToolSurface) registerDefaults() {
 // Register adds a tool to the surface with the given capability bitmask.
 // If the tool already exists, it is updated. New tools default to visible.
 func (s *ToolSurface) Register(name string, caps Capability) {
+	s.registerWithMarkers(name, caps, 0)
+}
+
+// RegisterWithMarkers adds a tool with both capabilities and behavioral markers.
+func (s *ToolSurface) RegisterWithMarkers(name string, caps Capability, markers ToolMarker) {
+	s.registerWithMarkers(name, caps, markers)
+}
+
+func (s *ToolSurface) registerWithMarkers(name string, caps Capability, markers ToolMarker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.tools[name] = toolMeta{Capabilities: caps, Visible: true}
+	s.tools[name] = toolMeta{Capabilities: caps, Markers: markers, Visible: true}
 }
 
 // Unregister removes a tool from the surface entirely.
@@ -231,6 +272,27 @@ func (s *ToolSurface) GetToolCapabilities(name string) Capability {
 		return meta.Capabilities
 	}
 	return 0
+}
+
+// GetToolMarkers returns the marker bitmask for the named tool.
+// Returns 0 if the tool is not registered or has no markers.
+func (s *ToolSurface) GetToolMarkers(name string) ToolMarker {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if meta, ok := s.tools[name]; ok {
+		return meta.Markers
+	}
+	return 0
+}
+
+// HasToolMarker checks whether a tool has a specific marker bit set.
+func (s *ToolSurface) HasToolMarker(name string, marker ToolMarker) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if meta, ok := s.tools[name]; ok {
+		return meta.Markers&marker != 0
+	}
+	return false
 }
 
 // IsVisible returns whether a specific tool is currently visible.

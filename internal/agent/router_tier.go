@@ -11,7 +11,8 @@ import (
 // and falls back to the largest tier's model type for token counts exceeding
 // all thresholds.
 type TierRouter struct {
-	tiers []config.RoutingTier
+	tiers      []config.RoutingTier
+	agentTiers map[string][]config.RoutingTier
 }
 
 // NewTierRouter creates a TierRouter from the given tiers. The tiers are
@@ -24,6 +25,28 @@ func NewTierRouter(tiers []config.RoutingTier) *TierRouter {
 		return sorted[i].UpToTokens < sorted[j].UpToTokens
 	})
 	return &TierRouter{tiers: sorted}
+}
+
+// NewTierRouterWithAgentTiers creates a TierRouter with per-agent tier
+// overrides. Each agent's tiers are sorted ascending by UpToTokens. When
+// RouteForAgent is called, agent-specific tiers are checked first; if the
+// agent has no specific tiers, the global table is used.
+func NewTierRouterWithAgentTiers(
+	globalTiers []config.RoutingTier,
+	agentTiers map[string][]config.RoutingTier,
+) *TierRouter {
+	r := NewTierRouter(globalTiers)
+	sorted := make(map[string][]config.RoutingTier, len(agentTiers))
+	for name, tiers := range agentTiers {
+		s := make([]config.RoutingTier, len(tiers))
+		copy(s, tiers)
+		sort.Slice(s, func(i, j int) bool {
+			return s[i].UpToTokens < s[j].UpToTokens
+		})
+		sorted[name] = s
+	}
+	r.agentTiers = sorted
+	return r
 }
 
 // NewTierRouterFromThreshold creates a 2-tier router that matches the old
@@ -55,6 +78,29 @@ func (r *TierRouter) Resolve(tokenCount int) config.SelectedModelType {
 		}
 	}
 	return result
+}
+
+// RouteForAgent resolves the model type for a given agent name and token
+// count. If the agent has specific tiers configured, those are used;
+// otherwise the global table is consulted via Resolve.
+func (r *TierRouter) RouteForAgent(
+	agentName string,
+	tokenCount int,
+) config.SelectedModelType {
+	if agentName == "" {
+		return r.Resolve(tokenCount)
+	}
+	if tiers, ok := r.agentTiers[agentName]; ok {
+		result := tiers[len(tiers)-1].ModelType
+		for _, tier := range tiers {
+			if tokenCount <= tier.UpToTokens {
+				result = tier.ModelType
+				break
+			}
+		}
+		return result
+	}
+	return r.Resolve(tokenCount)
 }
 
 // ResolveByCharCount converts a character count to an estimated token count

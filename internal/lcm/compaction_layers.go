@@ -38,6 +38,7 @@ type CompactionLayerResult struct {
 // Layers 1–5b are implemented; 6–7 are provided by CacheOptimizer:
 //
 //	1  — MicroCompactor:            inline truncation of large tool outputs
+//	1b — TimeGapCompactor:          tool-output compaction across time gaps (time_gap_compactor.go)
 //	2  — DedupCompactionLayer:      duplicate/near-duplicate message deduplication
 //	3  — StaleEvictionLayer:        stale tool-output eviction
 //	4  — PostCompactCleaner:        post-compaction context restore (post_compact.go)
@@ -150,6 +151,22 @@ type MicroCompactorConfig struct {
 	// Round is the current compaction round number, used when recording
 	// replacements.
 	Round int
+
+	// CacheAware enables Anthropic cache re-ordering after large output
+	// replacement. When true AND ProviderType is "anthropic", the compactor
+	// triggers cache section re-ordering via CacheOptimizer after processing
+	// oversized messages.
+	CacheAware bool
+
+	// ProviderType identifies the LLM provider (e.g. "anthropic", "openai").
+	// Used in conjunction with CacheAware to determine whether cache
+	// re-ordering should be applied.
+	ProviderType string
+
+	// CacheOptimizer is an optional CacheOptimizer instance used for cache
+	// re-ordering when CacheAware is true. When nil, cache re-ordering is
+	// skipped even if CacheAware is true.
+	CacheOptimizer *CacheOptimizer
 }
 
 func (c MicroCompactorConfig) threshold() int64 {
@@ -293,6 +310,19 @@ func (m *MicroCompactor) Compact(ctx context.Context, budget Budget) (*Compactio
 		ItemsAffected: affected,
 		ActionTaken:   affected > 0,
 	}
+
+	if m.cfg.CacheAware && strings.EqualFold(m.cfg.ProviderType, "anthropic") && m.cfg.CacheOptimizer != nil {
+		cacheResult, err := m.cfg.CacheOptimizer.ReorderForCache(ctx)
+		if err != nil {
+			slog.Warn("Micro-compactor: cache re-ordering failed",
+				slog.String("session_id", m.cfg.SessionID),
+				slog.String("error", err.Error()),
+			)
+		} else if cacheResult != nil && cacheResult.ActionTaken {
+			result.TokensFreed += cacheResult.TokensFreed
+		}
+	}
+
 	return result, nil
 }
 

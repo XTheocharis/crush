@@ -19,6 +19,8 @@ const (
 	ReplacementSuperseded ReplacementState = "superseded"
 	// ReplacementPinned means the replacement is pinned and won't be evicted.
 	ReplacementPinned ReplacementState = "pinned"
+	// ReplacementFrozen means the replacement is frozen for cache-sharing.
+	ReplacementFrozen ReplacementState = "frozen"
 )
 
 // ValidTransitions defines the allowed state transitions for replacement
@@ -29,12 +31,17 @@ var ValidTransitions = map[ReplacementState]map[ReplacementState]bool{
 		ReplacementRestored:   true,
 		ReplacementSuperseded: true,
 		ReplacementPinned:     true,
+		ReplacementFrozen:     true,
 	},
 	ReplacementRestored: {
 		ReplacementActive: true,
 	},
 	ReplacementSuperseded: {},
 	ReplacementPinned: {
+		ReplacementActive: true,
+		ReplacementFrozen: true,
+	},
+	ReplacementFrozen: {
 		ReplacementActive: true,
 	},
 }
@@ -54,6 +61,36 @@ type ContentReplacement struct {
 	ReplacementTokenCount int
 	CreatedAt             int64
 	UpdatedAt             int64
+}
+
+// Freeze transitions a ContentReplacement to the Frozen state. Only active
+// and pinned replacements can be frozen. Returns ErrInvalidStateTransition
+// for other states.
+func (cr *ContentReplacement) Freeze() error {
+	if cr.State != ReplacementActive && cr.State != ReplacementPinned {
+		return ErrInvalidStateTransition{From: cr.State, To: ReplacementFrozen}
+	}
+	cr.State = ReplacementFrozen
+	return nil
+}
+
+// Clone creates a deep copy of the ContentReplacement with State reset to
+// Active and ID reset to 0. The caller must insert the clone into the store
+// to obtain a new ID.
+func (cr *ContentReplacement) Clone() *ContentReplacement {
+	return &ContentReplacement{
+		ID:                    0,
+		SessionID:             cr.SessionID,
+		Position:              cr.Position,
+		MessageID:             cr.MessageID,
+		FileID:                cr.FileID,
+		State:                 ReplacementActive,
+		Round:                 cr.Round,
+		OriginalTokenCount:    cr.OriginalTokenCount,
+		ReplacementTokenCount: cr.ReplacementTokenCount,
+		CreatedAt:             cr.CreatedAt,
+		UpdatedAt:             cr.UpdatedAt,
+	}
 }
 
 // ContentReplacementStore defines the persistence interface for content

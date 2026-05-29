@@ -24,14 +24,29 @@ type OpResult struct {
 	Error   string
 }
 
+// MaxBatchFiles is the maximum number of files allowed in a single batch.
+const MaxBatchFiles = 50
+
 // BatchResult is the aggregate outcome of a BatchProcessor.Apply call.
 type BatchResult struct {
-	OverallSuccess bool
-	PerOpResults   []OpResult
-	RolledBack     bool
-	AnchorMaps     map[string]*AnchorMap
-	ParseErrors    map[string]string
+	OverallSuccess      bool
+	PerOpResults        []OpResult
+	RolledBack          bool
+	AnchorMaps          map[string]*AnchorMap
+	ParseErrors         map[string]string
+	BaselineDiagnostics *DiagnosticSnapshot
 }
+
+// DiagnosticSnapshot records pre-edit LSP diagnostics for a set of files.
+type DiagnosticSnapshot struct {
+	// Diags maps file paths to their diagnostic messages collected before
+	// editing. Best-effort: may be empty if LSP is unavailable.
+	Diags map[string][]string
+}
+
+// DiagnosticsFunc collects diagnostics for a single file path. Returns a
+// slice of diagnostic message strings (may be empty).
+type DiagnosticsFunc func(ctx context.Context, filePath string) []string
 
 // ContentStore abstracts file content access for in-memory batch processing.
 type ContentStore interface {
@@ -80,6 +95,7 @@ type BatchProcessor struct {
 	store          ContentStore
 	parser         treesitter.Parser
 	anchorInterval int
+	diagsFn        DiagnosticsFunc
 }
 
 // NewBatchProcessor creates a BatchProcessor backed by store.
@@ -91,6 +107,15 @@ func NewBatchProcessor(store ContentStore, parser treesitter.Parser, anchorInter
 		parser:         parser,
 		anchorInterval: anchorInterval,
 	}
+}
+
+// WithDiagnosticsCapture sets an optional function used to collect LSP
+// diagnostics for each file before batch editing begins. The capture is
+// best-effort: if fn is nil or the function returns no results, the batch
+// proceeds without baseline diagnostics.
+func (bp *BatchProcessor) WithDiagnosticsCapture(fn DiagnosticsFunc) *BatchProcessor {
+	bp.diagsFn = fn
+	return bp
 }
 
 // Apply applies all ops atomically against the ContentStore.
@@ -105,6 +130,12 @@ func (bp *BatchProcessor) Apply(ops []EditOp) (*BatchResult, error) {
 			ParseErrors:    make(map[string]string),
 		}, nil
 	}
+
+	if len(ops) > MaxBatchFiles {
+		return nil, fmt.Errorf("batch exceeds maximum of %d files", MaxBatchFiles)
+	}
+
+	baseline := bp.captureBaseline(context.Background(), ops)
 
 	snapshot := bp.snapshotStore()
 
@@ -139,11 +170,12 @@ func (bp *BatchProcessor) Apply(ops []EditOp) (*BatchResult, error) {
 	if !allOK {
 		bp.restoreSnapshot(snapshot)
 		return &BatchResult{
-			OverallSuccess: false,
-			PerOpResults:   results,
-			RolledBack:     true,
-			AnchorMaps:     make(map[string]*AnchorMap),
-			ParseErrors:    make(map[string]string),
+			OverallSuccess:      false,
+			PerOpResults:        results,
+			RolledBack:          true,
+			AnchorMaps:          make(map[string]*AnchorMap),
+			ParseErrors:         make(map[string]string),
+			BaselineDiagnostics: baseline,
 		}, nil
 	}
 
@@ -164,12 +196,36 @@ func (bp *BatchProcessor) Apply(ops []EditOp) (*BatchResult, error) {
 	}
 
 	return &BatchResult{
-		OverallSuccess: true,
-		PerOpResults:   results,
-		RolledBack:     false,
-		AnchorMaps:     anchorMaps,
-		ParseErrors:    parseErrors,
+		OverallSuccess:      true,
+		PerOpResults:        results,
+		RolledBack:          false,
+		AnchorMaps:          anchorMaps,
+		ParseErrors:         parseErrors,
+		BaselineDiagnostics: baseline,
 	}, nil
+}
+
+// captureBaseline collects LSP diagnostics for each unique file in ops
+// before editing. Returns an empty snapshot if no diagnostics function is
+// configured or if the function returns no results.
+func (bp *BatchProcessor) captureBaseline(ctx context.Context, ops []EditOp) *DiagnosticSnapshot {
+	snap := &DiagnosticSnapshot{Diags: make(map[string][]string)}
+	if bp.diagsFn == nil {
+		return snap
+	}
+
+	seen := make(map[string]struct{}, len(ops))
+	for _, op := range ops {
+		if _, ok := seen[op.FilePath]; ok {
+			continue
+		}
+		seen[op.FilePath] = struct{}{}
+		diags := bp.diagsFn(ctx, op.FilePath)
+		if len(diags) > 0 {
+			snap.Diags[op.FilePath] = diags
+		}
+	}
+	return snap
 }
 
 func (bp *BatchProcessor) snapshotStore() map[string]string {
@@ -227,4 +283,77 @@ func (b *ASTAnchorBridge) VerifyBatch(ctx context.Context, files map[string]stri
 // RebuildAnchorMap creates a fresh AnchorMap for the given content.
 func (b *ASTAnchorBridge) RebuildAnchorMap(content string, interval int) *AnchorMap {
 	return BuildAnchorMap(content, interval)
+}
+
+// SymbolAnchorRange maps a tree-sitter symbol to the anchors that cover its
+// line range. This enables edit operations like "replace function body" by
+// resolving symbol → anchor range → edit operation.
+type SymbolAnchorRange struct {
+	Symbol      treesitter.SymbolInfo
+	StartAnchor HashAnchor // First anchor at or before the symbol start line.
+	EndAnchor   HashAnchor // Last anchor at or before the symbol end line.
+}
+
+// MapSymbolsToAnchors maps tree-sitter symbols to the hash anchors that cover
+// their line ranges. For each symbol, it finds the first anchor at or before
+// the symbol's start line and the last anchor at or before the symbol's end
+// line. Symbols with no anchor preceding their start line are skipped.
+func (b *ASTAnchorBridge) MapSymbolsToAnchors(
+	ctx context.Context,
+	fileID string,
+	content string,
+	symbols []treesitter.SymbolInfo,
+	interval int,
+) ([]SymbolAnchorRange, error) {
+	if len(symbols) == 0 {
+		return nil, nil
+	}
+
+	am := BuildAnchorMap(content, interval)
+	if len(am.Anchors) == 0 {
+		return nil, nil
+	}
+
+	// Anchors are sorted by LineNum (ascending) from BuildAnchorMap.
+	// Use binary search to find anchors efficiently.
+	anchors := am.Anchors
+
+	results := make([]SymbolAnchorRange, 0, len(symbols))
+	for _, sym := range symbols {
+		startIdx := findLastAnchorAtOrBefore(anchors, sym.Line)
+		if startIdx < 0 {
+			// No anchor precedes the symbol start line; skip this symbol.
+			continue
+		}
+		endIdx := findLastAnchorAtOrBefore(anchors, sym.EndLine)
+		if endIdx < 0 {
+			continue
+		}
+
+		results = append(results, SymbolAnchorRange{
+			Symbol:      sym,
+			StartAnchor: anchors[startIdx],
+			EndAnchor:   anchors[endIdx],
+		})
+	}
+
+	return results, nil
+}
+
+// findLastAnchorAtOrBefore returns the index of the anchor with the highest
+// LineNum that is <= targetLine, using binary search. Returns -1 if no such
+// anchor exists.
+func findLastAnchorAtOrBefore(anchors []HashAnchor, targetLine int) int {
+	lo, hi := 0, len(anchors)-1
+	result := -1
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		if anchors[mid].LineNum <= targetLine {
+			result = mid
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+	return result
 }

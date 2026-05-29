@@ -17,9 +17,16 @@ import (
 const DefaultReflectionTokenThreshold = 40_000
 
 // BufferThresholdPercent is the interval (as a fraction) at which the
-// BufferingCoordinator collects observations. 0.2 means observations are
-// collected at 20%, 40%, 60%, 80% and 100% of the reflection threshold.
+// BufferingCoordinator collects observations for the observer. 0.2 means
+// observations are collected at 20%, 40%, 60%, 80% and 100% of the
+// reflection threshold.
 const BufferThresholdPercent = 0.2
+
+// ReflectorThresholdPercent is the interval (as a fraction) at which the
+// BufferingCoordinator triggers the reflector. 0.5 means the reflector
+// fires at 50% and 100% of the reflection threshold, giving it two chances
+// to produce insights before the session hits the full token budget.
+const ReflectorThresholdPercent = 0.5
 
 // Reflection is a single (insight, confidence, action_suggestion) tuple
 // produced by the reflector agent from accumulated observations.
@@ -97,7 +104,6 @@ func (ra *ReflectorAgent) Reflect(ctx context.Context, sessionID string) <-chan 
 	if ra.llm == nil {
 		ra.mu.Unlock()
 		ch <- ReflectionResult{Error: fmt.Errorf("reflection: %w", ErrLLMClientNil)}
-		// closed in Reflect
 		close(ch)
 		return ch
 	}
@@ -118,7 +124,6 @@ func (ra *ReflectorAgent) Reflect(ctx context.Context, sessionID string) <-chan 
 
 		result := ra.reflectCycle(ctx, sessionID, llm)
 		ch <- result
-		// closed in Reflect
 		close(ch)
 	}()
 
@@ -141,8 +146,13 @@ func (ra *ReflectorAgent) reflectCycle(ctx context.Context, sessionID string, ll
 	// Build user prompt from observations.
 	userPrompt := formatObservationsForReflection(observations)
 
+	// Determine compression level based on current session token count.
+	tokenCount, _ := ra.store.GetContextTokenCount(ctx, sessionID)
+	level := determineCompressionLevel(int(tokenCount))
+	systemPrompt := reflectionPromptForLevel(level)
+
 	// Call the LLM to produce reflections.
-	raw, err := llm.Complete(ctx, reflectionSystemPrompt, userPrompt)
+	raw, err := llm.Complete(ctx, systemPrompt, userPrompt)
 	if err != nil {
 		return ReflectionResult{Error: fmt.Errorf("LLM reflection call: %w", err)}
 	}
@@ -185,6 +195,41 @@ func (ra *ReflectorAgent) reflectCycle(ctx context.Context, sessionID string, ll
 	}
 
 	return ReflectionResult{Reflections: stored}
+}
+
+// determineCompressionLevel returns the CompressionLevel appropriate for the
+// given token count. Higher token counts trigger more aggressive compression
+// to keep reflection output within reasonable bounds.
+func determineCompressionLevel(tokenCount int) CompressionLevel {
+	switch {
+	case tokenCount < 30_000:
+		return LevelNormal
+	case tokenCount < 40_000:
+		return LevelExtractive
+	case tokenCount < 50_000:
+		return LevelAggressive
+	case tokenCount < 60_000:
+		return LevelSkeleton
+	default:
+		return LevelDeterministic
+	}
+}
+
+// reflectionPromptForLevel returns the system prompt for the reflector based on
+// the compression level. Higher levels produce more concise reflection prompts.
+func reflectionPromptForLevel(lvl CompressionLevel) string {
+	switch lvl {
+	case LevelExtractive:
+		return extractiveReflectionPrompt
+	case LevelAggressive:
+		return aggressiveReflectionPrompt
+	case LevelSkeleton:
+		return skeletonReflectionPrompt
+	case LevelDeterministic:
+		return deterministicReflectionPrompt
+	default:
+		return reflectionSystemPrompt
+	}
 }
 
 // listUnreflectedObservations returns observations that have not yet been
@@ -358,10 +403,12 @@ func observationPriorityText(p float64) string {
 	switch {
 	case p >= 0.7:
 		return "high"
-	case p >= 0.3:
+	case p >= 0.4:
 		return "medium"
-	default:
+	case p >= 0.15:
 		return "low"
+	default:
+		return "info"
 	}
 }
 
@@ -409,26 +456,59 @@ Focus on:
 
 Be specific and actionable. Do not hallucinate details not present in the observations.`
 
-// BufferingCoordinator collects observations at 20% interval thresholds and
-// passes them to the ReflectorAgent when the buffer is full. It tracks the
+const extractiveReflectionPrompt = `You are a reflector agent. Extract key points from the observations as structured JSON reflections. Target 8/10 detail — preserve important sentences verbatim, remove filler.
+
+Each reflection must have: "insight", "confidence" (0.0-1.0), "action_suggestion".
+Return a JSON array. Preserve file paths and function names verbatim.`
+
+const aggressiveReflectionPrompt = `You are a reflector agent. Produce very concise reflections from the observations as JSON. Focus on the most critical patterns and risks only. Target 6/10 detail.
+
+Each reflection must have: "insight", "confidence" (0.0-1.0), "action_suggestion".
+Return a JSON array. Be brief but precise.`
+
+const skeletonReflectionPrompt = `You are a reflector agent. Reduce observations to headers and key terms as JSON. Target 4/10 detail — output structured outlines with identifiers, file paths, and decisions only. Omit prose.
+
+Each reflection must have: "insight", "confidence" (0.0-1.0), "action_suggestion".
+Return a JSON array.`
+
+const deterministicReflectionPrompt = `You are a reflector agent. Produce bullet-point reflections from the observations as JSON. Each insight must be a single bullet point. No prose. Target 2/10 detail.
+
+Each reflection must have: "insight", "confidence" (0.0-1.0), "action_suggestion".
+Return a JSON array with short, factual bullet points only.`
+
+// BufferingCoordinator collects observations at configurable interval thresholds
+// and passes them to the ReflectorAgent when the buffer is full. It tracks the
 // session's progress through the threshold intervals and flushes accumulated
 // observations to the reflector at each boundary crossing.
 type BufferingCoordinator struct {
-	store     *Store
-	reflector *ReflectorAgent
-	mu        sync.Mutex
-	// intervals tracks how many intervals each session has completed.
-	// An observation is collected when the session crosses a 20% boundary.
-	intervals map[string]int
+	store            *Store
+	reflector        *ReflectorAgent
+	mu               sync.Mutex
+	thresholdPercent float64
+	intervals        map[string]int
 }
 
 // NewBufferingCoordinator creates a coordinator that buffers observations and
-// flushes to the given reflector at 20% threshold intervals.
+// flushes to the given reflector at threshold intervals. The observer intervals
+// use BufferThresholdPercent (20%) by default; the reflector uses
+// ReflectorThresholdPercent (50%).
 func NewBufferingCoordinator(store *Store, reflector *ReflectorAgent) *BufferingCoordinator {
 	return &BufferingCoordinator{
-		store:     store,
-		reflector: reflector,
-		intervals: make(map[string]int),
+		store:            store,
+		reflector:        reflector,
+		thresholdPercent: BufferThresholdPercent,
+		intervals:        make(map[string]int),
+	}
+}
+
+// NewBufferingCoordinatorWithPercent creates a coordinator with a custom
+// threshold percent for interval calculation.
+func NewBufferingCoordinatorWithPercent(store *Store, reflector *ReflectorAgent, percent float64) *BufferingCoordinator {
+	return &BufferingCoordinator{
+		store:            store,
+		reflector:        reflector,
+		thresholdPercent: percent,
+		intervals:        make(map[string]int),
 	}
 }
 
@@ -443,13 +523,15 @@ func (bc *BufferingCoordinator) CurrentInterval(tokenCount int64) int {
 	if tokenCount <= 0 {
 		return -1
 	}
-	intervalSize := int64(float64(threshold) * BufferThresholdPercent)
+	intervalSize := int64(float64(threshold) * bc.thresholdPercent)
 	if intervalSize <= 0 {
 		return -1
 	}
-	idx := min(
-		// Cap at 5 intervals (0..4).
-		int(tokenCount/intervalSize), 4)
+	maxIdx := int(1.0/bc.thresholdPercent) - 1
+	if maxIdx < 1 {
+		maxIdx = 1
+	}
+	idx := min(int(tokenCount/intervalSize), maxIdx)
 	return idx
 }
 
@@ -471,8 +553,8 @@ func (bc *BufferingCoordinator) ShouldCollect(ctx context.Context, sessionID str
 }
 
 // Collect checks if the session has crossed a threshold boundary. If it has,
-// it advances the interval tracker and, when the full threshold is reached,
-// triggers an asynchronous reflection flush.
+// it advances the interval tracker and triggers an asynchronous reflection
+// flush at reflector intervals (50% and 100% of threshold by default).
 func (bc *BufferingCoordinator) Collect(ctx context.Context, sessionID string) (<-chan ReflectionResult, error) {
 	tokenCount, err := bc.store.GetContextTokenCount(ctx, sessionID)
 	if err != nil {
@@ -489,13 +571,15 @@ func (bc *BufferingCoordinator) Collect(ctx context.Context, sessionID string) (
 		return nil, nil
 	}
 
-	// Advance to the new interval.
 	bc.intervals[sessionID] = currentInterval
 	threshold := bc.reflector.Threshold()
 	bc.mu.Unlock()
 
-	// When we've reached the full threshold, flush to the reflector.
-	if tokenCount >= threshold {
+	reflectorStep := int64(float64(threshold) * bc.thresholdPercent)
+	if reflectorStep <= 0 {
+		reflectorStep = threshold
+	}
+	if tokenCount%reflectorStep == 0 || tokenCount >= threshold {
 		return bc.reflector.Reflect(ctx, sessionID), nil
 	}
 

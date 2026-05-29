@@ -145,11 +145,12 @@ func TestOrchestrationRebuildToolsConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if i%3 == 0 {
+			switch i % 3 {
+			case 0:
 				e.RebuildTools()
-			} else if i%3 == 1 {
+			case 1:
 				_, _ = e.Tools(context.Background())
-			} else {
+			default:
 				_ = e.ToolNames()
 			}
 		}(i)
