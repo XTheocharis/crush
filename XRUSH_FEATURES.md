@@ -1007,7 +1007,7 @@ dimensions.
 
 | Type | Description |
 |------|-------------|
-| **Metric** | 10 built-in metric types (exact match, contains, regex, etc.) |
+| **Metric** | 10 built-in metric types (build success, test pass rate, syntax validity, lint score, edit distance, coverage, typecheck, etc.) |
 | **Judge** | LLM-based quality assessment (193 lines) |
 | **Mastra** | Mastra framework integration for agent evaluation (236 lines) |
 
@@ -1019,11 +1019,13 @@ crush eval --dataset <path> --scorer <name>
 
 ### User-Facing Description
 
-The eval framework measures agent output quality with automated scoring. Two
-scorer types are available: **Metric** scorers use deterministic checks (exact
-match, contains, regex, and more), while **Judge** scorers use an LLM to
-assess quality dimensions like correctness, completeness, and style. Results
-are stored persistently for comparison across runs.
+The eval framework measures agent output quality with automated scoring. Three
+scorer types are available: **Metric** scorers use code-analysis checks (build
+success, test pass rate, syntax validity, lint score, edit distance, coverage,
+typecheck, and more), **Judge** scorers use an LLM to assess quality dimensions
+like correctness, completeness, and style, and **Mastra** scorers integrate
+with the Mastra framework for agent evaluation. Results are stored
+persistently for comparison across runs.
 
 ### Configuration
 
