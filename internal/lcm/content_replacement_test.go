@@ -10,8 +10,8 @@ import (
 
 func TestReplacementStateStringValues(t *testing.T) {
 	tests := []struct {
-		state   ReplacementState
-		want    string
+		state ReplacementState
+		want  string
 	}{
 		{ReplacementActive, "active"},
 		{ReplacementRestored, "restored"},

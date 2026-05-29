@@ -44,27 +44,27 @@ func (e *ResourceLimitsExtension) StepHooks() []ext.StepHook {
 	return []ext.StepHook{
 		{
 			Name: "resource-limits-check",
-		OnStepFinish: func(_ context.Context, _ string, step fantasy.StepResult) error {
-			e.mu.Lock()
-			defer e.mu.Unlock()
-			if !e.active || e.usage == nil {
+			OnStepFinish: func(_ context.Context, _ string, step fantasy.StepResult) error {
+				e.mu.Lock()
+				defer e.mu.Unlock()
+				if !e.active || e.usage == nil {
+					return nil
+				}
+
+				e.usage.AddStep()
+
+				if text := step.Content.Text(); text != "" {
+					e.usage.AddTokens(text)
+				}
+
+				profile := agent.DefaultLimitsProfile()
+				limits := profile.Get("task")
+				e.usage.WarnTokensOnce(limits.MaxTokens)
+				e.usage.WarnStepsOnce(limits.MaxSteps)
+				e.usage.WarnDurationOnce(limits)
+
 				return nil
-			}
-
-			e.usage.AddStep()
-
-			if text := step.Content.Text(); text != "" {
-				e.usage.AddTokens(text)
-			}
-
-			profile := agent.DefaultLimitsProfile()
-			limits := profile.Get("task")
-			e.usage.WarnTokensOnce(limits.MaxTokens)
-			e.usage.WarnStepsOnce(limits.MaxSteps)
-			e.usage.WarnDurationOnce(limits)
-
-			return nil
-		},
+			},
 		},
 	}
 }

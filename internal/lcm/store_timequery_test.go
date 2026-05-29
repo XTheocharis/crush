@@ -2,11 +2,12 @@ package lcm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"charm.land/fantasy"
-	"encoding/json"
+
 	"github.com/stretchr/testify/require"
 )
 

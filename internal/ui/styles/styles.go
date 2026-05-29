@@ -229,21 +229,21 @@ type Styles struct {
 	// Chat
 	// Messages - chat message item styles
 	Messages struct {
-		UserBlurred      lipgloss.Style
-		UserFocused      lipgloss.Style
+		UserBlurred        lipgloss.Style
+		UserFocused        lipgloss.Style
 		UserTimestamp      lipgloss.Style
 		AssistantBlurred   lipgloss.Style
 		AssistantFocused   lipgloss.Style
 		AssistantTimestamp lipgloss.Style
-		NoContent        lipgloss.Style
-		Thinking         lipgloss.Style
-		ErrorTag         lipgloss.Style
-		ErrorTitle       lipgloss.Style
-		ErrorDetails     lipgloss.Style
-		ToolCallFocused  lipgloss.Style
-		ToolCallCompact  lipgloss.Style
-		ToolCallBlurred  lipgloss.Style
-		SectionHeader    lipgloss.Style
+		NoContent          lipgloss.Style
+		Thinking           lipgloss.Style
+		ErrorTag           lipgloss.Style
+		ErrorTitle         lipgloss.Style
+		ErrorDetails       lipgloss.Style
+		ToolCallFocused    lipgloss.Style
+		ToolCallCompact    lipgloss.Style
+		ToolCallBlurred    lipgloss.Style
+		SectionHeader      lipgloss.Style
 
 		// Thinking section styles
 		ThinkingBox            lipgloss.Style // Background for thinking content
