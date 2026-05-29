@@ -1071,7 +1071,7 @@ Detects when the agent is stuck in repetitive tool-call cycles.
 
 **Detection methods**:
 
-- **Exact match**: SHA-256 hash of tool name + arguments
+- **Exact match**: SHA-256 hash of tool name + input + output
 - **Semantic match**: 80% argument overlap threshold
 
 ### Resource Limits
