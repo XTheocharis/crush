@@ -57,11 +57,12 @@ func TestProcessorExtension_InactiveWithoutConfig(t *testing.T) {
 
 func TestProcessorExtension_InactiveWhenDisabled(t *testing.T) {
 	t.Parallel()
+	falseVal := false
 	e := &ProcessorExtension{}
 	host := &mockHostContext{cfg: &config.Config{
 		Options: &config.Options{
 			Processors: &config.ProcessorsOptions{
-				Enabled: false,
+				Enabled: &falseVal,
 			},
 		},
 	}}
@@ -72,11 +73,12 @@ func TestProcessorExtension_InactiveWhenDisabled(t *testing.T) {
 
 func TestProcessorExtension_InactiveWithEmptyList(t *testing.T) {
 	t.Parallel()
+	trueVal := true
 	e := &ProcessorExtension{}
 	host := &mockHostContext{cfg: &config.Config{
 		Options: &config.Options{
 			Processors: &config.ProcessorsOptions{
-				Enabled: true,
+				Enabled: &trueVal,
 				List:    []string{},
 			},
 		},
@@ -88,11 +90,12 @@ func TestProcessorExtension_InactiveWithEmptyList(t *testing.T) {
 
 func TestProcessorExtension_InactiveWithUnsafeProcessor(t *testing.T) {
 	t.Parallel()
+	trueVal := true
 	e := &ProcessorExtension{}
 	host := &mockHostContext{cfg: &config.Config{
 		Options: &config.Options{
 			Processors: &config.ProcessorsOptions{
-				Enabled: true,
+				Enabled: &trueVal,
 				List:    []string{"unknown_processor"},
 			},
 		},
@@ -104,11 +107,12 @@ func TestProcessorExtension_InactiveWithUnsafeProcessor(t *testing.T) {
 
 func TestProcessorExtension_ActiveWithTokenLimiter(t *testing.T) {
 	t.Parallel()
+	trueVal := true
 	e := &ProcessorExtension{}
 	host := &mockHostContext{cfg: &config.Config{
 		Options: &config.Options{
 			Processors: &config.ProcessorsOptions{
-				Enabled: true,
+				Enabled: &trueVal,
 				List:    []string{"token_limiter"},
 			},
 		},
@@ -130,11 +134,12 @@ func TestProcessorExtension_ActiveWithTokenLimiter(t *testing.T) {
 
 func TestProcessorExtension_Shutdown(t *testing.T) {
 	t.Parallel()
+	trueVal := true
 	e := &ProcessorExtension{}
 	host := &mockHostContext{cfg: &config.Config{
 		Options: &config.Options{
 			Processors: &config.ProcessorsOptions{
-				Enabled: true,
+				Enabled: &trueVal,
 				List:    []string{"token_limiter"},
 			},
 		},
@@ -153,11 +158,12 @@ func TestProcessorExtension_Shutdown(t *testing.T) {
 
 func TestProcessorExtension_InputHookTrimsMessages(t *testing.T) {
 	t.Parallel()
+	trueVal := true
 	e := &ProcessorExtension{}
 	host := &mockHostContext{cfg: &config.Config{
 		Options: &config.Options{
 			Processors: &config.ProcessorsOptions{
-				Enabled: true,
+				Enabled: &trueVal,
 				List:    []string{"token_limiter"},
 			},
 		},

@@ -1533,7 +1533,7 @@ func TestConfigMerging(t *testing.T) {
 }
 
 func TestProcessorsMerge(t *testing.T) {
-	t.Run("processors_defaults_to_disabled", func(t *testing.T) {
+	t.Run("processors_default_enabled_when_nil", func(t *testing.T) {
 		c := exerciseMerge(t, Config{
 			Options: &Options{TUI: &TUIOptions{}},
 		}, Config{
@@ -1541,55 +1541,63 @@ func TestProcessorsMerge(t *testing.T) {
 		})
 		require.NotNil(t, c)
 		if c.Options.Processors != nil {
-			require.False(t, c.Options.Processors.Enabled)
+			require.Nil(t, c.Options.Processors.Enabled)
 		}
 	})
 
 	t.Run("processors_enabled_when_explicitly_set", func(t *testing.T) {
+		trueVal := true
 		c := exerciseMerge(t, Config{
 			Options: &Options{
-				Processors: &ProcessorsOptions{Enabled: true},
+				Processors: &ProcessorsOptions{Enabled: &trueVal},
 				TUI:        &TUIOptions{},
 			},
 		})
 		require.NotNil(t, c)
-		require.True(t, c.Options.Processors.Enabled)
+		require.NotNil(t, c.Options.Processors.Enabled)
+		require.True(t, *c.Options.Processors.Enabled)
 	})
 
-	t.Run("processors_enabled_ored_on_merge", func(t *testing.T) {
+	t.Run("processors_first_explicit_wins_on_merge", func(t *testing.T) {
+		trueVal := true
+		falseVal := false
 		c := exerciseMerge(t, Config{
 			Options: &Options{
-				Processors: &ProcessorsOptions{Enabled: false},
+				Processors: &ProcessorsOptions{Enabled: &falseVal},
 				TUI:        &TUIOptions{},
 			},
 		}, Config{
 			Options: &Options{
-				Processors: &ProcessorsOptions{Enabled: true},
+				Processors: &ProcessorsOptions{Enabled: &trueVal},
 				TUI:        &TUIOptions{},
 			},
 		})
 		require.NotNil(t, c)
-		require.True(t, c.Options.Processors.Enabled)
+		require.NotNil(t, c.Options.Processors.Enabled)
+		require.True(t, *c.Options.Processors.Enabled)
 	})
 
 	t.Run("processors_nil_in_first_config", func(t *testing.T) {
+		trueVal := true
 		c := exerciseMerge(t, Config{
 			Options: &Options{TUI: &TUIOptions{}},
 		}, Config{
 			Options: &Options{
-				Processors: &ProcessorsOptions{Enabled: true},
+				Processors: &ProcessorsOptions{Enabled: &trueVal},
 				TUI:        &TUIOptions{},
 			},
 		})
 		require.NotNil(t, c)
 		require.NotNil(t, c.Options.Processors)
-		require.True(t, c.Options.Processors.Enabled)
+		require.NotNil(t, c.Options.Processors.Enabled)
+		require.True(t, *c.Options.Processors.Enabled)
 	})
 
 	t.Run("processors_nil_in_second_config", func(t *testing.T) {
+		trueVal := true
 		c := exerciseMerge(t, Config{
 			Options: &Options{
-				Processors: &ProcessorsOptions{Enabled: true},
+				Processors: &ProcessorsOptions{Enabled: &trueVal},
 				TUI:        &TUIOptions{},
 			},
 		}, Config{
@@ -1597,8 +1605,33 @@ func TestProcessorsMerge(t *testing.T) {
 		})
 		require.NotNil(t, c)
 		require.NotNil(t, c.Options.Processors)
-		require.True(t, c.Options.Processors.Enabled)
+		require.NotNil(t, c.Options.Processors.Enabled)
+		require.True(t, *c.Options.Processors.Enabled)
 	})
+
+	t.Run("processors_explicit_false_disables", func(t *testing.T) {
+		falseVal := false
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				Processors: &ProcessorsOptions{Enabled: &falseVal},
+				TUI:        &TUIOptions{},
+			},
+		})
+		require.NotNil(t, c)
+		require.NotNil(t, c.Options.Processors)
+		require.NotNil(t, c.Options.Processors.Enabled)
+		require.False(t, *c.Options.Processors.Enabled)
+	})
+}
+
+func TestProcessorsEnabledByDefault(t *testing.T) {
+	c := exerciseMerge(t, Config{
+		Options: &Options{TUI: &TUIOptions{}},
+	})
+	require.NotNil(t, c)
+	if c.Options.Processors != nil {
+		require.Nil(t, c.Options.Processors.Enabled)
+	}
 }
 
 func exerciseMerge(tb testing.TB, confs ...Config) *Config {

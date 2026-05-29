@@ -162,7 +162,7 @@ func (o Options) merge(t Options) Options {
 		if o.Processors == nil {
 			o.Processors = &ProcessorsOptions{}
 		}
-		o.Processors.Enabled = o.Processors.Enabled || t.Processors.Enabled
+		o.Processors.Enabled = cmp.Or(t.Processors.Enabled, o.Processors.Enabled)
 		o.Processors.List = append(o.Processors.List, t.Processors.List...)
 	}
 	// RouterTiers: later non-empty slice replaces earlier.

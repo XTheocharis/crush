@@ -45,7 +45,7 @@ func (a *completerAdapter) Complete(ctx context.Context, prompt, input string) (
 
 // ProcessorExtension wires the processor pipeline into the extension host as
 // both a StepHookProvider and RunHookProvider. Config-gated: only active when
-// cfg.Options.Processors.Enabled is true.
+// cfg.Options.Processors.Enabled is nil (default) or explicitly true.
 type ProcessorExtension struct {
 	mu     sync.RWMutex
 	host   ext.HostContext
@@ -59,7 +59,7 @@ func (e *ProcessorExtension) Init(_ context.Context, host ext.HostContext) error
 	e.host = host
 
 	cfg := host.Config()
-	if cfg.Options == nil || cfg.Options.Processors == nil || !cfg.Options.Processors.Enabled {
+	if cfg.Options == nil || cfg.Options.Processors == nil || (cfg.Options.Processors.Enabled != nil && !*cfg.Options.Processors.Enabled) {
 		e.active = false
 		return nil
 	}

@@ -44,9 +44,11 @@ type SnapshotConfig struct {
 // names and values are arbitrary config objects read by each processor.
 type ProcessorConfig map[string]any
 
-// ProcessorsOptions controls the processor pipeline.
+// ProcessorsOptions controls the processor pipeline. When Enabled is nil
+// (not explicitly set), the pipeline is enabled by default. Set Enabled to
+// false to disable.
 type ProcessorsOptions struct {
-	Enabled bool            `json:"enabled,omitempty" jsonschema:"description=Enable the message processing pipeline,default=false"`
+	Enabled *bool           `json:"enabled,omitempty" jsonschema:"description=Enable the message processing pipeline,default=true"`
 	List    []string        `json:"list,omitempty" jsonschema:"description=List of processor names to enable. Safe defaults: token_limiter, system_prompt_scrubber, pii_detector"`
 	Config  ProcessorConfig `json:"config,omitempty" jsonschema:"description=Per-processor configuration keyed by processor name"`
 }
