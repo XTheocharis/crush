@@ -351,8 +351,9 @@ to pressure tiers:
   begins
 - `CompactOffset` (default 13000): tokens reserved below limit where Medium
   begins
-- `HardOffset` (default 3000, enforced floor 1000): tokens reserved below
-  limit where High begins
+- `HardOffset` (default 3000, enforced minimum floor of 1,000 tokens): tokens
+  reserved below limit where High begins. The floor prevents misconfiguration
+  from allowing zero headroom; `effectiveHardOffset = max(HardOffset, 1000)`.
 - Legacy percentage fallback: `LowThreshold=70`, `MediumThreshold=85`,
   `HighThreshold=95`
 
@@ -647,7 +648,7 @@ text-based extraction.
 **Location**: `internal/treesitter/`
 
 Code parsing and analysis via channel-based parser pools with CGO-compiled
-grammars for 38 programming languages (entries in `languages.json`; ~28 with
+grammars for 38 programming languages (entries in `languages.json`; 28 with
 compiled grammar imports).
 
 ### Core Components
@@ -789,7 +790,7 @@ budget. Only the most relevant lines are included based on PageRank scores.
 | DiffWatch | 202 | Watch file diffs for incremental updates |
 | Mentions | 260 | Extract file/identifier mentions from conversation |
 | Caching | 225 | Persistent cache for computed map data |
-| Tokenizer | 367 | Embedded `cl100k_base` BPE tokenizer (~1.6 MB) |
+| Tokenizer | 367 | Embedded `cl100k_base` BPE tokenizer (1.7 MiB) |
 
 ### User-Facing Description
 
@@ -2362,6 +2363,34 @@ The `Runner` executes hook commands and aggregates results:
    0 = parse stdout JSON, 2 = deny (stderr = reason), 49 = halt turn, other =
    non-blocking warning.
 
+### Hook Runner Creation Paths
+
+Two independent code paths create `hooks.Runner` instances for different hook
+scopes:
+
+1. **Tool hooks** (`internal/agent/coordinator.go:759,763`): The coordinator
+   creates `preToolRunner` and `postToolRunner` from PreToolUse and PostToolUse
+   hook configs. These runners fire on every tool call within the agent loop.
+
+2. **Compaction hooks** (`internal/app/app_xrush_wiring.go:352,355`): The app
+   wiring creates `preRunner` and `postRunner` from PreCompact and PostCompact
+   hook configs. These runners fire during LCM compaction events, separate from
+   the tool-call path.
+
+Both paths call `hooks.NewRunner()` with their respective hook config slices,
+working directory, and project directory.
+
+### Validation: ValidateHooks
+
+`ValidateHooks()` normalizes event names and validates matcher regexes. It runs
+at two independent points in the config loading pipeline:
+
+1. `internal/config/load.go:81` — during initial config file parsing.
+2. `internal/config/store.go:685` — during config store reload/persistence.
+
+This double validation ensures hooks are valid both at load time and when the
+config store writes changes back to disk.
+
 ### Input Builder
 
 **Location**: `internal/hooks/input.go` (209 lines)
@@ -2564,6 +2593,26 @@ instances. Each job runs in its own shell with independent stdout/stderr buffers
 - Graceful kill with 5-second timeout
 - `KillAll` for batch shutdown with context-bound waits
 
+### Core Shell
+
+**File**: `shell.go` (307 lines)
+
+Core shell execution infrastructure providing `Shell` instances with independent
+working directories and environments. Each execution is sandboxed: commands run
+in the embedded POSIX shell interpreter (mvdan/sh) with platform-aware path
+handling (forward slashes on all platforms, including Windows).
+
+**File**: `run.go` (158 lines)
+
+Shell execution entry point wiring the interpreter pipeline. Configures the
+mvdan/sh interpreter with builtin commands, I/O redirection, context
+cancellation, and timeout handling.
+
+**File**: `doc.go` (25 lines)
+
+Package documentation with usage examples for one-off commands, stateful shell
+sessions, and background job management.
+
 ### Platform-Aware Command Dispatch
 
 **File**: `dispatch.go` (423 lines)
@@ -2667,12 +2716,12 @@ actions, repo map refresh, and message routing.
 
 | File | Lines | Description | User-Visible Behavior |
 |------|-------|-------------|-----------------------|
-| `diffview/` | 1076 | Unified and split diff rendering | Fluent-builder component rendering inline or side-by-side diffs with syntax highlighting, line numbers, scroll, and file-name headers; used in tool permission denied flow |
+| `diffview/` | 1076 | Unified and split diff rendering | Fluent-builder component rendering inline or side-by-side diffs with syntax highlighting, line numbers, scroll, and file-name headers; invoked from 4 locations (permission dialog, chat tool output x2, unified diff renderer) |
 | `xchroma/chroma.go` | 52 | Custom Chroma syntax highlighting formatter | Wraps Chroma tokenization with Lip Gloss styling and forced background; used by DiffView and markdown renderer |
 | `model/compaction.go` | 69 | LCM compaction status pill | Animated "⟳ Compacting" pill with elapsed time in the status bar while LCM is compacting |
 | `model/xrush_routing.go` | 169 | Message routing and dialog actions | Routes rewind results, compaction events, edit-message results, and delayed clicks through the main update loop |
 | `model/repomap_xrush.go` | 42 | Repo map refresh from command palette | Triggers async repo map refresh; shows success or error notification |
-| `dialog/actions_xrush.go` | 29 | Extended action menu entries | Adds Rewind, Fork, Edit Message, and Message Options actions to the per-message action dialog |
+| `dialog/actions_xrush.go` | 29 | Extended action menu entries | Defines 4 action types (ActionRewind, ActionFork, ActionEditMessage, ActionOpenMessageOptions) for the per-message options dialog, which presents 5 action items (Rewind code only, Rewind conversation only, Rewind both, Edit & resubmit, Fork from here) plus Cancel |
 | `chat/user_xrush.go` | 6 | User message sequence accessor | Exposes message sequence number for rewind/fork/edit targeting on user messages |
 
 ### DiffView
@@ -2699,8 +2748,8 @@ Key features:
 
 - Configurable context lines (defaults to `udiff.DefaultContextLines`).
 - Optional line numbers with auto-detected digit width.
-- Infinite Y-scroll mode (`InfiniteYScroll`) or clamped scrolling that prevents
-  scrolling past the last line.
+- Infinite Y-scroll mode (`InfiniteYScroll`; opt-in, defaults to `false`) or
+  clamped scrolling that prevents scrolling past the last line.
 - X-offset scrolling for long lines, with leading ellipsis indicator.
 - Configurable tab width (default 8).
 - File-name header displayed before the first hunk.
@@ -2708,9 +2757,13 @@ Key features:
 - Truncation ellipsis when the viewport height is reached before all hunks are
   displayed.
 
-The component uses a fluent builder API (`New().Before(...).After(...).Split()`)
-and computes lazily on `String()`. It is invoked from the tool permission
-denied flow to show the user a diff of what the tool intended to do.
+The component uses a fluent builder API with 16 methods: `New()` (constructor),
+`Unified()`, `Split()`, `Before()`, `After()`, `FileName()`, `ContextLines()`,
+`Style()`, `LineNumbers()`, `Height()`, `Width()`, `XOffset()`, `YOffset()`,
+`InfiniteYScroll()`, `TabWidth()`, `ChromaStyle()`. The builder computes lazily
+on `String()`. It is invoked from 4 locations: the tool permission dialog
+(`dialog/permissions.go`), two call sites in chat tool output rendering
+(`chat/tools.go`), and the unified diff renderer (`chat/unified_diff.go`).
 
 ### xchroma Syntax Highlighting
 
@@ -2744,10 +2797,11 @@ Six TUI enhancements are visible to users:
    disappears when compaction completes.
 
 4. **Message actions**: Press `o` on any user message to open an action menu
-   with four new options: **Rewind** (restore code, conversation, or both to
-   that point), **Fork** (branch the conversation from that message), **Edit
-   Message** (load the original text into the editor for re-submission), and
-   **Message Options** (opens a detailed dialog for the selected message).
+   with five options: **Rewind code only**, **Rewind conversation only**,
+   **Rewind both** (restore code, conversation, or both to that point),
+   **Edit & resubmit** (load the original text into the editor for
+   re-submission), and **Fork from here** (branch the conversation from that
+   message). A **Cancel** entry closes the menu.
 
 5. **Repo map refresh**: The command palette (Ctrl+P) includes a "Refresh
    Repository Map" entry that triggers an asynchronous repo map rebuild and
@@ -2777,6 +2831,22 @@ The diff view layout can be configured via `options.tui.diff_mode` in
   }
 }
 ```
+
+### Split Mode Toggles
+
+The split (side-by-side) diff layout is controlled by 4 independent toggle
+mechanisms, evaluated in priority order:
+
+| Mechanism | Location | Trigger |
+|-----------|----------|---------|
+| Config | `model/ui.go` → `dialog.WithDiffMode()` | `options.tui.diff_mode: "split"` in `crush.json` |
+| `'t'` key binding | `dialog/permissions.go:254` → `ToggleDiffMode` | Press `t` while viewing a permission diff to toggle layout |
+| Auto-width (permissions) | `dialog/permissions.go:385` | Terminal width >= 140px (`splitModeMinWidth = 140`) |
+| Auto-width (chat) | `chat/tools.go:942,992` | Width > `maxTextWidth` (120px) for inline tool diffs |
+
+Priority: explicit config and key binding override auto-width heuristics. The
+`diffSplitMode` field on `Permissions` is set first from config (if present),
+then the `isSplitMode()` method checks: explicit override > auto-width default.
 
 ### Usage
 
