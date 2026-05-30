@@ -24,9 +24,18 @@ func xrushToolNames() []string {
 	return []string{
 		"agentic_map",
 		"batch_edit",
+		"lcm_active_context",
+		"lcm_ancestry",
+		"lcm_archive",
+		"lcm_bindle",
 		"lcm_describe",
+		"lcm_dolt",
 		"lcm_expand",
+		"lcm_file_search",
 		"lcm_grep",
+		"lcm_lineage",
+		"lcm_sprig",
+		"lcm_time_query",
 		"llm_map",
 		"map_refresh",
 		"multiedit",
@@ -43,7 +52,20 @@ func xrushToolNames() []string {
 
 // xrushReadOnlyTools returns the list of xrush-only read-only tools.
 func xrushReadOnlyTools() []string {
-	return []string{"lcm_grep", "lcm_describe", "lcm_expand"}
+	return []string{
+		"lcm_grep",
+		"lcm_describe",
+		"lcm_expand",
+		"lcm_bindle",
+		"lcm_ancestry",
+		"lcm_dolt",
+		"lcm_archive",
+		"lcm_sprig",
+		"lcm_time_query",
+		"lcm_file_search",
+		"lcm_active_context",
+		"lcm_lineage",
+	}
 }
 
 // [XRUSH: begin: allToolNames rewritten to integrate xrush tools via xrushToolNames()]
@@ -52,9 +74,9 @@ func allToolNames() []string {
 	base := []string{
 		"agent",
 		"agentic_fetch",
-		fork[0],
+		fork[0], // agentic_map
 		"bash",
-		fork[1],
+		fork[1], // batch_edit
 		"crush_info",
 		"crush_logs",
 		"download",
@@ -64,27 +86,36 @@ func allToolNames() []string {
 		"grep",
 		"job_kill",
 		"job_output",
-		fork[2],
-		fork[3],
-		fork[4],
-		fork[5],
+		fork[2],  // lcm_active_context
+		fork[3],  // lcm_ancestry
+		fork[4],  // lcm_archive
+		fork[5],  // lcm_bindle
+		fork[6],  // lcm_describe
+		fork[7],  // lcm_dolt
+		fork[8],  // lcm_expand
+		fork[9],  // lcm_file_search
+		fork[10], // lcm_grep
+		fork[11], // lcm_lineage
+		fork[12], // lcm_sprig
+		fork[13], // lcm_time_query
+		fork[24], // list_mcp_resources
+		fork[14], // llm_map
 		"ls",
 		"lsp_diagnostics",
 		"lsp_references",
 		"lsp_restart",
-		fork[6],
-		fork[7],
-		fork[8],
-		fork[9],
-		fork[10],
-		fork[11],
-		fork[12],
-		fork[13],
-		fork[14],
+		fork[15], // map_refresh
+		fork[16], // multiedit
+		fork[17], // read_mcp_resource
+		fork[18], // send_message
+		fork[19], // sourcegraph
+		fork[20], // synthetic_output
+		fork[21], // task_stop
+		fork[22], // team_create
+		fork[23], // team_delete
 		"todos",
 		"view",
 		"write",
-		fork[15],
 	}
 	if extensionToolNames != nil {
 		base = append(base, extensionToolNames()...)

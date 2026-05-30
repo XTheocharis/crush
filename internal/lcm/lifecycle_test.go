@@ -71,6 +71,7 @@ func TestOnSessionStart_SetsMarker(t *testing.T) {
 	mgr := NewManager(queries, sqlDB)
 	om := newMockOMStore()
 	mgr.SetOperationalMemory(om)
+	mgr.SetOperationalMemoryEnabled(true)
 
 	ctx := context.Background()
 	sessionID := "sess-lifecycle-start"
@@ -103,6 +104,7 @@ func TestOnSessionEnd_SetsEndMarker(t *testing.T) {
 	mgr := NewManager(queries, sqlDB)
 	om := newMockOMStore()
 	mgr.SetOperationalMemory(om)
+	mgr.SetOperationalMemoryEnabled(true)
 
 	ctx := context.Background()
 	sessionID := "sess-lifecycle-end"
@@ -125,6 +127,7 @@ func TestOnSessionEnd_EmptyEntries_NoEndMarker(t *testing.T) {
 	mgr := NewManager(queries, sqlDB)
 	om := newMockOMStore()
 	mgr.SetOperationalMemory(om)
+	mgr.SetOperationalMemoryEnabled(true)
 
 	ctx := context.Background()
 	sessionID := "sess-lifecycle-empty-end"
@@ -153,6 +156,79 @@ func TestBuildObservationContextPrompt_Empty(t *testing.T) {
 	t.Parallel()
 	result := BuildObservationContextPrompt(map[string]string{})
 	require.Equal(t, "", result)
+}
+
+func TestOperationalMemoryConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("enabled_allows_lifecycle_hooks", func(t *testing.T) {
+		t.Parallel()
+		queries, sqlDB := setupTestDB(t)
+		mgr := NewManager(queries, sqlDB)
+		om := newMockOMStore()
+		mgr.SetOperationalMemory(om)
+		mgr.SetOperationalMemoryEnabled(true)
+
+		ctx := context.Background()
+		sessionID := "sess-om-enabled"
+		createTestSession(t, queries, sessionID)
+
+		err := mgr.OnSessionStart(ctx, sessionID)
+		require.NoError(t, err)
+
+		val, ok, err := om.Get(ctx, sessionID, "session_started_at")
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.NotEmpty(t, val)
+
+		entries, err := om.List(ctx, sessionID)
+		require.NoError(t, err)
+		require.NotEmpty(t, entries)
+
+		err = mgr.OnSessionEnd(ctx, sessionID)
+		require.NoError(t, err)
+
+		val, ok, err = om.Get(ctx, sessionID, "session_ended_at")
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.NotEmpty(t, val)
+	})
+
+	t.Run("disabled_blocks_lifecycle_hooks", func(t *testing.T) {
+		t.Parallel()
+		queries, sqlDB := setupTestDB(t)
+		mgr := NewManager(queries, sqlDB)
+		om := newMockOMStore()
+		mgr.SetOperationalMemory(om)
+		// operationalMemEnabled defaults to false — do not call
+		// SetOperationalMemoryEnabled.
+
+		ctx := context.Background()
+		sessionID := "sess-om-disabled"
+		createTestSession(t, queries, sessionID)
+
+		err := mgr.OnSessionStart(ctx, sessionID)
+		require.NoError(t, err)
+
+		_, ok, err := om.Get(ctx, sessionID, "session_started_at")
+		require.NoError(t, err)
+		require.False(t, ok, "expected no start marker when disabled")
+
+		err = mgr.OnSessionEnd(ctx, sessionID)
+		require.NoError(t, err)
+
+		_, ok, err = om.Get(ctx, sessionID, "session_ended_at")
+		require.NoError(t, err)
+		require.False(t, ok, "expected no end marker when disabled")
+	})
+
+	t.Run("default_is_disabled", func(t *testing.T) {
+		t.Parallel()
+		queries, sqlDB := setupTestDB(t)
+		mgr := NewManager(queries, sqlDB)
+		cm := mgr.(*compactionManager)
+		require.False(t, cm.operationalMemEnabled)
+	})
 }
 
 func TestBuildObservationContextPrompt_Nil(t *testing.T) {

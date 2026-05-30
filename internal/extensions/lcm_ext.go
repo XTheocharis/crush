@@ -37,12 +37,23 @@ func (e *LCMExtension) Init(_ context.Context, host ext.HostContext) error {
 		e.active = false
 		return nil
 	}
-	e.tools = buildLCMTools(host.DB())
+
+	// Factory tools: lcm_grep, lcm_describe, lcm_expand.
+	factoryTools := buildLCMTools(host.DB())
+
+	// Manager tools: 9 store-based retrieval tools (bindle, ancestry, dolt,
+	// archive, sprig, time_query, file_search, active_context, lineage).
+	e.manager = lcm.NewManager(db.New(host.DB()), host.DB())
+	managerTools := lcm.ExtraAgentTools(e.manager)
+
+	e.tools = make([]fantasy.AgentTool, 0, len(factoryTools)+len(managerTools))
+	e.tools = append(e.tools, factoryTools...)
+	e.tools = append(e.tools, managerTools...)
+
 	e.names = make([]string, len(e.tools))
 	for i, t := range e.tools {
 		e.names[i] = t.Info().Name
 	}
-	e.manager = lcm.NewManager(db.New(host.DB()), host.DB())
 	e.active = true
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools/types"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/hooks"
+	"github.com/charmbracelet/crush/internal/lcm/nudge"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 )
@@ -62,6 +63,10 @@ type Manager interface {
 
 	// SetDefaultContextWindow sets the context window for new sessions.
 	SetDefaultContextWindow(contextWindow int64)
+
+	// SetCutoffThreshold sets the cutoff fraction for budget computation
+	// (default: 0.6). Values outside (0, 1] are ignored.
+	SetCutoffThreshold(threshold float64)
 
 	// SetModelOutputLimit sets the model's max output token limit for budget computation.
 	SetModelOutputLimit(limit int64)
@@ -140,6 +145,11 @@ type Manager interface {
 	// that auto-memory and post-compaction hooks can persist key-value state.
 	SetOperationalMemory(om OperationalMemoryStore)
 
+	// SetOperationalMemoryEnabled controls whether operational memory features
+	// are active. When false (default), OnSessionStart and OnSessionEnd are
+	// no-ops even if an OperationalMemoryStore has been set.
+	SetOperationalMemoryEnabled(enabled bool)
+
 	// OnSessionStart initializes operational memory for a new session and
 	// triggers an initial observation. It does not block session creation on
 	// errors — failures are logged but not propagated.
@@ -157,6 +167,10 @@ type Manager interface {
 	// checkpointed session agent configuration (skills, tools, agents) is
 	// restored after compaction.
 	SetAgentConfigRestorer(restorer AgentConfigRestorer)
+
+	// SetNudgeInjector connects the nudge injection system so that
+	// context-limit warnings are appended to prompts when pressure is high.
+	SetNudgeInjector(injector *nudge.NudgeInjector)
 
 	// CompressWith delegates to the configured Compressor strategy for
 	// semantic compression of text. Returns an error when no Compressor
@@ -249,6 +263,7 @@ type compactionManager struct {
 	preservedContextStore *PreservedContextStore
 	providerType          string
 	opMemory              OperationalMemoryStore
+	operationalMemEnabled bool
 	autoMemoryExtractor   *AutoMemoryExtractor
 	turnCounter           sync.Map // sessionID -> *atomic.Int64
 	preCompactRunner      *hooks.Runner
@@ -261,6 +276,10 @@ type compactionManager struct {
 	// toolFactory creates LCM agent tools. Injected via constructor to
 	// avoid importing the concrete tools package (layering violation).
 	toolFactory types.LCMToolFactory
+
+	// nudgeInjector appends context-limit nudges to prompts when pressure
+	// is high. Nil means no nudges are injected.
+	nudgeInjector *nudge.NudgeInjector
 }
 
 type providerTokenState struct {
@@ -473,6 +492,13 @@ func hasStableContextItems(items []db.LcmContextItem) bool {
 // SetDefaultContextWindow sets the context window for new sessions.
 func (m *compactionManager) SetDefaultContextWindow(contextWindow int64) {
 	m.defaultContextWindow = contextWindow
+}
+
+func (m *compactionManager) SetCutoffThreshold(threshold float64) {
+	if threshold <= 0 || threshold > 1 {
+		return
+	}
+	m.defaultCutoff = threshold
 }
 
 // SetModelOutputLimit sets the model's max output token limit for budget computation.
@@ -1206,9 +1232,10 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 	})
 
 	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
-		ProviderType: m.providerType,
-		Store:        m.store,
-		SessionID:    sessionID,
+		ProviderType:   m.providerType,
+		Store:          m.store,
+		SessionID:      sessionID,
+		NudgeInjector:  m.nudgeInjector,
 	})
 
 	microCompactor.cfg.CacheAware = true
@@ -1287,9 +1314,10 @@ func (m *compactionManager) InjectCuesIntoPrompt(prompt string, cues []GhostCue,
 // CacheOptimizer's BuildPrompt method.
 func (m *compactionManager) BuildCompactPrompt(ctx context.Context, sessionID string) (string, error) {
 	opt := NewCacheOptimizer(CacheOptimizerConfig{
-		ProviderType: m.providerType,
-		Store:        m.store,
-		SessionID:    sessionID,
+		ProviderType:  m.providerType,
+		Store:         m.store,
+		SessionID:     sessionID,
+		NudgeInjector: m.nudgeInjector,
 	})
 
 	entries, err := m.store.GetContextEntries(ctx, sessionID)
@@ -1385,7 +1413,7 @@ func (m *compactionManager) PostTurnHook(ctx context.Context, sessionID string) 
 			slog.Warn("Auto-memory extraction failed",
 				"session_id", sessionID, "error", result.Error)
 		}
-		if m.opMemory != nil {
+		if m.opMemory != nil && m.operationalMemEnabled {
 			for _, mem := range result.Memories {
 				key := fmt.Sprintf("memory:%s:%s", mem.Type, truncateString(mem.Content, 60))
 				// XRUSH: log error before discarding
@@ -1407,6 +1435,10 @@ func (m *compactionManager) SetOperationalMemory(om OperationalMemoryStore) {
 	m.opMemory = om
 }
 
+func (m *compactionManager) SetOperationalMemoryEnabled(enabled bool) {
+	m.operationalMemEnabled = enabled
+}
+
 func (m *compactionManager) SetHookRunners(preCompact, postCompact *hooks.Runner) {
 	m.preCompactRunner = preCompact
 	m.postCompactRunner = postCompact
@@ -1419,8 +1451,12 @@ func (m *compactionManager) SetAgentConfigRestorer(restorer AgentConfigRestorer)
 	m.agentConfigRestorer = restorer
 }
 
+func (m *compactionManager) SetNudgeInjector(injector *nudge.NudgeInjector) {
+	m.nudgeInjector = injector
+}
+
 func (m *compactionManager) OnSessionStart(ctx context.Context, sessionID string) error {
-	if m.opMemory == nil {
+	if m.opMemory == nil || !m.operationalMemEnabled {
 		return nil
 	}
 	if err := m.opMemory.Set(ctx, sessionID, "session_started_at", time.Now().Format(time.RFC3339)); err != nil {
@@ -1431,7 +1467,7 @@ func (m *compactionManager) OnSessionStart(ctx context.Context, sessionID string
 }
 
 func (m *compactionManager) OnSessionEnd(ctx context.Context, sessionID string) error {
-	if m.opMemory == nil {
+	if m.opMemory == nil || !m.operationalMemEnabled {
 		return nil
 	}
 	entries, err := m.opMemory.List(ctx, sessionID)
@@ -1541,7 +1577,7 @@ func (m *compactionManager) ListMemories(ctx context.Context, sessionID string) 
 }
 
 func (m *compactionManager) ListOMEntries(ctx context.Context, sessionID string) ([]session.OMEntry, error) {
-	if m.opMemory == nil {
+	if m.opMemory == nil || !m.operationalMemEnabled {
 		return nil, nil
 	}
 	return m.opMemory.ListByPriority(ctx, sessionID)

@@ -50,6 +50,22 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMLLMClient(store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM context window from model metadata]
+	wireLCMContextWindow(store)
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire LCM cutoff threshold from config]
+	wireLCMCutoffThreshold(store)
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire nudge config from LCM options]
+	wireNudgeConfig(store)
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire LCM operational memory from config]
+	wireLCMOperationalMemory(conn, store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire compact hook runners]
 	wireCompactHookRunners(store)
 	// [XRUSH: end]

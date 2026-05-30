@@ -630,3 +630,73 @@ type stubLLMClient struct {
 func (s *stubLLMClient) Complete(_ context.Context, _, _ string) (string, error) {
 	return s.response, s.err
 }
+
+func TestContextWindowFromModel(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	mgr.SetDefaultContextWindow(200000)
+
+	sessionID := "sess-ctx-from-model"
+	createTestSession(t, queries, sessionID)
+	require.NoError(t, mgr.InitSession(ctx, sessionID))
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+	require.Equal(t, int64(200000), budget.ContextWindow)
+
+	expected := ComputeBudget(BudgetConfig{
+		ContextWindow:   200000,
+		CutoffThreshold: 0.6,
+	})
+	require.Equal(t, expected.SoftThreshold, budget.SoftThreshold)
+	require.Equal(t, expected.HardLimit, budget.HardLimit)
+}
+
+func TestContextWindowZeroFallback(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	// Do NOT call SetDefaultContextWindow — the default 128000 must remain.
+	sessionID := "sess-ctx-zero-fallback"
+	createTestSession(t, queries, sessionID)
+	require.NoError(t, mgr.InitSession(ctx, sessionID))
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+	require.Equal(t, int64(128000), budget.ContextWindow)
+}
+
+func TestCutoffFromConfig(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	mgr.SetCutoffThreshold(0.8)
+
+	sessionID := "sess-cutoff-config"
+	createTestSession(t, queries, sessionID)
+	require.NoError(t, mgr.InitSession(ctx, sessionID))
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+
+	expected := ComputeBudget(BudgetConfig{
+		ContextWindow:   128000,
+		CutoffThreshold: 0.8,
+	})
+	require.Equal(t, expected.SoftThreshold, budget.SoftThreshold, "soft threshold should use 0.8 cutoff, not 0.6 default")
+	require.Equal(t, expected.HardLimit, budget.HardLimit, "hard limit should reflect 0.8 cutoff budget")
+
+	// Sanity: 0.8 cutoff produces a higher soft threshold than 0.6.
+	defaultBudget := ComputeBudget(BudgetConfig{
+		ContextWindow:   128000,
+		CutoffThreshold: 0.6,
+	})
+	require.Greater(t, budget.SoftThreshold, defaultBudget.SoftThreshold, "0.8 cutoff should produce higher soft threshold than 0.6")
+}

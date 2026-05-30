@@ -688,7 +688,7 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
-	assert.Equal(t, []string{"glob", "grep", "lcm_describe", "lcm_expand", "lcm_grep", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools) // XRUSH: includes xrush read-only tools (lcm_*)
+	assert.Equal(t, []string{"glob", "grep", "lcm_active_context", "lcm_ancestry", "lcm_archive", "lcm_bindle", "lcm_describe", "lcm_dolt", "lcm_expand", "lcm_file_search", "lcm_grep", "lcm_lineage", "lcm_sprig", "lcm_time_query", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools) // XRUSH: includes xrush read-only tools (lcm_*)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
@@ -706,11 +706,11 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 
-	assert.Equal(t, []string{"agent", "agentic_fetch", "agentic_map", "bash", "batch_edit", "crush_info", "crush_logs", "fetch", "glob", "job_kill", "job_output", "lcm_describe", "lcm_expand", "lcm_grep", "llm_map", "ls", "lsp_diagnostics", "lsp_references", "lsp_restart", "map_refresh", "multiedit", "read_mcp_resource", "send_message", "sourcegraph", "synthetic_output", "task_stop", "team_create", "team_delete", "todos", "view", "write", "list_mcp_resources"}, coderAgent.AllowedTools) // XRUSH: includes xrush tools
+	assert.Equal(t, []string{"agent", "agentic_fetch", "agentic_map", "bash", "batch_edit", "crush_info", "crush_logs", "fetch", "glob", "job_kill", "job_output", "lcm_active_context", "lcm_ancestry", "lcm_archive", "lcm_bindle", "lcm_describe", "lcm_dolt", "lcm_expand", "lcm_file_search", "lcm_grep", "lcm_lineage", "lcm_sprig", "lcm_time_query", "list_mcp_resources", "llm_map", "ls", "lsp_diagnostics", "lsp_references", "lsp_restart", "map_refresh", "multiedit", "read_mcp_resource", "send_message", "sourcegraph", "synthetic_output", "task_stop", "team_create", "team_delete", "todos", "view", "write"}, coderAgent.AllowedTools) // XRUSH: includes xrush tools
 
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
-	assert.Equal(t, []string{"glob", "lcm_describe", "lcm_expand", "lcm_grep", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools) // XRUSH: includes xrush read-only tools (lcm_*)
+	assert.Equal(t, []string{"glob", "lcm_active_context", "lcm_ancestry", "lcm_archive", "lcm_bindle", "lcm_describe", "lcm_dolt", "lcm_expand", "lcm_file_search", "lcm_grep", "lcm_lineage", "lcm_sprig", "lcm_time_query", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools) // XRUSH: includes xrush read-only tools (lcm_*)
 }
 
 func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
@@ -729,11 +729,11 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	cfg.SetupAgents()
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
-	assert.Equal(t, []string{"agent", "agentic_fetch", "agentic_map", "bash", "batch_edit", "crush_info", "crush_logs", "download", "edit", "fetch", "job_kill", "job_output", "lcm_describe", "lcm_expand", "lcm_grep", "llm_map", "lsp_diagnostics", "lsp_references", "lsp_restart", "map_refresh", "multiedit", "read_mcp_resource", "send_message", "synthetic_output", "task_stop", "team_create", "team_delete", "todos", "write", "list_mcp_resources"}, coderAgent.AllowedTools) // XRUSH: includes xrush tools
+	assert.Equal(t, []string{"agent", "agentic_fetch", "agentic_map", "bash", "batch_edit", "crush_info", "crush_logs", "download", "edit", "fetch", "job_kill", "job_output", "lcm_active_context", "lcm_ancestry", "lcm_archive", "lcm_bindle", "lcm_describe", "lcm_dolt", "lcm_expand", "lcm_file_search", "lcm_grep", "lcm_lineage", "lcm_sprig", "lcm_time_query", "list_mcp_resources", "llm_map", "lsp_diagnostics", "lsp_references", "lsp_restart", "map_refresh", "multiedit", "read_mcp_resource", "send_message", "synthetic_output", "task_stop", "team_create", "team_delete", "todos", "write"}, coderAgent.AllowedTools) // XRUSH: includes xrush tools
 
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
-	assert.Equal(t, []string{"lcm_describe", "lcm_expand", "lcm_grep"}, taskAgent.AllowedTools) // XRUSH: only xrush read-only tools remain
+	assert.Equal(t, []string{"lcm_active_context", "lcm_ancestry", "lcm_archive", "lcm_bindle", "lcm_describe", "lcm_dolt", "lcm_expand", "lcm_file_search", "lcm_grep", "lcm_lineage", "lcm_sprig", "lcm_time_query"}, taskAgent.AllowedTools) // XRUSH: only xrush read-only tools remain
 }
 
 func TestConfig_configureProvidersWithDisabledProvider(t *testing.T) {

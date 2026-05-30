@@ -148,6 +148,15 @@ func (s *ToolSurface) registerDefaults() {
 	s.Register("lcm_grep", CapabilityMemory)
 	s.Register("lcm_describe", CapabilityMemory)
 	s.Register("lcm_expand", CapabilityMemory)
+	s.Register("lcm_bindle", CapabilityMemory)
+	s.Register("lcm_ancestry", CapabilityMemory)
+	s.Register("lcm_dolt", CapabilityMemory)
+	s.Register("lcm_archive", CapabilityMemory)
+	s.Register("lcm_sprig", CapabilityMemory)
+	s.Register("lcm_time_query", CapabilityMemory)
+	s.Register("lcm_file_search", CapabilityMemory)
+	s.Register("lcm_active_context", CapabilityMemory)
+	s.Register("lcm_lineage", CapabilityMemory)
 	s.Register("llm_map", CapabilityMemory)
 	s.Register("agentic_map", CapabilityMemory)
 	s.Register("map_refresh", CapabilityMemory)
@@ -210,14 +219,7 @@ func (s *ToolSurface) isVisible(name string, caps Capability, ctx SurfaceContext
 	}
 
 	if caps&CapabilityMemory != 0 && !ctx.HasLCM {
-		if name == "lcm_grep" || name == "lcm_describe" || name == "lcm_expand" {
-			return false
-		}
-		if name == "llm_map" || name == "agentic_map" || name == "map_refresh" {
-			if !ctx.HasRepoMap {
-				return false
-			}
-		}
+		return false
 	}
 
 	if (name == "list_mcp_resources" || name == "read_mcp_resource") && !ctx.HasMCP {

@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/crush/internal/hooks"
 	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/lcm/explorer"
+	"github.com/charmbracelet/crush/internal/lcm/nudge"
 	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/charmbracelet/crush/internal/session"
 )
@@ -159,6 +160,150 @@ func (*lcmFallbackLM) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fan
 func (*lcmFallbackLM) Provider() string { return "lcm-fallback" }
 
 func (*lcmFallbackLM) Model() string { return "lcm-fallback" }
+
+// [XRUSH: begin: wireLCMContextWindow]
+// wireLCMContextWindow reads the large model's context window from the config
+// and propagates it to the LCM manager so that budget calculations use the
+// actual model limits instead of the hardcoded 128000 default. When the model
+// reports 0 or is not available, the default is kept.
+func wireLCMContextWindow(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+
+	// Prefer LCM summarizer model, fall back to the large model — same
+	// resolution logic as wireLCMLLMClient.
+	var catModel *catwalk.Model
+	if cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.SummarizerModel != nil {
+		catModel = cfg.GetModel(cfg.Options.LCM.SummarizerModel.Provider, cfg.Options.LCM.SummarizerModel.Model)
+	}
+	if catModel == nil {
+		catModel = cfg.LargeModel()
+	}
+
+	if catModel == nil || catModel.ContextWindow <= 0 {
+		// Keep the 128000 default.
+		slog.Info("LCM context window kept at default (model unavailable or reports 0)")
+		return
+	}
+
+	mgr.SetDefaultContextWindow(catModel.ContextWindow)
+	slog.Info("LCM context window set from model metadata",
+		"context_window", catModel.ContextWindow,
+	)
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireLCMCutoffThreshold]
+// wireLCMCutoffThreshold reads the ctx_cutoff_threshold from the LCM config
+// and propagates it to the LCM manager so that budget calculations use the
+// configured value instead of the hardcoded 0.6 default.
+func wireLCMCutoffThreshold(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	if cfg.Options == nil || cfg.Options.LCM == nil {
+		return
+	}
+	if cfg.Options.LCM.CtxCutoffThreshold <= 0 {
+		return
+	}
+
+	mgr.SetCutoffThreshold(cfg.Options.LCM.CtxCutoffThreshold)
+	slog.Info("LCM cutoff threshold set from config",
+		"cutoff_threshold", cfg.Options.LCM.CtxCutoffThreshold,
+	)
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireNudgeConfig]
+// wireNudgeConfig reads nudge options from the LCM config and creates a
+// NudgeInjector wired into the LCM manager. When nudge config is nil, defaults
+// are used. The pressure-tier function is bridged from lcm.CalculatePressureTier.
+func wireNudgeConfig(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+
+	var nudgeCfg nudge.NudgeConfig
+	if cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.Nudge != nil {
+		opts := cfg.Options.LCM.Nudge
+		nudgeCfg = nudge.DefaultNudgeConfig()
+		if opts.MinContextLimit > 0 {
+			nudgeCfg.MinContextLimit = opts.MinContextLimit
+		}
+		if opts.MaxContextLimit > 0 {
+			nudgeCfg.MaxContextLimit = opts.MaxContextLimit
+		}
+		if opts.NudgeFrequency > 0 {
+			nudgeCfg.NudgeFrequency = opts.NudgeFrequency
+		}
+		if opts.NudgeForce != "" {
+			nudgeCfg.NudgeForce = opts.NudgeForce
+		}
+	} else {
+		nudgeCfg = nudge.DefaultNudgeConfig()
+	}
+
+	tierFn := func(currentTokens, contextWindow int64) nudge.PressureTier {
+		_, tier := lcm.CalculatePressureTier(currentTokens, contextWindow, lcm.DefaultPressureConfig())
+		switch tier {
+		case lcm.PressureHigh:
+			return nudge.PressureHigh
+		case lcm.PressureMedium:
+			return nudge.PressureMedium
+		default:
+			return nudge.PressureLow
+		}
+	}
+
+	injector := nudge.NewNudgeInjector(&nudgeCfg, tierFn)
+	mgr.SetNudgeInjector(injector)
+	slog.Info("LCM nudge injector wired",
+		"min_context_limit", nudgeCfg.MinContextLimit,
+		"max_context_limit", nudgeCfg.MaxContextLimit,
+		"frequency", nudgeCfg.NudgeFrequency,
+		"force", nudgeCfg.NudgeForce,
+	)
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireLCMOperationalMemory]
+// wireLCMOperationalMemory reads the operational_memory_enabled flag from the
+// LCM config. When enabled it creates a session.OperationalMemory backed by the
+// database and wires it into the LCM manager, then sets the enabled flag. When
+// disabled (the default) no store is wired and lifecycle hooks are no-ops.
+func wireLCMOperationalMemory(conn *sql.DB, store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	enabled := cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.OperationalMemoryEnabled
+	if !enabled {
+		return
+	}
+
+	om := session.NewOperationalMemory(conn)
+	mgr.SetOperationalMemory(om)
+	mgr.SetOperationalMemoryEnabled(true)
+	slog.Info("LCM operational memory wired and enabled")
+}
+
+// [XRUSH: end]
 
 // [XRUSH: begin: wireCompactHookRunners]
 // wireCompactHookRunners creates hooks.Runner instances for PreCompact and

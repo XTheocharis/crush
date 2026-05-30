@@ -654,3 +654,107 @@ func TestNudgeUsesConsistentPressureThresholds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "prompt", result2)
 }
+
+func TestNudgeConfigConsumed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default config allows nudges at standard thresholds", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := DefaultNudgeConfig()
+		injector := NewNudgeInjector(&cfg, nil)
+
+		result, err := injector.Inject(context.Background(), "prompt", 105000, 110000)
+		require.NoError(t, err)
+		require.Contains(t, result, "context-limit",
+			"default config should allow nudge when tokens >= MaxContextLimit and pressure is high")
+	})
+
+	t.Run("custom MinContextLimit raises the floor", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := NudgeConfig{
+			MinContextLimit:         90000,
+			MaxContextLimit:         100000,
+			NudgeFrequency:          5,
+			IterationNudgeThreshold: 15,
+			NudgeForce:              "soft",
+		}
+		injector := NewNudgeInjector(&cfg, nil)
+
+		result, err := injector.Inject(context.Background(), "prompt", 105000, 110000)
+		require.NoError(t, err)
+		require.Contains(t, result, "context-limit",
+			"tokens above custom MinContextLimit should nudge")
+
+		result2, err := injector.Inject(context.Background(), "prompt", 89099, 110000)
+		require.NoError(t, err)
+		require.Equal(t, "prompt", result2,
+			"tokens below custom MinContextLimit should not nudge")
+	})
+
+	t.Run("custom MaxContextLimit controls the ceiling", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := NudgeConfig{
+			MinContextLimit:         50000,
+			MaxContextLimit:         80000,
+			NudgeFrequency:          5,
+			IterationNudgeThreshold: 15,
+			NudgeForce:              "hard",
+		}
+		highFn := func(_, _ int64) PressureTier { return PressureHigh }
+		injector := NewNudgeInjector(&cfg, highFn)
+
+		result, err := injector.Inject(context.Background(), "prompt", 85000, 90000)
+		require.NoError(t, err)
+		require.Contains(t, result, "context-limit")
+		require.Contains(t, result, `force="hard"`,
+			"custom NudgeForce should be used in output")
+	})
+
+	t.Run("custom NudgeFrequency controls turn nudges", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := NudgeConfig{
+			MinContextLimit:         50000,
+			MaxContextLimit:         100000,
+			NudgeFrequency:          3,
+			IterationNudgeThreshold: 15,
+			NudgeForce:              "soft",
+		}
+		mediumFn := func(_, _ int64) PressureTier { return PressureMedium }
+		injector := NewNudgeInjector(&cfg, mediumFn)
+
+		result, err := injector.InjectFull(context.Background(), InjectParams{
+			Prompt:        "prompt",
+			CurrentTokens: 90000,
+			ContextWindow: 100000,
+			TurnCount:     2,
+		})
+		require.NoError(t, err)
+		require.Equal(t, "prompt", result,
+			"turn 2 should not nudge with frequency 3")
+
+		result2, err := injector.InjectFull(context.Background(), InjectParams{
+			Prompt:        "prompt",
+			CurrentTokens: 90000,
+			ContextWindow: 100000,
+			TurnCount:     3,
+		})
+		require.NoError(t, err)
+		require.Contains(t, result2, `type="turn"`,
+			"turn 3 should nudge with frequency 3")
+	})
+
+	t.Run("nil config uses defaults", func(t *testing.T) {
+		t.Parallel()
+
+		injector := NewNudgeInjector(nil, nil)
+
+		result, err := injector.Inject(context.Background(), "prompt", 105000, 110000)
+		require.NoError(t, err)
+		require.Contains(t, result, "context-limit",
+			"nil config should use defaults and still nudge at standard thresholds")
+	})
+}
