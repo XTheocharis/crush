@@ -3,9 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"charm.land/fantasy"
+	"charm.land/fantasy/providers/anthropic"
+	"charm.land/fantasy/providers/openai"
+	"charm.land/fantasy/providers/openaicompat"
+	"charm.land/fantasy/providers/openrouter"
+
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/eval"
 	"github.com/charmbracelet/crush/internal/eval/scorers/judge"
 	"github.com/charmbracelet/crush/internal/eval/scorers/metric"
@@ -53,8 +61,14 @@ func runEval(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to load dataset: %w", err)
 	}
 
+	cwd, err := ResolveCwd(cmd)
+	if err != nil {
+		return fmt.Errorf("resolve working directory: %w", err)
+	}
+
+	llmClient := resolveJudgeLLMClient(cwd, "")
 	harness := eval.NewEvalHarness()
-	registerScorers(harness, nil)
+	registerScorers(harness, llmClient)
 
 	criteria := eval.NewScoringCriteria()
 	reportGen := eval.NewReportGenerator(criteria)
@@ -112,6 +126,111 @@ type noopLLMClient struct{}
 
 func (noopLLMClient) Complete(_ context.Context, prompt string) (string, error) {
 	return `{"score": 0.5, "explanation": "noop"}`, nil
+}
+
+// fantasyJudgeClient adapts a fantasy.LanguageModel to the judge.LLMClient
+// interface used by eval judge scorers. It sends the evaluation prompt as a
+// single user message and returns the raw text response.
+type fantasyJudgeClient struct {
+	lm fantasy.LanguageModel
+}
+
+func (c *fantasyJudgeClient) Complete(ctx context.Context, prompt string) (string, error) {
+	resp, err := c.lm.Generate(ctx, fantasy.Call{
+		Prompt: []fantasy.Message{
+			fantasy.NewUserMessage(prompt),
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Content.Text(), nil
+}
+
+func buildEvalProvider(cfg *config.ProviderConfig, apiKey, baseURL string) (fantasy.Provider, error) {
+	switch cfg.Type {
+	case openai.Name:
+		opts := []openai.Option{openai.WithAPIKey(apiKey)}
+		if baseURL != "" {
+			opts = append(opts, openai.WithBaseURL(baseURL))
+		}
+		return openai.New(opts...)
+	case anthropic.Name:
+		var opts []anthropic.Option
+		if apiKey != "" {
+			opts = append(opts, anthropic.WithAPIKey(apiKey))
+		}
+		if baseURL != "" {
+			opts = append(opts, anthropic.WithBaseURL(baseURL))
+		}
+		return anthropic.New(opts...)
+	case openrouter.Name:
+		return openrouter.New(openrouter.WithAPIKey(apiKey))
+	case openaicompat.Name:
+		opts := []openaicompat.Option{
+			openaicompat.WithAPIKey(apiKey),
+		}
+		if baseURL != "" {
+			opts = append(opts, openaicompat.WithBaseURL(baseURL))
+		}
+		return openaicompat.New(opts...)
+	default:
+		return nil, fmt.Errorf("unsupported eval provider type: %q", cfg.Type)
+	}
+}
+
+// resolveJudgeLLMClient attempts to build a real LLM client from the project
+// configuration. It uses the small model if available (judge prompts are short)
+// and falls back to the large model. Returns noopLLMClient when no provider is
+// configured.
+func resolveJudgeLLMClient(cwd, dataDir string) judge.LLMClient {
+	store, err := config.Init(cwd, dataDir, false)
+	if err != nil {
+		slog.Debug("Eval judge: config init failed, using noop client", "error", err)
+		return noopLLMClient{}
+	}
+
+	cfg := store.Config()
+
+	// Prefer the small model for judge calls (prompts are short), fall back to
+	// the large model.
+	modelType := config.SelectedModelTypeSmall
+	providerCfg := cfg.GetProviderForModel(modelType)
+	if providerCfg == nil {
+		modelType = config.SelectedModelTypeLarge
+		providerCfg = cfg.GetProviderForModel(modelType)
+	}
+	if providerCfg == nil {
+		slog.Debug("Eval judge: no provider configured, using noop client")
+		return noopLLMClient{}
+	}
+
+	selected, ok := cfg.Models[modelType]
+	if !ok {
+		slog.Debug("Eval judge: no model selected, using noop client")
+		return noopLLMClient{}
+	}
+
+	apiKey, _ := store.Resolve(providerCfg.APIKey)
+	baseURL, _ := store.Resolve(providerCfg.BaseURL)
+
+	provider, err := buildEvalProvider(providerCfg, apiKey, baseURL)
+	if err != nil {
+		slog.Debug("Eval judge: provider build failed, using noop client", "error", err)
+		return noopLLMClient{}
+	}
+
+	lm, err := provider.LanguageModel(context.Background(), selected.Model)
+	if err != nil {
+		slog.Debug("Eval judge: language model resolution failed, using noop client", "error", err)
+		return noopLLMClient{}
+	}
+
+	slog.Debug("Eval judge: using real LLM client",
+		"provider", selected.Provider,
+		"model", selected.Model,
+	)
+	return &fantasyJudgeClient{lm: lm}
 }
 
 func registerScorers(harness *eval.EvalHarness, llmClient judge.LLMClient) *eval.EvalHarness {

@@ -2,13 +2,17 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/eval"
+	"github.com/charmbracelet/crush/internal/eval/scorers/judge"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -174,3 +178,91 @@ func TestWriteReportFile(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestJudgeScorerUsesRealClient(t *testing.T) {
+	t.Run("fantasyJudgeClient implements judge.LLMClient", func(t *testing.T) {
+		t.Parallel()
+
+		lm := &stubLanguageModel{response: `{"score": 0.9, "explanation": "good"}`}
+		client := &fantasyJudgeClient{lm: lm}
+
+		var _ judge.LLMClient = client
+		resp, err := client.Complete(context.Background(), "evaluate this")
+		require.NoError(t, err)
+		require.Contains(t, resp, "0.9")
+		require.Equal(t, 1, lm.callCount(), "expected one Generate call")
+	})
+
+	t.Run("registerScorers uses provided client not noop", func(t *testing.T) {
+		tracking := &trackingLLMClient{response: `{"score": 0.8, "explanation": "ok"}`}
+		harness := registerScorers(eval.NewEvalHarness(), tracking)
+
+		input := &eval.EvalInput{
+			SessionID: "test",
+			Conversation: []eval.Message{
+				{Role: "user", Content: "hello"},
+			},
+		}
+
+		report, err := harness.Run(context.Background(), input)
+		require.NoError(t, err)
+
+		judgeCallCount := 0
+		for _, entry := range report.Results {
+			if entry.Type == eval.ScorerLLMJudge && entry.Result != nil && entry.Result.Error == "" {
+				judgeCallCount++
+			}
+		}
+		require.Equal(t, 12, judgeCallCount, "all 12 judge scorers should have been called")
+		require.Equal(t, int64(12), tracking.callCount(), "tracking client should have been called 12 times")
+	})
+
+	t.Run("registerScorers defaults to noop when client is nil", func(t *testing.T) {
+		harness := registerScorers(eval.NewEvalHarness(), nil)
+		names := harness.Scorers()
+		require.Len(t, names, 19, "should register all scorers even with nil client")
+	})
+}
+
+type trackingLLMClient struct {
+	response string
+	count    atomic.Int64
+}
+
+func (c *trackingLLMClient) Complete(_ context.Context, _ string) (string, error) {
+	c.count.Add(1)
+	return c.response, nil
+}
+
+func (c *trackingLLMClient) callCount() int64 { return c.count.Load() }
+
+type stubLanguageModel struct {
+	response string
+	count    atomic.Int64
+}
+
+func (m *stubLanguageModel) Generate(_ context.Context, _ fantasy.Call) (*fantasy.Response, error) {
+	m.count.Add(1)
+	return &fantasy.Response{
+		Content: fantasy.ResponseContent{
+			fantasy.TextContent{Text: m.response},
+		},
+	}, nil
+}
+
+func (m *stubLanguageModel) callCount() int { return int(m.count.Load()) }
+
+func (m *stubLanguageModel) Stream(_ context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
+	return nil, nil
+}
+
+func (m *stubLanguageModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
+	return nil, nil
+}
+
+func (m *stubLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
+	return nil, nil
+}
+
+func (m *stubLanguageModel) Provider() string { return "stub" }
+func (m *stubLanguageModel) Model() string    { return "stub" }
