@@ -63,6 +63,51 @@ func TestToolMarkers(t *testing.T) {
 	require.False(t, ToolMarker(0).HasMarker(MarkerCanEdit))
 }
 
+func TestLSPToolVisibility(t *testing.T) {
+	t.Parallel()
+
+	s := NewToolSurface()
+
+	// All 14 LSP tools must be registered with CapabilityCodeIntelligence.
+	expectedLSPTools := []string{
+		"lsp_diagnostics",
+		"lsp_references",
+		"lsp_restart",
+		"lsp_definition",
+		"lsp_rename",
+		"lsp_code_action",
+		"lsp_safe_delete",
+		"lsp_replace_symbol",
+		"lsp_insert_before",
+		"lsp_insert_after",
+		"lsp_formatting",
+		"lsp_hover",
+		"lsp_completion",
+		"lsp_signature_help",
+	}
+
+	for _, name := range expectedLSPTools {
+		require.True(t, s.HasCapability(name, CapabilityCodeIntelligence),
+			"%s should have CapabilityCodeIntelligence", name)
+		require.True(t, s.IsVisible(name),
+			"%s should be visible by default", name)
+	}
+
+	// When LSP is unavailable, all pure CodeIntelligence tools are hidden.
+	s.UpdateCapabilities(SurfaceContext{HasLSP: false})
+	for _, name := range expectedLSPTools {
+		require.False(t, s.IsVisible(name),
+			"%s should be hidden when HasLSP=false", name)
+	}
+
+	// When LSP is available, all tools become visible again.
+	s.UpdateCapabilities(SurfaceContext{HasLSP: true})
+	for _, name := range expectedLSPTools {
+		require.True(t, s.IsVisible(name),
+			"%s should be visible when HasLSP=true", name)
+	}
+}
+
 func TestToolMarkerRegistration(t *testing.T) {
 	t.Parallel()
 
