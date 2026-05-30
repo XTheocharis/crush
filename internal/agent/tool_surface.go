@@ -145,6 +145,9 @@ func (s *ToolSurface) registerDefaults() {
 	s.Register("lsp_hover", CapabilityCodeIntelligence)
 	s.Register("lsp_completion", CapabilityCodeIntelligence)
 	s.Register("lsp_signature_help", CapabilityCodeIntelligence)
+	s.Register("lsp_symbols", CapabilityCodeIntelligence)
+	s.Register("lsp_document_symbols", CapabilityCodeIntelligence)
+	s.Register("lsp_workspace_symbols", CapabilityCodeIntelligence)
 
 	s.Register("job_output", CapabilityExecution|CapabilityObservation)
 	s.Register("job_kill", CapabilityExecution)

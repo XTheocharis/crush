@@ -82,6 +82,9 @@ func buildLSPTools(mgr *lsp.Manager) []fantasy.AgentTool {
 		tools.NewCompletionTool(mgr),
 		tools.NewSignatureHelpTool(mgr),
 		tools.NewLSPRestartTool(mgr),
+		tools.NewSymbolsTool(mgr),
+		tools.NewDocumentSymbolsTool(mgr),
+		tools.NewWorkspaceSymbolsTool(mgr),
 	}
 }
 

@@ -102,8 +102,11 @@ func allToolNames() []string {
 		fork[14], // llm_map
 		"ls",
 		"lsp_diagnostics",
+		"lsp_document_symbols",
 		"lsp_references",
 		"lsp_restart",
+		"lsp_symbols",
+		"lsp_workspace_symbols",
 		fork[15], // map_refresh
 		fork[16], // multiedit
 		fork[17], // read_mcp_resource
