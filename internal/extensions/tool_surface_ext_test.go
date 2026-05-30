@@ -9,13 +9,11 @@ import (
 )
 
 func TestToolSurfaceExtension_Name(t *testing.T) {
-	t.Parallel()
 	e := &ToolSurfaceExtension{}
 	require.Equal(t, "tool-surface", e.Name())
 }
 
 func TestToolSurfaceExtension_InitAndShutdown(t *testing.T) {
-	t.Parallel()
 	e := &ToolSurfaceExtension{}
 	host := &mockHostContext{cfg: &config.Config{}}
 	err := e.Init(context.Background(), host)
@@ -30,13 +28,11 @@ func TestToolSurfaceExtension_InitAndShutdown(t *testing.T) {
 }
 
 func TestToolSurfaceExtension_RunHooksInactive(t *testing.T) {
-	t.Parallel()
 	e := &ToolSurfaceExtension{}
 	require.Nil(t, e.RunHooks())
 }
 
 func TestToolSurfaceExtension_OnRunStart_AllFlagsFalseByDefault(t *testing.T) {
-	t.Parallel()
 	e := &ToolSurfaceExtension{}
 	host := &mockHostContext{cfg: &config.Config{}}
 	err := e.Init(context.Background(), host)
@@ -54,7 +50,6 @@ func TestToolSurfaceExtension_OnRunStart_AllFlagsFalseByDefault(t *testing.T) {
 }
 
 func TestToolSurfaceExtension_OnRunStart_NilAfterShutdown(t *testing.T) {
-	t.Parallel()
 	e := &ToolSurfaceExtension{}
 	host := &mockHostContext{cfg: &config.Config{}}
 	err := e.Init(context.Background(), host)
@@ -68,8 +63,6 @@ func TestToolSurfaceExtension_OnRunStart_NilAfterShutdown(t *testing.T) {
 }
 
 func TestToolSurfaceExtension_OnRunStart_LCMFlagFromSingleton(t *testing.T) {
-	t.Parallel()
-
 	origLCM := TheLCMExtension
 	defer func() { TheLCMExtension = origLCM }()
 
@@ -87,8 +80,6 @@ func TestToolSurfaceExtension_OnRunStart_LCMFlagFromSingleton(t *testing.T) {
 }
 
 func TestToolSurfaceExtension_OnRunStart_RepomapFlagFromSingleton(t *testing.T) {
-	t.Parallel()
-
 	origRepo := TheRepomapExtension
 	defer func() { TheRepomapExtension = origRepo }()
 
@@ -108,7 +99,6 @@ func TestToolSurfaceExtension_OnRunStart_RepomapFlagFromSingleton(t *testing.T) 
 }
 
 func TestToolSurfaceExtension_OnRunEnd_NoOp(t *testing.T) {
-	t.Parallel()
 	e := &ToolSurfaceExtension{}
 	host := &mockHostContext{cfg: &config.Config{}}
 	require.NoError(t, e.Init(context.Background(), host))
