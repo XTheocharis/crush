@@ -2,10 +2,12 @@ package extensions
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -19,6 +21,10 @@ import (
 
 // maxAutoFixIterations caps the auto-fix loop to prevent infinite cycles.
 const maxAutoFixIterations = 3
+
+// convergenceThreshold is the number of consecutive iterations with the same
+// error fingerprint that triggers a non-convergence stop.
+const convergenceThreshold = 2
 
 // AutofixExtension wraps the auto-fix loop as a RunHookProvider.
 // It runs post-turn validation after each agent run to catch and auto-fix
@@ -271,6 +277,26 @@ func reflectOnErrors(errorLines []string) []string {
 	return notes
 }
 
+// fingerprintErrors produces a stable hash of sorted, deduplicated error
+// lines. The same set of errors always yields the same fingerprint regardless
+// of order.
+func fingerprintErrors(errors []string) string {
+	if len(errors) == 0 {
+		return ""
+	}
+	deduped := make(map[string]struct{}, len(errors))
+	for _, e := range errors {
+		deduped[strings.TrimSpace(e)] = struct{}{}
+	}
+	sorted := make([]string, 0, len(deduped))
+	for e := range deduped {
+		sorted = append(sorted, e)
+	}
+	sort.Strings(sorted)
+	h := sha256.Sum256([]byte(strings.Join(sorted, "\n")))
+	return fmt.Sprintf("%x", h[:])
+}
+
 // fullAutoFixCycle runs the complete lint → fix → test → reflect cycle.
 // It mirrors the AutoFixLoop from internal/agent/autofix.go but is
 // self-contained within the extension.
@@ -298,6 +324,8 @@ func (e *AutofixExtension) fullAutoFixCycle(
 	}
 
 	tester := &agent.GoTester{WorkingDir: workingDir}
+	var lastFingerprint string
+	var convergenceCount int
 
 	for attempt := 1; attempt <= maxAutoFixIterations; attempt++ {
 		select {
@@ -335,6 +363,19 @@ func (e *AutofixExtension) fullAutoFixCycle(
 				"test_errors", len(testErrors),
 				"reflections", notes,
 			)
+
+			fp := fingerprintErrors(testErrors)
+			if fp == lastFingerprint {
+				convergenceCount++
+			} else {
+				convergenceCount = 1
+			}
+			lastFingerprint = fp
+			if convergenceCount >= convergenceThreshold {
+				slog.Warn("Autofix extension: not converging, same errors repeating",
+					"consecutive_repeats", convergenceCount)
+				break
+			}
 			continue
 		}
 
@@ -380,6 +421,19 @@ func (e *AutofixExtension) fullAutoFixCycle(
 			"test_errors", len(testErrors),
 			"reflections", notes,
 		)
+
+		fp := fingerprintErrors(allErrors)
+		if fp == lastFingerprint {
+			convergenceCount++
+		} else {
+			convergenceCount = 1
+		}
+		lastFingerprint = fp
+		if convergenceCount >= convergenceThreshold {
+			slog.Warn("Autofix extension: not converging, same errors repeating",
+				"consecutive_repeats", convergenceCount)
+			break
+		}
 	}
 
 	// Exhausted retries — rollback.

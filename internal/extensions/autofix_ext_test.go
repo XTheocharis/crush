@@ -186,9 +186,12 @@ func TestAutoFixLoopPromotion(t *testing.T) {
 		// 3 iterations = 6 calls, + 1 final lint = 7 total.
 		// All return errors to exhaust retries.
 		persistentErrors := [][]string{
-			{"main.go:1: err1"}, {"main.go:1: err2"},
-			{"main.go:1: err3"}, {"main.go:1: err4"},
-			{"main.go:1: err5"}, {"main.go:1: err6"},
+			{"main.go:1: err1"},
+			{"main.go:1: err2"},
+			{"main.go:1: err3"},
+			{"main.go:1: err4"},
+			{"main.go:1: err5"},
+			{"main.go:1: err6"},
 			{"main.go:1: err_final"},
 		}
 		linter := &mockLinter{results: persistentErrors}
@@ -212,6 +215,103 @@ func TestAutoFixLoopPromotion(t *testing.T) {
 		}}
 		require.NoError(t, e.Init(context.Background(), host))
 		require.False(t, e.loopEnabled)
+	})
+}
+
+func TestConvergenceDetection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("stops early when same errors repeat", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "main.go")
+		original := "package main\n"
+		require.NoError(t, os.WriteFile(fp, []byte(original), 0o644))
+
+		e := &AutofixExtension{loopEnabled: true, active: true}
+		// Every lint call returns the exact same error set.
+		// Iteration 1: lint→err, re-lint→err → fingerprint match → count=1.
+		// Iteration 2: lint→err, re-lint→err → fingerprint match → count=2 → break.
+		// + 1 final lint = 5 total calls.
+		// Without convergence, 3 iterations × 2 + 1 final = 7 calls.
+		sameErrors := [][]string{
+			{"main.go:1: persistent error"},
+			{"main.go:1: persistent error"},
+			{"main.go:1: persistent error"},
+			{"main.go:1: persistent error"},
+			{"main.go:1: persistent error"},
+			{"main.go:1: persistent error"},
+			{"main.go:1: persistent error"},
+		}
+		linter := &mockLinter{results: sameErrors}
+		rollback := tools.NewRollbackManager()
+
+		e.fullAutoFixCycle(context.Background(), dir, []string{fp}, linter, rollback)
+		// Should stop at iteration 2 due to convergence (5 lint calls),
+		// not exhaust all 3 iterations (which would be 7 calls).
+		require.Equal(t, 5, linter.calls)
+
+		// File should be rolled back.
+		content, err := os.ReadFile(fp)
+		require.NoError(t, err)
+		require.Equal(t, original, string(content))
+	})
+
+	t.Run("does not stop when errors change between iterations", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "main.go")
+		original := "package main\n"
+		require.NoError(t, os.WriteFile(fp, []byte(original), 0o644))
+
+		e := &AutofixExtension{loopEnabled: true, active: true}
+		// Errors are different each call → fingerprints never match → full 3 iterations.
+		changingErrors := [][]string{
+			{"main.go:1: err_a"},
+			{"main.go:1: err_b"},
+			{"main.go:1: err_c"},
+			{"main.go:1: err_d"},
+			{"main.go:1: err_e"},
+			{"main.go:1: err_f"},
+			{"main.go:1: err_final"},
+		}
+		linter := &mockLinter{results: changingErrors}
+		rollback := tools.NewRollbackManager()
+
+		e.fullAutoFixCycle(context.Background(), dir, []string{fp}, linter, rollback)
+		// All 3 iterations exhausted: 6 + 1 final = 7 calls.
+		require.Equal(t, 7, linter.calls)
+	})
+}
+
+func TestFingerprintErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns empty for empty input", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "", fingerprintErrors(nil))
+		require.Equal(t, "", fingerprintErrors([]string{}))
+	})
+
+	t.Run("same errors produce same fingerprint regardless of order", func(t *testing.T) {
+		t.Parallel()
+		fp1 := fingerprintErrors([]string{"a.go:1: err", "b.go:2: err"})
+		fp2 := fingerprintErrors([]string{"b.go:2: err", "a.go:1: err"})
+		require.Equal(t, fp1, fp2)
+	})
+
+	t.Run("different errors produce different fingerprints", func(t *testing.T) {
+		t.Parallel()
+		fp1 := fingerprintErrors([]string{"a.go:1: err"})
+		fp2 := fingerprintErrors([]string{"a.go:1: other"})
+		require.NotEqual(t, fp1, fp2)
+	})
+
+	t.Run("deduplicates identical errors", func(t *testing.T) {
+		t.Parallel()
+		fp1 := fingerprintErrors([]string{"a.go:1: err", "a.go:1: err"})
+		fp2 := fingerprintErrors([]string{"a.go:1: err"})
+		require.Equal(t, fp1, fp2)
 	})
 }
 
