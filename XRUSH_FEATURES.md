@@ -44,7 +44,7 @@ critical information.
 
 ### Manager
 
-The `Manager` (`manager.go`, ~1,658 lines) exposes 57 methods and 8 standalone functions (65 total) organized into
+The `Manager` (`manager.go`, ~1,706 lines) exposes 48 interface methods and 5 standalone functions (53 total) organized into
 functional groups:
 
 - **Compaction**: trigger compaction, query compaction state
