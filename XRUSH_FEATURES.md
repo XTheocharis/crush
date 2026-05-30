@@ -1917,7 +1917,7 @@ explicit `url` and `sha256` configuration per server.
 
 ### Fork-New Tools
 
-> **Tool surface**: The fork registers ~40 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (16 standard), `LSPToolsExtension.buildLSPTools()` (12 built; 11 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set.
+> **Tool surface**: The fork registers ~40 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (16 standard), `LSPToolsExtension.buildLSPTools()` (12 built; 11 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set. In total, the full tool surface across all registration mechanisms comprises 58 unique tool names.
 
 #### Standard Registry Tools (25)
 
@@ -1998,7 +1998,7 @@ auto-approve safe commands.
 
 ### User-Facing Description
 
-The fork provides ~40 registered tools: 23 inherited from upstream plus fork-new additions via xrushToolNames, LSPToolsExtension, and ExtraAgentTools. The
+The fork provides 58 unique tools across all registration mechanisms: ~40 via registerDefaults (23 inherited from upstream), plus fork-new additions via xrushToolNames (16), LSPToolsExtension (12), ExtraAgentTools (14), and extension-provided tools (e.g., swarm_execute). Tools with overlapping names (e.g., lsp_restart) are counted once. The
 enhanced edit subsystem introduces anchor-based edits (content-addressed hashes
 that survive minor file changes), fuzzy string matching for approximate edit
 targets, atomic multi-file batch editing with rollback, and a 12-stage
