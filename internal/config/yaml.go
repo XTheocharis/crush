@@ -327,7 +327,14 @@ func parseConfigData(path string, data []byte) ([]byte, error) {
 	if !json.Valid(data) {
 		return nil, fmt.Errorf("invalid JSON in config file %s", path)
 	}
-	return data, nil
+
+	// Process @include directives in JSON config.
+	processed, err := processJSONIncludes(data, filepath.Dir(path))
+	if err != nil {
+		return nil, fmt.Errorf("@include in %s: %w", path, err)
+	}
+
+	return processed, nil
 }
 
 // [XRUSH: end]

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -228,4 +229,123 @@ func FileAwareEvaluator(filePath string) ConditionEvaluator {
 			return false
 		}
 	}
+}
+
+// processJSONIncludes processes @include directives in JSON config data.
+// It walks the parsed JSON tree and replaces objects of the form
+// {"@include": "path/to/file.json"} with the contents of the referenced
+// file. Paths must be relative, contain no ".." components, and resolve
+// within baseDir.
+func processJSONIncludes(data []byte, baseDir string) ([]byte, error) {
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve base directory: %w", err)
+	}
+
+	var parsed any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	processed, err := processJSONIncludeValue(parsed, absBase, 0, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := json.Marshal(processed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal processed config: %w", err)
+	}
+	return result, nil
+}
+
+// processJSONIncludeValue recursively walks a parsed JSON value and replaces
+// {"@include": "path"} objects with the loaded file's contents.
+func processJSONIncludeValue(val any, baseDir string, depth int, seen map[string]bool) (any, error) {
+	if depth > maxIncludeDepth {
+		return nil, fmt.Errorf("@include exceeded maximum depth %d", maxIncludeDepth)
+	}
+	if seen == nil {
+		seen = make(map[string]bool)
+	}
+
+	switch v := val.(type) {
+	case map[string]any:
+		// Detect {"@include": "path"} with exactly one key.
+		if includePath, ok := v["@include"].(string); ok && len(v) == 1 {
+			if err := validateIncludePath(includePath); err != nil {
+				return nil, err
+			}
+
+			resolved := filepath.Join(baseDir, includePath)
+			absPath, err := filepath.Abs(resolved)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve include path %q: %w", includePath, err)
+			}
+
+			if !isSubPath(baseDir, absPath) {
+				return nil, fmt.Errorf("@include path %q escapes project directory", includePath)
+			}
+
+			if seen[absPath] {
+				return nil, fmt.Errorf("@include cycle detected: %q already included", absPath)
+			}
+			seen[absPath] = true
+
+			raw, err := os.ReadFile(absPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read included file %q: %w", absPath, err)
+			}
+
+			if !json.Valid(raw) {
+				return nil, fmt.Errorf("included file %q is not valid JSON", absPath)
+			}
+
+			var included any
+			if err := json.Unmarshal(raw, &included); err != nil {
+				return nil, fmt.Errorf("failed to parse included file %q: %w", absPath, err)
+			}
+
+			return processJSONIncludeValue(included, filepath.Dir(absPath), depth+1, seen)
+		}
+
+		// Recurse into each map value.
+		result := make(map[string]any, len(v))
+		for key, child := range v {
+			processed, err := processJSONIncludeValue(child, baseDir, depth, seen)
+			if err != nil {
+				return nil, fmt.Errorf(".%s: %w", key, err)
+			}
+			result[key] = processed
+		}
+		return result, nil
+
+	case []any:
+		result := make([]any, len(v))
+		for i, item := range v {
+			processed, err := processJSONIncludeValue(item, baseDir, depth, seen)
+			if err != nil {
+				return nil, fmt.Errorf("[%d]: %w", i, err)
+			}
+			result[i] = processed
+		}
+		return result, nil
+
+	default:
+		return val, nil
+	}
+}
+
+// validateIncludePath rejects absolute paths and paths containing "..".
+func validateIncludePath(p string) error {
+	if filepath.IsAbs(p) {
+		return fmt.Errorf("@include does not support absolute paths: %q", p)
+	}
+	// Check each path component for ".." to prevent directory traversal.
+	for _, part := range strings.Split(p, string(filepath.Separator)) {
+		if part == ".." {
+			return fmt.Errorf("@include path must not contain '..': %q", p)
+		}
+	}
+	return nil
 }
