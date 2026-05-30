@@ -639,8 +639,12 @@ Arduino, C, C++, C#, Chatito, Common Lisp, D, Dart, Emacs Lisp, Elixir,
 Elm, Fortran, Gleam, Go, Haskell, HCL, Java, JavaScript, Julia, Kotlin,
 Lua, MATLAB, OCaml, OCaml Interface, PHP, Properties, Python, QL, R,
 Racket, Ruby, Rust, Scala, Solidity, Swift, TypeScript, Udev, Zig.
-Approximately 28 have compiled CGO grammar imports; the remaining entries
-use query-only or basic parsing.
+28 languages have compiled CGO grammar packages (27 distinct imports; OCaml
+provides two registrations). 10 entries are query-only with no compiled
+grammar: Common Lisp, D, Emacs Lisp, Elm, Fortran, R, Racket, Solidity,
+Swift, Zig. Note: 6 additional languages (Elixir, Gleam, Kotlin, MATLAB,
+QL, Udev) have compiled grammars in `parser.go` but lack `grammar_module`
+entries in `languages.json`.
 
 ### Query Files
 
@@ -1037,6 +1041,7 @@ Multi-agent parallel coordination toward a shared goal.
 - Parallel subagent fan-out with shared caching
 - Configurable result synthesis strategy
 - Shared workspace for inter-agent context
+- `swarm_execute` tool provided by `SwarmExtension` in `internal/extensions/swarm_ext.go` (~189 lines) via `ext.ToolProvider`
 
 ### Teammate Pattern
 
@@ -1067,6 +1072,7 @@ Seven additional agent files not listed in the primary subsections above:
 - **File**: `agentconfig.go` (~108 lines) — Per-subagent configuration struct
 - **File**: `agent_tool.go` (~68 lines) — "agent" tool for spawning sub-agents (see §14)
 - **File**: `event.go` (~51 lines) — Telemetry event helpers
+- **File**: `orchestration_types.go` (~40 lines) — Shared types for Operator, Parallel, and Swarm orchestration patterns
 - **File**: `errors.go` (~10 lines) — Sentinel error definitions
 
 ### Structured Subagent
@@ -1675,7 +1681,7 @@ available on `$PATH`, falling back to `go vet` with a 60-second timeout.
 
 ## 12. Architect Planning
 
-**File**: `internal/agent/architect_plan.go` (131 lines)
+**File**: `internal/agent/architect_plan.go` (187 lines)
 
 Structured planning before code changes:
 
@@ -1981,7 +1987,7 @@ auto-approve safe commands.
 
 | Component | Lines | Description |
 |-----------|-------|-------------|
-| `edit_anchors` | 136 + 116 | FNV-1a hash-based content-addressed anchors for drift-tolerant edits |
+| `edit_anchors` | 193 + 116 | FNV-1a hash-based content-addressed anchors for drift-tolerant edits |
 | `anchor_state_manager` | 237 | Myers diff algorithm for tracking anchor hash map drift across file modifications; `CaptureState()` snapshots anchors per file, `DetectDrift()` compares current vs. captured state via Myers diff returning `AnchorDrift` entries, `Reconcile()` produces updated anchor map from drift; `AnchorDrift` struct with `DiffOp` enum (`Keep`/`Insert`/`Delete`) and line-number `Shift`; `//go:build treesitter` with stub fallback |
 | `edit_fuzzy` | 307 | Whitespace-normalized fuzzy string matching for approximate edit targets |
 | `rollback` | 220 | File snapshot and rollback on failure |
