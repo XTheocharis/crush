@@ -65,13 +65,74 @@ type DoomLoopResult struct {
 	Pattern     string
 }
 
+// InterventionMode controls how the doom loop detector intervenes when a loop
+// is detected.
+type InterventionMode string
+
+const (
+	// InterventionNone means the detector logs a message only — no tool
+	// restriction or forced switch.
+	InterventionNone InterventionMode = "none"
+	// InterventionWarn means soft loops trigger a warning with tool
+	// restriction. Medium loops are message-only.
+	InterventionWarn InterventionMode = "warn"
+	// InterventionFull means soft loops trigger warnings and medium loops
+	// trigger forced tool switches with rollback.
+	InterventionFull InterventionMode = "full"
+)
+
+// DefaultInterventionMode is the default intervention mode when the config
+// value is empty or unrecognised.
+const DefaultInterventionMode = InterventionWarn
+
+// ParseInterventionMode parses a config string into an InterventionMode.
+// Returns DefaultInterventionMode for empty or unrecognised values.
+func ParseInterventionMode(s string) InterventionMode {
+	switch InterventionMode(s) {
+	case InterventionNone, InterventionWarn, InterventionFull:
+		return InterventionMode(s)
+	default:
+		return DefaultInterventionMode
+	}
+}
+
+// InterventionAction describes the result of a doom loop intervention check.
+type InterventionAction struct {
+	// Type classifies the intervention.
+	Type InterventionType
+	// Message is the human-readable escalation message.
+	Message string
+	// RestrictedTool is the tool name to restrict (warn-level).
+	RestrictedTool string
+	// ForcedTool is the tool to force the agent to switch to.
+	ForcedTool string
+	// RollbackRequested indicates whether file changes should be rolled back.
+	RollbackRequested bool
+}
+
+// InterventionType classifies the action taken by the doom loop intervention
+// system.
+type InterventionType int
+
+const (
+	// InterventionTypeNone means no action is needed.
+	InterventionTypeNone InterventionType = iota
+	// InterventionTypeMessage means log a message only.
+	InterventionTypeMessage
+	// InterventionTypeWarn means warn + tool restriction.
+	InterventionTypeWarn
+	// InterventionTypeForceSwitch means forced tool switch + rollback.
+	InterventionTypeForceSwitch
+)
+
 // DoomLoopDetector extends the basic loop detection with pattern-aware doom
 // loop detection and escalation. It wraps the existing SHA-256 signature
 // approach and adds semantic similarity heuristics.
 type DoomLoopDetector struct {
-	Thresholds   DoomLoopThresholds
-	WindowSize   int
-	SimilarityFn func(a, b fantasy.StepResult) bool
+	Thresholds       DoomLoopThresholds
+	WindowSize       int
+	SimilarityFn     func(a, b fantasy.StepResult) bool
+	InterventionMode InterventionMode
 }
 
 // NewDoomLoopDetector creates a detector with the given thresholds and window
@@ -79,8 +140,9 @@ type DoomLoopDetector struct {
 // windowSize is 0, loopDetectionWindowSize is used.
 func NewDoomLoopDetector(thresholds DoomLoopThresholds, windowSize int) *DoomLoopDetector {
 	d := &DoomLoopDetector{
-		Thresholds: thresholds,
-		WindowSize: windowSize,
+		Thresholds:       thresholds,
+		WindowSize:       windowSize,
+		InterventionMode: DefaultInterventionMode,
 	}
 	if d.Thresholds == (DoomLoopThresholds{}) {
 		d.Thresholds = DefaultDoomLoopThresholds
@@ -90,6 +152,88 @@ func NewDoomLoopDetector(thresholds DoomLoopThresholds, windowSize int) *DoomLoo
 	}
 	d.SimilarityFn = SemanticSimilar
 	return d
+}
+
+// SetInterventionMode configures the intervention mode from a config string
+// (e.g. from Options.DoomLoopIntervention). Empty or unrecognised values
+// default to "warn".
+func (d *DoomLoopDetector) SetInterventionMode(mode string) {
+	d.InterventionMode = ParseInterventionMode(mode)
+}
+
+// ApplyIntervention checks for doom loops and returns the appropriate
+// intervention action based on the configured InterventionMode.
+func (d *DoomLoopDetector) ApplyIntervention(steps []fantasy.StepResult) InterventionAction {
+	result := d.Detect(steps)
+	if result.Level == EscalationNone || result.Level == EscalationHard {
+		return InterventionAction{Type: InterventionTypeNone}
+	}
+
+	switch result.Level {
+	case EscalationSoft:
+		return d.applySoftIntervention(result)
+	case EscalationMedium:
+		return d.applyMediumIntervention(result)
+	default:
+		return InterventionAction{Type: InterventionTypeNone}
+	}
+}
+
+func (d *DoomLoopDetector) applySoftIntervention(result DoomLoopResult) InterventionAction {
+	msg := escalationMessage(result.Level, result.Message)
+
+	if d.InterventionMode == InterventionNone {
+		return InterventionAction{
+			Type:    InterventionTypeMessage,
+			Message: msg,
+		}
+	}
+
+	return InterventionAction{
+		Type:           InterventionTypeWarn,
+		Message:        msg,
+		RestrictedTool: result.ToolName,
+	}
+}
+
+func (d *DoomLoopDetector) applyMediumIntervention(result DoomLoopResult) InterventionAction {
+	msg := escalationMessage(result.Level, result.Message)
+
+	if d.InterventionMode != InterventionFull {
+		return InterventionAction{
+			Type:    InterventionTypeMessage,
+			Message: msg,
+		}
+	}
+
+	forcedTool := "view"
+	if result.ToolName == "view" {
+		forcedTool = "grep"
+	}
+
+	return InterventionAction{
+		Type:              InterventionTypeForceSwitch,
+		Message:           msg,
+		ForcedTool:        forcedTool,
+		RollbackRequested: true,
+	}
+}
+
+func escalationMessage(level EscalationLevel, inner string) string {
+	switch level {
+	case EscalationSoft:
+		return fmt.Sprintf(
+			"<doom-loop-warning level=\"soft\">%s\nConsider switching to a completely different approach.</doom-loop-warning>",
+			inner,
+		)
+	case EscalationMedium:
+		return fmt.Sprintf(
+			"<doom-loop-warning level=\"medium\">%s\nYou MUST immediately try a different tool or strategy. Do not repeat the same operation.</doom-loop-warning>",
+			inner,
+		)
+	default:
+		return ""
+	}
 }
 
 // Detect analyzes recent steps and returns a DoomLoopResult. It first checks

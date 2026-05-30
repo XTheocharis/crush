@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/agent/tools"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
@@ -25,6 +26,12 @@ type AutofixExtension struct {
 	mu     sync.RWMutex
 	host   ext.HostContext
 	active bool
+
+	// loopEnabled caches the AutoFixLoopEnabled config value read during
+	// Init. When false (default), the extension runs the existing
+	// lint→format cycle. When true, the full lint→fix→test→reflect
+	// cycle is enabled (T26 will implement the full cycle).
+	loopEnabled bool
 }
 
 func (e *AutofixExtension) Name() string { return "autofix" }
@@ -32,7 +39,17 @@ func (e *AutofixExtension) Name() string { return "autofix" }
 func (e *AutofixExtension) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
 	e.active = true
+	e.loopEnabled = autofixLoopEnabled(host.Config())
 	return nil
+}
+
+// autofixLoopEnabled reads the AutoFixLoopEnabled flag from config. Returns
+// false when the config or Validation sub-config is nil.
+func autofixLoopEnabled(cfg *config.Config) bool {
+	if cfg == nil || cfg.Options == nil || cfg.Options.Validation == nil {
+		return false
+	}
+	return cfg.Options.Validation.AutoFixLoopEnabled
 }
 
 func (e *AutofixExtension) Shutdown(_ context.Context) error {

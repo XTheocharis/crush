@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/processor"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/charmbracelet/crush/internal/session"
 )
 
@@ -34,18 +35,20 @@ type HostContext interface {
 	DB() *sql.DB
 	Sessions() session.Service
 	Messages() message.Service
+	RewindService() rewind.Service
 }
 
 // HostDeps carries concrete service references from app.New().
 type HostDeps struct {
-	Sessions    session.Service
-	Messages    message.Service
-	LSP         *lsp.Manager
-	DB          *sql.DB
-	Config      *config.ConfigStore
-	Events      *pubsub.Broker[tea.Msg]
-	WorkingDir  string
-	Completer   TextCompleter
-	ToolDefsFn  func() []processor.ToolDef
-	SkillDefsFn func() []processor.SkillDef
+	Sessions      session.Service
+	Messages      message.Service
+	LSP           *lsp.Manager
+	DB            *sql.DB
+	Config        *config.ConfigStore
+	Events        *pubsub.Broker[tea.Msg]
+	WorkingDir    string
+	Completer     TextCompleter
+	ToolDefsFn    func() []processor.ToolDef
+	SkillDefsFn   func() []processor.SkillDef
+	RewindService rewind.Service
 }

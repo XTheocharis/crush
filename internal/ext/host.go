@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/processor"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/charmbracelet/crush/internal/session"
 )
 
@@ -273,6 +274,10 @@ func (hc *hostContext) Sessions() session.Service {
 
 func (hc *hostContext) Messages() message.Service {
 	return hc.deps.Messages
+}
+
+func (hc *hostContext) RewindService() rewind.Service {
+	return hc.deps.RewindService
 }
 
 func (hc *hostContext) ToolDefs() []processor.ToolDef {

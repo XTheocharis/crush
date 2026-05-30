@@ -18,17 +18,25 @@ import (
 
 func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, sessions session.Service, messages message.Service, store *config.ConfigStore) {
 	completer := newTextCompleter(store)
+
+	// [XRUSH: begin: create rewind service before bootstrap]
+	// Create the rewind service before bootstrap so that the RewindExtension
+	// receives the same instance via HostDeps instead of creating its own.
+	rewindSvc := initRewindService(q, sessions, store)
+	// [XRUSH: end]
+
 	extHost := ext.NewExtensionHost(ext.HostDeps{
-		Sessions:    sessions,
-		Messages:    messages,
-		LSP:         app.LSPManager,
-		DB:          conn,
-		Config:      store,
-		Events:      app.events,
-		WorkingDir:  store.WorkingDir(),
-		Completer:   completer,
-		ToolDefsFn:  newToolDefsProvider(store.WorkingDir()),
-		SkillDefsFn: newSkillDefsProvider(app.Skills),
+		Sessions:      sessions,
+		Messages:      messages,
+		LSP:           app.LSPManager,
+		DB:            conn,
+		Config:        store,
+		Events:        app.events,
+		WorkingDir:    store.WorkingDir(),
+		Completer:     completer,
+		ToolDefsFn:    newToolDefsProvider(store.WorkingDir()),
+		SkillDefsFn:   newSkillDefsProvider(app.Skills),
+		RewindService: rewindSvc,
 	})
 	if err := extHost.Bootstrap(ctx); err != nil {
 		slog.Warn("Extension host bootstrap failed", "error", err)
@@ -62,8 +70,8 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireRepoMapPromptInjection(extHost)
 	// [XRUSH: end]
 
-	// [XRUSH: begin: rewind service initialization]
-	app.RewindService = initRewindService(q, sessions, store)
+	// [XRUSH: begin: rewind service assignment]
+	app.RewindService = rewindSvc
 	// [XRUSH: end]
 
 	// [XRUSH: begin: wire message decorator]

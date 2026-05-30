@@ -1506,11 +1506,14 @@ itself; it answers the question "is the agent repeating itself?"
   text, error, and media result types via fantasy's `AsToolResultOutputType`
   type switch.
 
-**Relationship to DoomLoopDetector**: `hasRepeatedToolCalls` is the first-pass
-filter called by `DoomLoopDetector.Detect()` to decide whether further
-escalation analysis is needed. `getToolInteractionSignature` is also reused by
-`ProductiveLoopDetector` (see below) to capture the interaction pattern for
-groups that pass the output-diversity check.
+**Relationship to agent loop**: `hasRepeatedToolCalls` is called from the agent
+loop (in `agent.go`) as a stop condition — when the agent detects that recent
+steps contain repeated tool-call signatures beyond the configured threshold, it
+halts the loop. `DoomLoopDetector.Detect()` has its own independent detection
+chain using `detectExactPattern()` → `getToolInteractionSignature()`.
+`getToolInteractionSignature` is also reused by `ProductiveLoopDetector`
+(see below) to capture the interaction pattern for groups that pass the
+output-diversity check.
 
 ### Resource Limits
 

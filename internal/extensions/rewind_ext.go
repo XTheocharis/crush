@@ -2,13 +2,11 @@ package extensions
 
 import (
 	"context"
-	"database/sql"
 	"sync"
 
 	"charm.land/fantasy"
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
-	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/rewind"
 )
@@ -28,17 +26,7 @@ func (e *RewindExtension) Name() string { return "rewind" }
 
 func (e *RewindExtension) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
-
-	var sqlDB *sql.DB
-	if dbFn := host.DB(); dbFn != nil {
-		sqlDB = dbFn
-	}
-
-	if sqlDB != nil && host.Sessions() != nil {
-		q := db.New(sqlDB)
-		e.service = rewind.NewService(q, host.Sessions(), host.WorkingDir())
-	}
-
+	e.service = host.RewindService()
 	e.synTool = tools.NewSyntheticOutputTool()
 	e.active = true
 	return nil
@@ -81,10 +69,28 @@ func (e *RewindExtension) StepHooks() []ext.StepHook {
 		{
 			Name: "rewind-snapshot",
 			OnStepFinish: func(ctx context.Context, sessionID string, _ fantasy.StepResult) error {
-				return e.service.CaptureSnapshot(ctx, sessionID, 0)
+				seq := e.latestUserSeq(ctx, sessionID)
+				svc := e.service
+				if err := svc.CaptureSnapshot(ctx, sessionID, seq); err != nil {
+					return err
+				}
+				go func() { _ = svc.CleanupOldSnapshots(ctx, sessionID) }()
+				return nil
 			},
 		},
 	}
+}
+
+func (e *RewindExtension) latestUserSeq(ctx context.Context, sessionID string) int {
+	msgSvc := e.host.Messages()
+	if msgSvc == nil {
+		return 0
+	}
+	msgs, err := msgSvc.ListUserMessages(ctx, sessionID)
+	if err != nil || len(msgs) == 0 {
+		return 0
+	}
+	return msgs[0].Seq
 }
 
 var (

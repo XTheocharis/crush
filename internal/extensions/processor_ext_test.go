@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/processor"
+	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/stretchr/testify/require"
 )
@@ -35,6 +36,7 @@ func (m *mockHostContext) LSP() *lsp.Manager               { return nil }
 func (m *mockHostContext) DB() *sql.DB                     { return nil }
 func (m *mockHostContext) Sessions() session.Service       { return nil }
 func (m *mockHostContext) Messages() message.Service       { return nil }
+func (m *mockHostContext) RewindService() rewind.Service   { return nil }
 func (m *mockHostContext) ToolDefs() []processor.ToolDef   { return nil }
 func (m *mockHostContext) SkillDefs() []processor.SkillDef { return nil }
 

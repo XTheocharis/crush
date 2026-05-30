@@ -1018,3 +1018,110 @@ func TestXrushCheckDoomLoopEscalation(t *testing.T) {
 		}
 	})
 }
+
+// TestDoomLoopConfigConsumed verifies that the DoomLoopIntervention config
+// field is consumed by the DoomLoopDetector's ApplyIntervention method and
+// changes behaviour accordingly.
+func TestDoomLoopConfigConsumed(t *testing.T) {
+	t.Parallel()
+
+	// 3 identical "bash ls" calls + 7 diverse calls → soft escalation.
+	softSteps := make([]fantasy.StepResult, 10)
+	for i := range 3 {
+		softSteps[i] = makeToolStep("bash", `{"command":"ls"}`, "file1.go file2.go")
+	}
+	for i := 3; i < 10; i++ {
+		softSteps[i] = makeToolStep("read", fmt.Sprintf(`{"file":"%d.go"}`, i), fmt.Sprintf("data-%d", i))
+	}
+
+	// 5 identical "edit" calls + 5 diverse calls → medium escalation.
+	mediumSteps := make([]fantasy.StepResult, 10)
+	for i := range 5 {
+		mediumSteps[i] = makeToolStep("edit", `{"file":"auth.go"}`, "error: permission denied")
+	}
+	for i := 5; i < 10; i++ {
+		mediumSteps[i] = makeToolStep("read", fmt.Sprintf(`{"file":"%d.go"}`, i), fmt.Sprintf("content-%d", i))
+	}
+
+	t.Run("default_mode_is_warn", func(t *testing.T) {
+		t.Parallel()
+
+		d := NewDoomLoopDetector(DefaultDoomLoopThresholds, 10)
+		action := d.ApplyIntervention(softSteps)
+		require.Equal(t, InterventionTypeWarn, action.Type, "default mode should warn on soft loop")
+		require.NotEmpty(t, action.RestrictedTool)
+	})
+
+	t.Run("config_warn_soft_loop", func(t *testing.T) {
+		t.Parallel()
+
+		d := NewDoomLoopDetector(DefaultDoomLoopThresholds, 10)
+		d.SetInterventionMode("warn")
+		action := d.ApplyIntervention(softSteps)
+		require.Equal(t, InterventionTypeWarn, action.Type)
+		require.Equal(t, "bash", action.RestrictedTool)
+	})
+
+	t.Run("config_none_soft_loop_message_only", func(t *testing.T) {
+		t.Parallel()
+
+		d := NewDoomLoopDetector(DefaultDoomLoopThresholds, 10)
+		d.SetInterventionMode("none")
+		action := d.ApplyIntervention(softSteps)
+		require.Equal(t, InterventionTypeMessage, action.Type, "none mode should only message on soft loop")
+		require.Empty(t, action.RestrictedTool)
+	})
+
+	t.Run("config_full_medium_loop_force_switch", func(t *testing.T) {
+		t.Parallel()
+
+		d := NewDoomLoopDetector(DefaultDoomLoopThresholds, 10)
+		d.SetInterventionMode("full")
+		action := d.ApplyIntervention(mediumSteps)
+		require.Equal(t, InterventionTypeForceSwitch, action.Type, "full mode should force switch on medium loop")
+		require.True(t, action.RollbackRequested)
+		require.NotEmpty(t, action.ForcedTool)
+	})
+
+	t.Run("config_warn_medium_loop_message_only", func(t *testing.T) {
+		t.Parallel()
+
+		d := NewDoomLoopDetector(DefaultDoomLoopThresholds, 10)
+		d.SetInterventionMode("warn")
+		action := d.ApplyIntervention(mediumSteps)
+		require.Equal(t, InterventionTypeMessage, action.Type, "warn mode should only message on medium loop")
+		require.Empty(t, action.ForcedTool)
+	})
+
+	t.Run("empty_config_defaults_to_warn", func(t *testing.T) {
+		t.Parallel()
+
+		d := NewDoomLoopDetector(DefaultDoomLoopThresholds, 10)
+		d.SetInterventionMode("")
+		action := d.ApplyIntervention(softSteps)
+		require.Equal(t, InterventionTypeWarn, action.Type, "empty config should default to warn")
+	})
+
+	t.Run("parse_intervention_mode", func(t *testing.T) {
+		t.Parallel()
+
+		require.Equal(t, InterventionNone, ParseInterventionMode("none"))
+		require.Equal(t, InterventionWarn, ParseInterventionMode("warn"))
+		require.Equal(t, InterventionFull, ParseInterventionMode("full"))
+		require.Equal(t, DefaultInterventionMode, ParseInterventionMode(""))
+		require.Equal(t, DefaultInterventionMode, ParseInterventionMode("bogus"))
+	})
+
+	t.Run("no_loop_no_intervention", func(t *testing.T) {
+		t.Parallel()
+
+		d := NewDoomLoopDetector(DefaultDoomLoopThresholds, 10)
+		// Diverse steps — no loop.
+		diverseSteps := make([]fantasy.StepResult, 10)
+		for i := range diverseSteps {
+			diverseSteps[i] = makeToolStep("bash", fmt.Sprintf(`{"command":"cmd %d"}`, i), fmt.Sprintf("output %d", i))
+		}
+		action := d.ApplyIntervention(diverseSteps)
+		require.Equal(t, InterventionTypeNone, action.Type)
+	})
+}
