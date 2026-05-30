@@ -700,3 +700,44 @@ func TestCutoffFromConfig(t *testing.T) {
 	})
 	require.Greater(t, budget.SoftThreshold, defaultBudget.SoftThreshold, "0.8 cutoff should produce higher soft threshold than 0.6")
 }
+
+func TestLargeOutputThreshold(t *testing.T) {
+	t.Parallel()
+
+	t.Run("constant default is 50000", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, 50000, LargeOutputThreshold)
+	})
+
+	t.Run("setter accepts positive value", func(t *testing.T) {
+		t.Parallel()
+		queries, sqlDB := setupTestDB(t)
+		mgr := NewManager(queries, sqlDB)
+
+		mgr.SetLargeOutputThreshold(10000)
+		cm := mgr.(*compactionManager)
+		require.Equal(t, int64(10000), cm.largeOutputThreshold)
+	})
+
+	t.Run("setter ignores zero", func(t *testing.T) {
+		t.Parallel()
+		queries, sqlDB := setupTestDB(t)
+		mgr := NewManager(queries, sqlDB)
+
+		mgr.SetLargeOutputThreshold(25000)
+		mgr.SetLargeOutputThreshold(0)
+		cm := mgr.(*compactionManager)
+		require.Equal(t, int64(25000), cm.largeOutputThreshold)
+	})
+
+	t.Run("setter ignores negative", func(t *testing.T) {
+		t.Parallel()
+		queries, sqlDB := setupTestDB(t)
+		mgr := NewManager(queries, sqlDB)
+
+		mgr.SetLargeOutputThreshold(25000)
+		mgr.SetLargeOutputThreshold(-1)
+		cm := mgr.(*compactionManager)
+		require.Equal(t, int64(25000), cm.largeOutputThreshold)
+	})
+}

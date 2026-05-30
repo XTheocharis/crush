@@ -224,6 +224,32 @@ func wireLCMCutoffThreshold(store *config.ConfigStore) {
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireLCMLargeOutputThreshold]
+// wireLCMLargeOutputThreshold reads large_tool_output_token_threshold from the
+// LCM config and propagates it to the LCM manager. When zero or absent the
+// hardcoded default (50000) is used.
+func wireLCMLargeOutputThreshold(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	if cfg.Options == nil || cfg.Options.LCM == nil {
+		return
+	}
+	if cfg.Options.LCM.LargeToolOutputTokenThreshold <= 0 {
+		return
+	}
+
+	mgr.SetLargeOutputThreshold(int64(cfg.Options.LCM.LargeToolOutputTokenThreshold))
+	slog.Info("LCM large output threshold set from config",
+		"large_output_threshold", cfg.Options.LCM.LargeToolOutputTokenThreshold,
+	)
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wireNudgeConfig]
 // wireNudgeConfig reads nudge options from the LCM config and creates a
 // NudgeInjector wired into the LCM manager. When nudge config is nil, defaults

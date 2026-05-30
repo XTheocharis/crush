@@ -189,6 +189,32 @@ nudge types fire under different conditions:
 Force levels: **soft** (advisory, default) or **hard** (directive). Configured
 via the `nudge` block in LCM options.
 
+#### Context-Limit Double-Gate
+
+The context-limit nudge has an undocumented double-gate at
+`nudge.go:141-146` that requires **all three** conditions to be true
+simultaneously:
+
+1. `currentTokens >= MinContextLimit` (default 50 000)
+2. `currentTokens >= MaxContextLimit` (default 100 000)
+3. `tier == PressureHigh` (≥95 % of context window)
+
+Because condition (1) is always true whenever condition (2) is true
+(the defaults satisfy 100 k ≥ 50 k), the `MinContextLimit` check is
+effectively redundant with the current defaults. However, if
+`MinContextLimit` is raised above `MaxContextLimit`, it would block all
+context-limit nudges.
+
+#### Production Caller Uses `Inject`, Not `InjectFull`
+
+`CacheOptimizer` (`cache_optimizer.go:596`) calls `Inject`, which
+delegates to `InjectFull` with **zero** `TurnCount` and
+`IterationCount`. This means the turn and iteration nudge branches can
+never fire from the production code path — only the context-limit nudge
+is active in practice. For turn/iteration nudges to work, the caller
+would need to invoke `InjectFull` directly with populated `TurnCount`
+and `IterationCount` fields.
+
 ### Ghost Cues
 
 **Location**: `internal/lcm/cue.go` (188 lines)

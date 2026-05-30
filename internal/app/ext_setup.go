@@ -58,6 +58,10 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMCutoffThreshold(store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM large output threshold from config]
+	wireLCMLargeOutputThreshold(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire nudge config from LCM options]
 	wireNudgeConfig(store)
 	// [XRUSH: end]

@@ -68,6 +68,10 @@ type Manager interface {
 	// (default: 0.6). Values outside (0, 1] are ignored.
 	SetCutoffThreshold(threshold float64)
 
+	// SetLargeOutputThreshold sets the token count above which tool output
+	// is stored in LCM (default: 50000). Values <= 0 are ignored.
+	SetLargeOutputThreshold(threshold int64)
+
 	// SetModelOutputLimit sets the model's max output token limit for budget computation.
 	SetModelOutputLimit(limit int64)
 
@@ -238,6 +242,7 @@ type compactionManager struct {
 	defaultModelOutputLimit   int64
 	defaultSystemPromptTokens int64
 	defaultToolTokens         int64
+	largeOutputThreshold      int64
 
 	// Compressor strategy for LLM-based semantic compression during
 	// compaction. When set, the manager delegates to the Compressor for
@@ -499,6 +504,13 @@ func (m *compactionManager) SetCutoffThreshold(threshold float64) {
 		return
 	}
 	m.defaultCutoff = threshold
+}
+
+func (m *compactionManager) SetLargeOutputThreshold(threshold int64) {
+	if threshold <= 0 {
+		return
+	}
+	m.largeOutputThreshold = threshold
 }
 
 // SetModelOutputLimit sets the model's max output token limit for budget computation.
