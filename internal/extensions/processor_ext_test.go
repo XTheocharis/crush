@@ -46,15 +46,28 @@ func TestProcessorExtension_Name(t *testing.T) {
 	require.Equal(t, "processor", e.Name())
 }
 
-func TestProcessorExtension_InactiveWithoutConfig(t *testing.T) {
+func TestProcessorExtension_ActiveWithDefaults(t *testing.T) {
 	t.Parallel()
 	e := &ProcessorExtension{}
 	host := &mockHostContext{cfg: &config.Config{}}
 	err := e.Init(context.Background(), host)
 	require.NoError(t, err)
-	require.False(t, e.active)
-	require.Nil(t, e.StepHooks())
-	require.Nil(t, e.RunHooks())
+	require.True(t, e.active, "should be active with default processors")
+	require.NotNil(t, e.runner)
+	require.Len(t, e.runner.InputProcessors, 2, "token_limiter + pii_detector")
+	require.Len(t, e.runner.OutputProcessors, 1, "pii_detector (no completer so scrubber skipped)")
+
+	inputIDs := make([]string, len(e.runner.InputProcessors))
+	for i, p := range e.runner.InputProcessors {
+		inputIDs[i] = p.ID()
+	}
+	require.Contains(t, inputIDs, "token_limiter")
+	require.Contains(t, inputIDs, "pii_detector")
+
+	stepHooks := e.StepHooks()
+	require.Len(t, stepHooks, 2)
+	runHooks := e.RunHooks()
+	require.Len(t, runHooks, 1)
 }
 
 func TestProcessorExtension_InactiveWhenDisabled(t *testing.T) {
@@ -73,7 +86,7 @@ func TestProcessorExtension_InactiveWhenDisabled(t *testing.T) {
 	require.False(t, e.active)
 }
 
-func TestProcessorExtension_InactiveWithEmptyList(t *testing.T) {
+func TestProcessorExtension_ActiveWithEmptyList(t *testing.T) {
 	t.Parallel()
 	trueVal := true
 	e := &ProcessorExtension{}
@@ -87,7 +100,8 @@ func TestProcessorExtension_InactiveWithEmptyList(t *testing.T) {
 	}}
 	err := e.Init(context.Background(), host)
 	require.NoError(t, err)
-	require.False(t, e.active)
+	require.True(t, e.active, "empty list should fall back to default processors")
+	require.NotNil(t, e.runner)
 }
 
 func TestProcessorExtension_InactiveWithUnsafeProcessor(t *testing.T) {
@@ -507,4 +521,25 @@ func TestSkillsBeforeSkillSearchOrdering_OnlySkillSearch(t *testing.T) {
 	list := []string{"skill_search"}
 	enforceOrdering(list)
 	require.Equal(t, []string{"skill_search"}, list)
+}
+
+func TestDefaultProcessorsActive(t *testing.T) {
+	t.Parallel()
+	runner := buildProcessorRunner(nil, nil, nil, nil, nil)
+	require.NotNil(t, runner, "nil list should produce default processors")
+
+	var inputIDs, outputIDs []string
+	for _, p := range runner.InputProcessors {
+		inputIDs = append(inputIDs, p.ID())
+	}
+	for _, p := range runner.OutputProcessors {
+		outputIDs = append(outputIDs, p.ID())
+	}
+
+	require.Contains(t, inputIDs, "token_limiter", "token_limiter should be a default input processor")
+	require.Contains(t, inputIDs, "pii_detector", "pii_detector should be a default input processor")
+	require.Contains(t, outputIDs, "pii_detector", "pii_detector should be a default output processor")
+	// system_prompt_scrubber is skipped without completer, so only 2 input + 1 output.
+	require.Len(t, runner.InputProcessors, 2)
+	require.Len(t, runner.OutputProcessors, 1)
 }

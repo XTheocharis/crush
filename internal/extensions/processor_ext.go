@@ -35,6 +35,9 @@ var safeProcessorNames = map[string]struct{}{
 
 const defaultTokenBudget = 200000
 
+// defaultProcessors lists the processors that activate without any config.
+var defaultProcessors = []string{"token_limiter", "system_prompt_scrubber", "pii_detector"}
+
 type completerAdapter struct {
 	fn ext.TextCompleter
 }
@@ -59,20 +62,24 @@ func (e *ProcessorExtension) Init(_ context.Context, host ext.HostContext) error
 	e.host = host
 
 	cfg := host.Config()
-	if cfg.Options == nil || cfg.Options.Processors == nil || (cfg.Options.Processors.Enabled != nil && !*cfg.Options.Processors.Enabled) {
+	if cfg.Options != nil && cfg.Options.Processors != nil && cfg.Options.Processors.Enabled != nil && !*cfg.Options.Processors.Enabled {
 		e.active = false
 		return nil
 	}
 
+	var list []string
 	var procCfg config.ProcessorConfig
-	if cfg.Options.Processors.Config != nil {
-		procCfg = cfg.Options.Processors.Config
+	if cfg.Options != nil && cfg.Options.Processors != nil {
+		list = cfg.Options.Processors.List
+		if cfg.Options.Processors.Config != nil {
+			procCfg = cfg.Options.Processors.Config
+		}
 	}
 
 	toolDefs := host.ToolDefs()
 	skillDefs := host.SkillDefs()
 
-	runner := buildProcessorRunner(cfg.Options.Processors.List, procCfg, host.Completer(), toolDefs, skillDefs)
+	runner := buildProcessorRunner(list, procCfg, host.Completer(), toolDefs, skillDefs)
 	if runner == nil {
 		e.active = false
 		return nil
@@ -239,6 +246,9 @@ func buildProcessorRunner(
 	toolDefs []processor.ToolDef,
 	skillDefs []processor.SkillDef,
 ) *processor.ProcessorRunner {
+	if len(list) == 0 {
+		list = defaultProcessors
+	}
 	enforceOrdering(list)
 
 	var inputProcessors []processor.Processor
