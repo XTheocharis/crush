@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -230,4 +231,32 @@ func (p *ArchitectPlan) MarkAllFailed() int {
 		}
 	}
 	return count
+}
+
+// ErrApprovalRequired is returned when the approval gate blocks plan
+// execution because user approval has not been granted.
+var ErrApprovalRequired = fmt.Errorf("architect plan requires user approval before execution")
+
+// ApprovalGate blocks plan execution when both the config flag
+// (RequireApproval) and the plan's ApprovalRequired field are true.
+type ApprovalGate struct {
+	RequireApproval bool
+}
+
+// NewApprovalGate creates an ApprovalGate from the given config flag.
+func NewApprovalGate(configRequiresApproval bool) *ApprovalGate {
+	return &ApprovalGate{RequireApproval: configRequiresApproval}
+}
+
+// Check returns ErrApprovalRequired when both the config and plan require
+// approval. Returns nil when execution should continue.
+func (g *ApprovalGate) Check(plan ArchitectPlan) error {
+	if g.RequireApproval && plan.ApprovalRequired {
+		slog.Info("Approval gate blocking plan execution",
+			"steps", len(plan.Steps),
+			"rationale", plan.Rationale,
+		)
+		return ErrApprovalRequired
+	}
+	return nil
 }

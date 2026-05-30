@@ -367,8 +367,10 @@ func (c *coordinator) executeWithArchitectEditor(
 
 	// Check approval gate.
 	approvalRequired := cfg.Options.Architect != nil && cfg.Options.Architect.ApprovalRequired
-	if approvalRequired && plan.ApprovalRequired {
-		slog.Info("Architect plan requires approval", "steps", len(plan.Steps))
+	gate := NewApprovalGate(approvalRequired)
+	if err := gate.Check(plan); err != nil {
+		slog.Info("Architect plan blocked by approval gate", "steps", len(plan.Steps))
+		return nil, fmt.Errorf("plan approval gate: %w", err)
 	}
 
 	// Phase 2: Editor executes the plan.

@@ -528,17 +528,56 @@ func TestMarkAllMixedStates(t *testing.T) {
 		},
 	}
 
-	// MarkAllRunning only transitions pending steps.
 	runningCount := plan.MarkAllRunning()
 	require.Equal(t, 1, runningCount)
 	require.Equal(t, PlanStepCompleted, plan.Steps[0].Status)
 	require.Equal(t, PlanStepRunning, plan.Steps[1].Status)
 	require.Equal(t, PlanStepRunning, plan.Steps[2].Status)
 
-	// MarkAllCompleted only transitions running steps.
 	completedCount := plan.MarkAllCompleted()
 	require.Equal(t, 2, completedCount)
 	require.Equal(t, PlanStepCompleted, plan.Steps[0].Status)
 	require.Equal(t, PlanStepCompleted, plan.Steps[1].Status)
 	require.Equal(t, PlanStepCompleted, plan.Steps[2].Status)
+}
+
+func TestApprovalGate(t *testing.T) {
+	t.Parallel()
+
+	planRequiringApproval := ArchitectPlan{
+		Steps:            []PlanStep{{Description: "Complex refactor", Status: PlanStepPending}},
+		ApprovalRequired: true,
+	}
+	planNotRequiringApproval := ArchitectPlan{
+		Steps:            []PlanStep{{Description: "Simple change", Status: PlanStepPending}},
+		ApprovalRequired: false,
+	}
+
+	t.Run("blocks when config and plan both require approval", func(t *testing.T) {
+		t.Parallel()
+		gate := NewApprovalGate(true)
+		err := gate.Check(planRequiringApproval)
+		require.ErrorIs(t, err, ErrApprovalRequired)
+	})
+
+	t.Run("passes when config requires but plan does not", func(t *testing.T) {
+		t.Parallel()
+		gate := NewApprovalGate(true)
+		err := gate.Check(planNotRequiringApproval)
+		require.NoError(t, err)
+	})
+
+	t.Run("passes when config does not require approval", func(t *testing.T) {
+		t.Parallel()
+		gate := NewApprovalGate(false)
+		err := gate.Check(planRequiringApproval)
+		require.NoError(t, err)
+	})
+
+	t.Run("passes when neither requires approval", func(t *testing.T) {
+		t.Parallel()
+		gate := NewApprovalGate(false)
+		err := gate.Check(planNotRequiringApproval)
+		require.NoError(t, err)
+	})
 }
