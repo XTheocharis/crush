@@ -1792,7 +1792,7 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | `lsp_signature_help` | `textDocument/signatureHelp` |
 | `lsp_code_action` | `textDocument/codeAction` |
 
-> **Note**: `LSPToolsExtension.buildLSPTools()` creates 12 tools total. `lsp_restart` is also registered as an upstream tool (in `buildTools()`), so only 11 are fork-new additions.
+> **Note**: `LSPToolsExtension.buildLSPTools()` creates 17 tools total (12 original + 4 added in T16 + 3 added in T17). `lsp_restart` is also registered as an upstream tool (in `buildTools()`), so only 16 are fork-new additions.
 
 Supporting files: `lsp_symbolic.go` (shared symbol operations), `lsp_helpers.go`
 (shared utilities). These are not standalone tools but are used by the tools above.
@@ -1946,7 +1946,7 @@ explicit `url` and `sha256` configuration per server.
 
 ### Fork-New Tools
 
-> **Tool surface**: The fork registers ~40 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (16 standard), `LSPToolsExtension.buildLSPTools()` (12 built; 11 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set. In total, the full tool surface across all registration mechanisms comprises 58 unique tool names.
+> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (17 built; 16 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
 
 #### Standard Registry Tools (25)
 
@@ -2027,7 +2027,7 @@ auto-approve safe commands.
 
 ### User-Facing Description
 
-The fork provides 58 unique tools across all registration mechanisms: ~40 via registerDefaults (23 inherited from upstream), plus fork-new additions via xrushToolNames (16), LSPToolsExtension (12), ExtraAgentTools (14), and extension-provided tools (e.g., swarm_execute). Tools with overlapping names (e.g., lsp_restart) are counted once. The
+The fork provides 60 unique tools across all registration mechanisms: 56 via registerDefaults (23 inherited from upstream), plus 4 orchestration tools registered outside registerDefaults (`send_message`, `task_stop`, `team_create`, `team_delete`), and extension-provided tools (e.g., swarm_execute). Tools with overlapping names (e.g., lsp_restart) are counted once. The
 enhanced edit subsystem introduces anchor-based edits (content-addressed hashes
 that survive minor file changes), fuzzy string matching for approximate edit
 targets, atomic multi-file batch editing with rollback, and a 12-stage
@@ -2813,7 +2813,7 @@ side-by-side. Syntax highlighting in diffs and markdown is always active.
 | `RateLimiting` (180L) | Reactive 429-backoff rate limit coordination |
 | `ModelRouter` + `TierRouter` | Model routing with tier-based selection; `ModelRouter` deprecated, `TierRouter` active |
 | `ConfigLoader` (253L) | Dynamic agent configuration from `crush.json` |
-| `ToolSurface` (405L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; ~40 tools registered |
+| `ToolSurface` (414L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; 56 tools registered |
 | `Session` (349L) | Session management (`session/session.go`) |
 | `Completer` (88L) | Shell command completion |
 | `WrittenFiles` (79L) | Track files written during a session |
@@ -2838,7 +2838,7 @@ Several internal components support the fork's features:
   based on configurable tiers (e.g., route simple tasks to a cheaper model).
 - **ConfigLoader** dynamically loads agent configuration from `crush.json`,
   enabling per-agent settings.
-- **ToolSurface** maintains the tool registry (~40 built-in tools) and
+- **ToolSurface** maintains the tool registry (56 built-in tools) and
   generates surface descriptions for agent prompts. Each tool carries a
   6-bit capability bitmask (`FS`, `Network`, `CodeIntelligence`, `Execution`,
   `Memory`, `Observation`) and optional behavioral markers (`CanEdit`,
