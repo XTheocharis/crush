@@ -123,7 +123,7 @@ Twelve additional LCM files supporting the core modules:
 - **File**: `errors.go` (~41 lines) — Sentinel error definitions
 - **File**: `id.go` (~25 lines) — LCM identifier generation
 - **File**: `lcm_hooks.go` (~134 lines) — Hook registration for LCM lifecycle events
-- **File**: `pressure.go` (~364 lines) — Memory pressure detection and response
+- **File**: `pressure.go` (~364 lines) — Graduated pressure system with tiered compaction strategies (see [Graduated Pressure System](#graduated-pressure-system) below)
 - **File**: `retrieval.go` (~310 lines) — Retrieval orchestration logic
 - **File**: `retrieval_tools.go` (~312 lines) — Retrieval tool constructor implementations
 - **File**: `summarizer.go` (~243 lines) — LLM-powered conversation summarization
@@ -299,6 +299,78 @@ pluggable strategies:
 **ContextLimits** describes token budget constraints (max tokens, reserve,
 summary budget) with pressure threshold calculations. Used by the graduated
 pressure system to select strategies as the context window fills.
+
+### Graduated Pressure System
+
+**File**: `internal/lcm/pressure.go` (~364 lines) — Graduated pressure system
+with tiered compaction strategies.
+
+The graduated pressure system maps context-window usage to compaction
+strategies, progressively escalating compression aggressiveness as tokens
+approach the window limit.
+
+**PressureTier** (`int`): exactly 3 tiers via iota:
+
+| Tier | Value | Trigger | Strategies |
+|------|-------|---------|------------|
+| `PressureLow` | 0 | Minimal pressure (≥soft offset from limit) | `PurgeErrorsCompression` only |
+| `PressureMedium` | 1 | Moderate pressure (≥compact offset from limit) | `PurgeErrorsCompression` + `DedupCompression` + `MessageCompression` |
+| `PressureHigh` | 2 | Critical pressure (≥hard offset from limit) | All four strategies |
+
+**PressureConfig** struct holds configurable thresholds that map context usage
+to pressure tiers:
+
+- `UseAbsoluteOffsets` (default `true`): absolute token offsets from context
+  window limit vs legacy percentage mode
+- `SoftOffset` (default 20000): tokens reserved below limit where Low pressure
+  begins
+- `CompactOffset` (default 13000): tokens reserved below limit where Medium
+  begins
+- `HardOffset` (default 3000, enforced floor 1000): tokens reserved below
+  limit where High begins
+- Legacy percentage fallback: `LowThreshold=70`, `MediumThreshold=85`,
+  `HighThreshold=95`
+
+Key functions and methods:
+
+| Name | Description |
+|------|-------------|
+| `DefaultPressureConfig()` | Returns standard configuration with absolute offsets (SoftOffset=20000, CompactOffset=13000, HardOffset=3000) |
+| `CalculatePressure(currentTokens, contextWindow)` | Computes raw pressure percentage (0–100) |
+| `CalculatePressureTier(currentTokens, contextWindow, cfg)` | Determines tier from token usage, context window, and config; returns pressure % and tier |
+| `NewGraduatedPressureSystem(cfg, limits, llm)` | Constructs system with default tier→strategy mapping |
+| `StrategiesForTier(tier)` | Returns `[]CompressionStrategy` registered for the given tier |
+| `StrategiesForTokens(currentTokens)` | Returns strategies for the tier corresponding to the given token count |
+| `TierForTokens(currentTokens)` | Determines tier from raw token count using ContextLimits and PressureConfig |
+
+Four compression strategies (defined in `compressor.go`):
+
+- **RangeCompression** (ratio 0.3): extracts structured key-value ranges from
+  line-oriented output
+- **MessageCompression** (ratio 0.4): compresses messages preserving decisions
+  and technical details
+- **DedupCompression** (ratio 0.5): removes duplicate information, keeping most
+  complete occurrence
+- **PurgeErrorsCompression** (ratio 0.6): removes resolved error output while
+  retaining resolutions
+
+**PressureCompactionSelector** (Layer 5b, priority 5) implements
+`CompactionLayer`. It selects compaction sub-layers per tier rather than
+individual strategies: Low → micro-compaction only; Medium → session memory
+compaction + tool-output compression; High → full compaction + aggressive
+summarization. Sub-layers are supplied at construction time via
+`map[PressureTier][]CompactionLayer`.
+
+### Provider Token Override
+
+`SetActualPromptTokens(sessionID string, tokens int64)` on `compactionManager`
+records the provider-reported prompt token count after each LLM call, resetting
+the pending-item delta. This override is critical for accurate compaction
+triggering: provider-reported counts replace local estimates, ensuring pressure
+calculations reflect real token usage rather than approximations. Paired with
+`AddPendingItemTokens` (which accumulates estimated tokens for messages created
+since the last provider report), it maintains a live token estimate between
+LLM calls.
 
 ### Observation Strategy
 
@@ -987,8 +1059,9 @@ Deep-copied parent context for parallel branching.
 
 ### Additional Agent Files
 
-Six additional agent files not listed in the primary subsections above:
+Seven additional agent files not listed in the primary subsections above:
 
+- **File**: `coordinator_xrush_recovery.go` (~72 lines) — Coordinator recovery: post-compaction config restore and interrupted session recovery. `RestoreAgentConfig()` restores checkpointed agent configuration (skills, tools, agents) after LCM compaction events. `RecoverSession()` finishes interrupted thinking blocks or tool calls after mid-stream disruptions (network error, crash). These are recovery hooks ensuring the multi-agent system resumes cleanly after disruptions.
 - **File**: `usage_fallback.go` (~176 lines) — Token usage fallback heuristics when primary tracking is unavailable
 - **File**: `agentic_fetch_tool.go` (~206 lines) — Unregistered tool for LLM-powered URL content analysis (see §14)
 - **File**: `agentconfig.go` (~108 lines) — Per-subagent configuration struct
@@ -1094,9 +1167,84 @@ Runtime extension system with plugin-like capabilities.
 | `tool-surface` | Tool registry and surface descriptions |
 | `resource-limits` | Per-agent resource budgets |
 | `xrush-sessions` | Extended session management |
-| `prompt-assembly` | System prompt assembly |
+| `prompt-assembly` | System prompt assembly (see details below) |
 | `lsp-tools` | LSP-powered code intelligence tools |
-| `StepAdapter` | Step-level adapter for agent coordination |
+| `StepAdapter` | Step-level adapter for agent coordination *(Infrastructure Adapter — bridges `PrepareStepHook` message mutation with extension host lifecycle, not a feature extension)* |
+
+### Prompt Assembly (`prompt-assembly`) — Implementation Details
+
+**Location**: `internal/extensions/prompt_assembly_ext.go` (119 lines)
+
+`PromptAssemblyExtension` implements `ext.Extension` + `ext.PromptHookProvider`.
+It mutates the system prompt via a `PromptHook.SystemPromptModifier` callback
+before each LLM step, appending context blocks as structured XML.
+
+#### Thread Safety
+
+- Protected by `sync.RWMutex` — concurrent prompt assembly is safe.
+- `SetLCMExtension()` and `SetRepomapExtension()` acquire write locks for
+  dependency injection at startup.
+- `PromptHook()` acquires a read lock to check `active` status; the inner
+  `SystemPromptModifier` closure acquires a separate read lock.
+
+#### Bootstrap Wiring
+
+- `SetLCMExtension(lcm *LCMExtension)` — injects the LCM extension for
+  accessing context files and observation prompts.
+- `SetRepomapExtension(ext *RepomapExtension)` — injects the repo map
+  extension for cached map injection.
+- Both are called during `app.go` startup, before any agent runs.
+
+#### Context Injection Pipeline
+
+The `systemPromptModifier` appends XML blocks in order:
+
+1. **LCM context files** — `mgr.GetContextFiles()` returns named context
+   files (e.g., AGENTS.md content). Each is wrapped as:
+   ```xml
+   <context name="...">
+   file content here
+   </context>
+   ```
+
+2. **Observation prompt** — `mgr.GetObservationPrompt(ctx, sessionID, budget)`
+   returns formatted observation text (see below). Injected as:
+   ```xml
+   <context name="observations">
+   observation text here
+   </context>
+   ```
+   Budget controlled by `defaultObservationTokenBudget = 2000` (overridable
+   via config).
+
+3. **Repo map** — conditionally injected only when `repomap.isActive()` and
+   `repomap.ShouldInjectMap(ctx, sessionID)` are true. Uses
+   `LoadCachedMap(sessionID)` to retrieve the pre-generated map string and
+   its token count. Wrapped as:
+   ```xml
+   <context name="repo-map">
+   map content here
+   </context>
+   ```
+
+If no blocks are appended (no LCM, no observations, no repo map), the
+original system prompt is returned unmodified.
+
+#### Observation Prompt Injection
+
+**Source**: `internal/lcm/manager.go` → `GetObservationPrompt()`
+
+`GetObservationPrompt(ctx, sessionID, tokenBudget)` retrieves stored
+observations for the session and formats them within the token budget:
+
+- **Priority-based selection**: observations are pre-sorted by the database
+  query as `high → medium → low → info` (descending priority), then by
+  creation time ascending within each priority tier.
+- **Greedy token budget**: observations are included greedily until the
+  cumulative token cost exceeds `tokenBudget`. Lower-priority observations
+  are truncated first.
+- **Default budget**: `defaultObservationTokenBudget = 2000` tokens.
+- **Zero observations**: returns empty string (no XML block appended).
 
 ### Safety Features
 
@@ -1318,6 +1466,45 @@ Detects when the agent is stuck in repetitive tool-call cycles.
 - **Exact match**: SHA-256 hash of tool name + input + output
 - **Semantic match**: 80% argument overlap threshold
 
+### Loop Detection Module
+
+**File**: `internal/agent/loop_detection.go` (~92 lines) -- SHA-256 hash-based tool call repetition detection
+
+A supporting module that provides the low-level repetition-checking primitives
+used by the doom loop system. It does not implement escalation or recovery
+itself; it answers the question "is the agent repeating itself?"
+
+**Constants**:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `loopDetectionWindowSize` | 10 | Number of recent steps examined |
+| `loopDetectionMaxRepeats` | 5 | Repetition count that triggers a positive |
+
+**Functions**:
+
+- **`hasRepeatedToolCalls(steps []fantasy.StepResult, windowSize, maxRepeats int) bool`**
+  Examines the last `windowSize` steps and returns `true` when any single
+  tool-call signature appears more than `maxRepeats` times within that window.
+  Returns `false` when there are fewer than `windowSize` steps.
+
+- **`getToolInteractionSignature(content fantasy.ResponseContent) string`**
+  Computes a stable, hex-encoded SHA-256 hash for all tool interactions in a
+  single step. Pairs each tool call with its result (matched by `ToolCallID`)
+  and hashes the concatenation of tool name `\x00` input `\x00` output `\x00`.
+  Returns `""` for steps with no tool calls.
+
+- **`toolResultOutputString(result fantasy.ToolResultOutputContent) string`**
+  Converts a `ToolResultOutputContent` to a stable string for hashing. Handles
+  text, error, and media result types via fantasy's `AsToolResultOutputType`
+  type switch.
+
+**Relationship to DoomLoopDetector**: `hasRepeatedToolCalls` is the first-pass
+filter called by `DoomLoopDetector.Detect()` to decide whether further
+escalation analysis is needed. `getToolInteractionSignature` is also reused by
+`ProductiveLoopDetector` (see below) to capture the interaction pattern for
+groups that pass the output-diversity check.
+
 ### Resource Limits
 
 **File**: `internal/agent/resource_limits.go` (333 lines)
@@ -1334,10 +1521,47 @@ Per-subagent-type resource budgets:
 
 The doom loop detector recognizes when the agent is stuck repeating the same
 tool calls and intervenes with three escalation tiers: a warning at 3 repeats,
-a forced tool switch at 5 repeats, and agent termination at 7 repeats. A
-"productive loop" exception prevents false positives when the agent is making
-meaningful progress through repeated similar operations. Resource limits enforce
-per-subagent token, step, and duration budgets with soft warnings at 80%.
+a forced tool switch at 5 repeats, and agent termination at 7 repeats.
+
+**File**: `internal/agent/productive.go` (~150 lines) -- Productive-loop awareness layer
+
+A **"productive loop" exception** prevents false positives when the agent is
+making meaningful progress through repeated similar operations. The
+`ProductiveLoopDetector` wraps `DoomLoopDetector` and adds a second-pass
+output-diversity scan that can downgrade severity when repeated tool calls
+produce genuinely different results.
+
+**Key types**:
+
+- **`ProductiveLoopDetector`** -- Embeds `*DoomLoopDetector`. Its `Detect()`
+  method runs two passes: first the underlying doom-loop classification, then
+  an independent output-diversity scan over the same window.
+
+- **`ProductiveLoopResult`** -- Extends `DoomLoopResult` with two additional
+  fields: `IsProductive bool` and `UniqueOutputCnt int`.
+
+**Detection algorithm**:
+
+1. `Detect()` calls `DoomLoopDetector.Detect()` for the base classification.
+2. `groupByToolOutputHash()` groups the window's steps by tool name, tracking
+   unique output hashes via `hashOutput()` (SHA-256 of `toolName \x00 output`).
+   Note: unlike `getToolInteractionSignature` which hashes inputs, the
+   productive-loop check hashes **outputs** to measure result diversity.
+3. For any tool with `count >= SoftThreshold` **and** `uniqueOutputs / count >= 0.5`
+   (50% uniqueness threshold), the loop is considered productive.
+4. When productive and the doom classifier returned `EscalationHard`, severity
+   is **downgraded from hard to medium** (execution continues instead of
+   terminating). The message is replaced with a productive-loop advisory.
+   Soft and medium warnings still reach the LLM as normal.
+5. `groupByToolOutputHash()` also captures the first 16 characters of
+   `getToolInteractionSignature()` as `pattern` for result reporting.
+
+**DoomExtension integration**: `ProductiveLoopDetector` satisfies the
+`DoomExtension` interface (embedding `*DoomLoopDetector`), allowing it to be
+plugged into the doom-loop escalation pipeline alongside other extensions.
+
+Resource limits enforce per-subagent token, step, and duration budgets with
+soft warnings at 80%.
 
 ### Configuration
 
@@ -1682,11 +1906,13 @@ explicit `url` and `sha256` configuration per server.
 
 > **Note**: `web_search` and `web_fetch` are listed as upstream tools. Their fork-point classification could not be independently verified from the current codebase state.
 
+> **Overlap note**: 4 of these 23 tools — `multiedit`, `sourcegraph`, `list_mcp_resources`, `read_mcp_resource` — also appear in `xrushToolNames()` (the 16-entry fork-specific tool list). They are genuinely upstream tools (registered in `buildTools()`) but were included in the fork configuration list so that the fork's ordering and permission logic can reference them uniformly. They appear in exactly one place in each classification; the dual listing reflects their dual role as upstream implementations with fork-specific configuration.
+
 ### Fork-New Tools
 
 > **Tool surface**: The fork registers ~40 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (16 standard), `LSPToolsExtension.buildLSPTools()` (12 built; 11 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set.
 
-#### Standard Registry Tools (23)
+#### Standard Registry Tools (25)
 
 | Tool | Category | Description |
 |------|----------|-------------|
@@ -1729,8 +1955,17 @@ constructors and are not registered in the agent tool surface.
 
 `diag_cascade` (304L) provides diagnostic cascading: after editing a
 file, it runs LSP diagnostics and recursively checks importing files
-(up to depth 3). It has no `New*Tool` constructor and is called
-internally by edit/write tools.
+(up to `defaultCascadeMaxDepth=3`). The `CascadeResult` struct tracks
+`FilesChecked`, `FileDiagnostics` (map of file path → diagnostics),
+and `HasWarnings` (whether any severity ≥ Warning was found). The
+`findImporters()` method discovers importing files via LSP
+`textDocument/references` across all registered LSP clients (best-effort;
+querying at line 1, col 1 as a heuristic for the package declaration).
+`FormatCascadeResult()` produces `<diagnostic_cascade>` XML output
+listing file paths, severities, and messages. The helper
+`cascadeDiagnosticsConcurrent()` runs diagnostics for multiple files in
+parallel using `sync.WaitGroup`. It has no `New*Tool` constructor and is
+called internally by edit/write tools via `runDiagnosticCascade()`.
 
 `search` (219L) provides DuckDuckGo HTML scraping via
 `lite.duckduckgo.com` with randomized headers and rate limiting. It has
@@ -1747,11 +1982,12 @@ auto-approve safe commands.
 | Component | Lines | Description |
 |-----------|-------|-------------|
 | `edit_anchors` | 136 + 116 | FNV-1a hash-based content-addressed anchors for drift-tolerant edits |
+| `anchor_state_manager` | 237 | Myers diff algorithm for tracking anchor hash map drift across file modifications; `CaptureState()` snapshots anchors per file, `DetectDrift()` compares current vs. captured state via Myers diff returning `AnchorDrift` entries, `Reconcile()` produces updated anchor map from drift; `AnchorDrift` struct with `DiffOp` enum (`Keep`/`Insert`/`Delete`) and line-number `Shift`; `//go:build treesitter` with stub fallback |
 | `edit_fuzzy` | 307 | Whitespace-normalized fuzzy string matching for approximate edit targets |
 | `rollback` | 220 | File snapshot and rollback on failure |
 | `validate` | 832 | Tree-sitter syntax validation after edits |
 | `validation_handler` | 228 | Post-edit validation pipeline (orchestrates validate + rollback) |
-| `view_xrush` | — | Enhanced batch file reading with LCM context awareness |
+| `view_xrush` | 176 | Enhanced batch file reading with LCM context awareness. Runs up to `batchMaxWorkers=8` concurrent goroutines via semaphore, tracks cumulative output with `atomic.Int64` against a `batchDefaultTokenBudget=200_000` (×4 chars/token = 800K char budget). Performs path deduplication (`dedupBatchPaths`) to avoid redundant reads. Graceful budget exhaustion: once the atomic counter reaches the budget, in-flight and pending reads are skipped without error, returning whatever content was collected so far. Supports offset/limit slicing and line numbering. |
 
 ### User-Facing Description
 
@@ -2396,31 +2632,93 @@ actions, repo map refresh, and message routing.
 
 | File | Lines | Description | User-Visible Behavior |
 |------|-------|-------------|-----------------------|
+| `diffview/` | 1076 | Unified and split diff rendering | Fluent-builder component rendering inline or side-by-side diffs with syntax highlighting, line numbers, scroll, and file-name headers; used in tool permission denied flow |
+| `xchroma/chroma.go` | 52 | Custom Chroma syntax highlighting formatter | Wraps Chroma tokenization with Lip Gloss styling and forced background; used by DiffView and markdown renderer |
 | `model/compaction.go` | 69 | LCM compaction status pill | Animated "⟳ Compacting" pill with elapsed time in the status bar while LCM is compacting |
 | `model/xrush_routing.go` | 169 | Message routing and dialog actions | Routes rewind results, compaction events, edit-message results, and delayed clicks through the main update loop |
 | `model/repomap_xrush.go` | 42 | Repo map refresh from command palette | Triggers async repo map refresh; shows success or error notification |
 | `dialog/actions_xrush.go` | 29 | Extended action menu entries | Adds Rewind, Fork, Edit Message, and Message Options actions to the per-message action dialog |
 | `chat/user_xrush.go` | 6 | User message sequence accessor | Exposes message sequence number for rewind/fork/edit targeting on user messages |
 
+### DiffView
+
+**File**: `internal/ui/diffview/` (~1076 lines across 4 files) -- Unified and
+split diff rendering for TUI
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `diffview.go` | 823 | Core `DiffView` component: computes diffs via `go-udiff`, renders unified and split layouts with optional syntax highlighting, line numbers, file-name headers, and scroll |
+| `split.go` | 73 | `hunkToSplit` conversion: aligns before/after lines from a unified hunk into paired `splitLine` entries for side-by-side rendering |
+| `style.go` | 141 | `Style` and `LineStyle` structs with `DefaultDarkStyle()` / `DefaultLightStyle()` using charmtone palette colors for divider, equal, insert, delete, missing, and filename lines |
+| `util.go` | 39 | Small helpers: `pad`, `isOdd`, `btoi`, `ternary` |
+
+The `DiffView` component renders file differences in two layouts:
+
+- **Unified** (default): traditional `+`/`-` inline diff with before and after
+  line numbers side by side.
+- **Split** (side-by-side): two-column layout where deletions appear on the
+  left and insertions on the right, with missing lines rendered as empty
+  placeholders.
+
+Key features:
+
+- Configurable context lines (defaults to `udiff.DefaultContextLines`).
+- Optional line numbers with auto-detected digit width.
+- Infinite Y-scroll mode (`InfiniteYScroll`) or clamped scrolling that prevents
+  scrolling past the last line.
+- X-offset scrolling for long lines, with leading ellipsis indicator.
+- Configurable tab width (default 8).
+- File-name header displayed before the first hunk.
+- Syntax highlighting via `xchroma` with per-line caching (xxh3 hash key).
+- Truncation ellipsis when the viewport height is reached before all hunks are
+  displayed.
+
+The component uses a fluent builder API (`New().Before(...).After(...).Split()`)
+and computes lazily on `String()`. It is invoked from the tool permission
+denied flow to show the user a diff of what the tool intended to do.
+
+### xchroma Syntax Highlighting
+
+**File**: `internal/ui/xchroma/chroma.go` (~52 lines) -- Custom Chroma syntax
+highlighting formatter for TUI
+
+`xchroma.Formatter` returns a `chroma.FormatterFunc` that wraps the Chroma
+tokenization pipeline with Lip Gloss styling. For each token it resolves the
+Chroma style entry and maps bold, underline, italic, and foreground colour to
+the corresponding Lip Gloss style methods, while forcing a caller-specified
+background colour. An optional `processValue` callback allows post-processing of
+token values (e.g., ANSI escaping) before rendering.
+
+Used by `DiffView` for syntax-highlighted code lines and by the markdown
+renderer for fenced code blocks.
+
 ### User-Facing Description
 
-Four TUI enhancements are visible to users:
+Six TUI enhancements are visible to users:
 
-1. **Compaction pill**: When LCM starts compacting the conversation, an animated
+1. **DiffView**: When a tool call is denied, a diff view shows what the tool
+   intended to change. The view supports both unified (inline) and split
+   (side-by-side) layouts, toggled by `options.tui.diff_mode` in `crush.json`.
+
+2. **Syntax highlighting**: Code in diffs and markdown fenced blocks is
+   highlighted using a custom Chroma formatter (`xchroma`) that integrates with
+   Lip Gloss terminal styling.
+
+3. **Compaction pill**: When LCM starts compacting the conversation, an animated
    "⟳ Compacting" pill with elapsed seconds appears in the status bar. It
    disappears when compaction completes.
 
-2. **Message actions**: Press `o` on any user message to open an action menu
+4. **Message actions**: Press `o` on any user message to open an action menu
    with four new options: **Rewind** (restore code, conversation, or both to
    that point), **Fork** (branch the conversation from that message), **Edit
    Message** (load the original text into the editor for re-submission), and
    **Message Options** (opens a detailed dialog for the selected message).
 
-3. **Repo map refresh**: The command palette (Ctrl+P) includes a "Refresh
+5. **Repo map refresh**: The command palette (Ctrl+P) includes a "Refresh
    Repository Map" entry that triggers an asynchronous repo map rebuild and
    shows a success or error notification.
 
-4. **Delayed click handling**: Click handling on chat messages is deferred to
+6. **Delayed click handling**: Click handling on chat messages is deferred to
    ensure the correct message is targeted, improving reliability of click-based
    interactions in the message list.
 
@@ -2431,8 +2729,25 @@ compaction pill appears automatically when LCM is configured and compaction is
 running. Message actions require the rewind system to be enabled via
 `options.snapshot` in `crush.json`.
 
+The diff view layout can be configured via `options.tui.diff_mode` in
+`crush.json`:
+
+```jsonc
+{
+  "options": {
+    "tui": {
+      // "unified" (default) for inline +/- diff, "split" for side-by-side.
+      "diff_mode": "unified"
+    }
+  }
+}
+```
+
 ### Usage
 
+- **DiffView**: Automatically shown when a tool call is denied, displaying what
+  the tool intended to change. Set `"diff_mode": "split"` in
+  `options.tui` for side-by-side layout.
 - **Compaction pill**: Visible automatically in the status bar when LCM
   compaction is running. No user action needed.
 - **Message actions**: Navigate to a user message in the chat and press `o` to
@@ -2448,7 +2763,9 @@ The compaction pill is visible whenever LCM compaction is active (requires LCM
 to be configured). Message actions are available on all user messages when the
 rewind system is enabled (`options.snapshot` in `crush.json`). The repo map
 refresh command is always available in the command palette. If rewind is not
-enabled, pressing `o` shows a "Rewind is not available" warning.
+enabled, pressing `o` shows a "Rewind is not available" warning. The diff view
+defaults to unified layout; set `"diff_mode": "split"` to switch to
+side-by-side. Syntax highlighting in diffs and markdown is always active.
 
 ---
 
