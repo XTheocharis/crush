@@ -181,7 +181,6 @@ func setupTest(t *testing.T) {
 
 func TestNoOpHost(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	host := NewExtensionHost(HostDeps{})
 
@@ -195,7 +194,6 @@ func TestNoOpHost(t *testing.T) {
 
 func TestBootstrapLifecycle(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	tests := []struct {
 		name          string
@@ -234,8 +232,6 @@ func TestBootstrapLifecycle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			host := NewExtensionHost(HostDeps{})
 			for _, ext := range tt.extensions {
 				err := host.Register(ext)
@@ -273,7 +269,6 @@ func TestBootstrapLifecycle(t *testing.T) {
 
 func TestToolContribution(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
@@ -320,8 +315,6 @@ func TestToolContribution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			host := NewExtensionHost(HostDeps{})
 			for _, ext := range tt.extensions {
 				err := host.Register(ext)
@@ -365,7 +358,6 @@ func TestToolContribution(t *testing.T) {
 
 func TestRunHooks(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
@@ -449,8 +441,6 @@ func TestRunHooks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			host := NewExtensionHost(HostDeps{})
 			for _, ext := range tt.extensions {
 				err := host.Register(ext)
@@ -468,7 +458,6 @@ func TestRunHooks(t *testing.T) {
 
 func TestStepHooks(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
@@ -533,8 +522,6 @@ func TestStepHooks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			host := NewExtensionHost(HostDeps{})
 			for _, ext := range tt.extensions {
 				err := host.Register(ext)
@@ -552,7 +539,6 @@ func TestStepHooks(t *testing.T) {
 
 func TestPromptHook(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
@@ -605,8 +591,6 @@ func TestPromptHook(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			host := NewExtensionHost(HostDeps{})
 			for _, ext := range tt.extensions {
 				err := host.Register(ext)
@@ -636,7 +620,6 @@ func TestPromptHook(t *testing.T) {
 
 func TestPanicRecovery(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	tests := []struct {
 		name                 string
@@ -677,8 +660,6 @@ func TestPanicRecovery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			host := NewExtensionHost(HostDeps{})
 			for _, ext := range tt.extensions {
 				err := host.Register(ext)
@@ -712,7 +693,6 @@ func TestPanicRecovery(t *testing.T) {
 
 func TestDuplicateToolNames(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
@@ -737,7 +717,6 @@ func TestDuplicateToolNames(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
@@ -782,7 +761,6 @@ func TestConcurrentAccess(t *testing.T) {
 
 func TestShutdownOrder(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
@@ -820,7 +798,6 @@ func TestShutdownOrder(t *testing.T) {
 
 func TestRegisterAfterBootstrap(t *testing.T) {
 	setupTest(t)
-	t.Parallel()
 
 	ctx := context.Background()
 
