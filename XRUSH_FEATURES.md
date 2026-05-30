@@ -2195,10 +2195,10 @@ Full-stack implementation of message timing:
 
 | Column | Description |
 |--------|-------------|
-| `submitted_at` | When the user submitted the message |
-| `sent_to_llm_at` | When the message was sent to the LLM |
-| `first_token_at` | When the first streaming token arrived |
-| `completed_at` | When the response was fully received |
+| `submitted_at` | When the user submitted the message (Unix epoch seconds) |
+| `sent_to_llm_at` | When the message was sent to the LLM (Unix epoch seconds) |
+| `first_token_at` | When the first streaming token arrived (Unix epoch seconds) |
+| `completed_at` | When the response was fully received (Unix epoch seconds) |
 
 Wiring spans: DB migration -> `Message` struct -> agent integration -> UI display.
 
@@ -2230,18 +2230,20 @@ WHERE session_id = ?;
 
 ### Default Behavior
 
-Always on. The four timestamp columns default to `0` (not yet recorded) and
-are populated as the message progresses through each lifecycle stage. No
-configuration or opt-in required.
+Always on. The four timestamp columns are stored as `INTEGER` values in Unix
+epoch seconds (seconds since 1970-01-01 00:00:00 UTC). They default to `0`
+(not yet recorded) and are populated as the message progresses through each
+lifecycle stage. No configuration or opt-in required.
 
 ---
 
 ## 17. Database Migrations
 
-18 new migrations added by the fork:
+19 new migrations added by the fork:
 
 | Migration | Description |
 |-----------|-------------|
+| `20260127000000_add_read_files_table.sql` | Track files read per session |
 | `20260219000000_lcm.sql` | LCM initial schema (7 tables + 2 FTS5 + triggers) |
 | `20260222000000_repo_map.sql` | Repository map cache storage |
 | `20260501000000_xrush_dag.sql` | LCM infrastructure (reversible state, observation buffer, auto-memory) |
@@ -2267,8 +2269,7 @@ configuration or opt-in required.
 format with Up and Down support. Each migration adds schema for a specific
 fork feature: LCM tables, repository map cache, LCM infrastructure (reversible state, observation buffer, auto-memory),
 session observations, eval scorer storage, turn snapshots, message timestamps,
-and more. A `vacuum_guard` prevents SQLite VACUUM operations during active
-agent work.
+and more.
 
 ### Configuration
 
@@ -2286,8 +2287,6 @@ crush logs --tail 100 | grep -i migrat
 ### Default Behavior
 
 All migrations are applied automatically on every startup. There is no opt-out.
-The `vacuum_guard` component prevents VACUUM operations from running during
-active agent work to avoid data corruption.
 
 ---
 
@@ -2819,7 +2818,6 @@ side-by-side. Syntax highlighting in diffs and markdown is always active.
 | `WrittenFiles` (79L) | Track files written during a session |
 | Background shell timeout | Timeout for background shell command execution |
 | `regexp_modernc` / `ncruces` adapters | Pure-Go regexp adapters (no CGO dependency for regex) |
-| `vacuum_guard` | Prevent SQLite vacuum during active operations |
 | `app_xrush_wiring` (~400L) | Top-level fork wiring: `initRewindService`, `wireAgentConfigRestorer` — connects rewind, LCM, extensions, hooks, and explorer subsystems at app startup |
 | `filetracker/service_xrush_lcm.go` (~35L) | LCM integration for file tracking service |
 | `skills/tracker_xrush.go` (~17L) | Skill discovery tracking for xrush extensions |
@@ -2852,8 +2850,6 @@ Several internal components support the fork's features:
   cleanup and rollback.
 - **regexp adapters** (`regexp_modernc`, `ncruces`) provide pure-Go regexp
   support without requiring CGO.
-- **vacuum_guard** prevents SQLite VACUUM from running during active agent
-  operations.
 
 ### Configuration
 
