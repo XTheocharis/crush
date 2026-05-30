@@ -439,3 +439,106 @@ func TestArchitectTemplateIsNonEmpty(t *testing.T) {
 
 	require.NotEmpty(t, architectPromptTmpl, "architectPromptTmpl should be embedded at compile time")
 }
+
+func TestMarkStepTracking(t *testing.T) {
+	t.Parallel()
+
+	plan := ArchitectPlan{
+		Steps: []PlanStep{
+			{Description: "Step 1", Status: PlanStepPending},
+			{Description: "Step 2", Status: PlanStepPending},
+			{Description: "Step 3", Status: PlanStepPending},
+		},
+	}
+
+	// Transition: pending -> running for all steps.
+	runningCount := plan.MarkAllRunning()
+	require.Equal(t, 3, runningCount)
+	for i, step := range plan.Steps {
+		require.Equal(t, PlanStepRunning, step.Status, "step %d should be running", i)
+	}
+
+	// Calling MarkAllRunning again should not transition already-running steps.
+	runningCount = plan.MarkAllRunning()
+	require.Equal(t, 0, runningCount)
+
+	// Transition: running -> completed for all steps.
+	completedCount := plan.MarkAllCompleted()
+	require.Equal(t, 3, completedCount)
+	for i, step := range plan.Steps {
+		require.Equal(t, PlanStepCompleted, step.Status, "step %d should be completed", i)
+	}
+
+	// Calling MarkAllCompleted again should not transition already-completed steps.
+	completedCount = plan.MarkAllCompleted()
+	require.Equal(t, 0, completedCount)
+}
+
+func TestMarkStepTrackingFailedPath(t *testing.T) {
+	t.Parallel()
+
+	plan := ArchitectPlan{
+		Steps: []PlanStep{
+			{Description: "Step 1", Status: PlanStepPending},
+			{Description: "Step 2", Status: PlanStepPending},
+		},
+	}
+
+	plan.MarkAllRunning()
+	for i, step := range plan.Steps {
+		require.Equal(t, PlanStepRunning, step.Status, "step %d should be running", i)
+	}
+
+	failedCount := plan.MarkAllFailed()
+	require.Equal(t, 2, failedCount)
+	for i, step := range plan.Steps {
+		require.Equal(t, PlanStepFailed, step.Status, "step %d should be failed", i)
+	}
+
+	// MarkAllFailed is idempotent on non-running steps.
+	failedCount = plan.MarkAllFailed()
+	require.Equal(t, 0, failedCount)
+}
+
+func TestMarkStepSkipped(t *testing.T) {
+	t.Parallel()
+
+	plan := ArchitectPlan{
+		Steps: []PlanStep{
+			{Description: "Step 1", Status: PlanStepPending},
+		},
+	}
+
+	plan.MarkStepSkipped(0)
+	require.Equal(t, PlanStepSkipped, plan.Steps[0].Status)
+
+	// Out-of-bounds indices are no-ops.
+	plan.MarkStepSkipped(-1)
+	plan.MarkStepSkipped(99)
+}
+
+func TestMarkAllMixedStates(t *testing.T) {
+	t.Parallel()
+
+	plan := ArchitectPlan{
+		Steps: []PlanStep{
+			{Description: "Step 1", Status: PlanStepCompleted},
+			{Description: "Step 2", Status: PlanStepPending},
+			{Description: "Step 3", Status: PlanStepRunning},
+		},
+	}
+
+	// MarkAllRunning only transitions pending steps.
+	runningCount := plan.MarkAllRunning()
+	require.Equal(t, 1, runningCount)
+	require.Equal(t, PlanStepCompleted, plan.Steps[0].Status)
+	require.Equal(t, PlanStepRunning, plan.Steps[1].Status)
+	require.Equal(t, PlanStepRunning, plan.Steps[2].Status)
+
+	// MarkAllCompleted only transitions running steps.
+	completedCount := plan.MarkAllCompleted()
+	require.Equal(t, 2, completedCount)
+	require.Equal(t, PlanStepCompleted, plan.Steps[0].Status)
+	require.Equal(t, PlanStepCompleted, plan.Steps[1].Status)
+	require.Equal(t, PlanStepCompleted, plan.Steps[2].Status)
+}

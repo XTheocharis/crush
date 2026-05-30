@@ -372,6 +372,9 @@ func (c *coordinator) executeWithArchitectEditor(
 	}
 
 	// Phase 2: Editor executes the plan.
+	runningCount := plan.MarkAllRunning()
+	slog.Info("Plan steps marked as running", "count", runningCount)
+
 	editorPrompt := fmt.Sprintf(
 		"Execute the following plan step by step.\n\nPlan:\n%s\n\nOriginal task: %s",
 		plan.String(), prompt,
@@ -423,6 +426,14 @@ func (c *coordinator) executeWithArchitectEditor(
 		SubmittedAt:      time.Now().Unix(),
 	})
 	logTurnSkillUsage(sessionID, prompt, c.activeSkills, c.skillTracker, beforeLoaded)
+
+	if err != nil {
+		failedCount := plan.MarkAllFailed()
+		slog.Info("Plan steps marked as failed", "count", failedCount, "error", err)
+	} else {
+		completedCount := plan.MarkAllCompleted()
+		slog.Info("Plan steps marked as completed", "count", completedCount)
+	}
 
 	return result, err
 }

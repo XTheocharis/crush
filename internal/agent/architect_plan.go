@@ -185,3 +185,49 @@ func (p *ArchitectPlan) MarkStepFailed(idx int) {
 		p.Steps[idx].Status = PlanStepFailed
 	}
 }
+
+// MarkStepSkipped sets the step at the given 0-based index to skipped.
+func (p *ArchitectPlan) MarkStepSkipped(idx int) {
+	if idx >= 0 && idx < len(p.Steps) {
+		p.Steps[idx].Status = PlanStepSkipped
+	}
+}
+
+// MarkAllRunning sets all pending steps to running and returns the count of
+// steps transitioned.
+func (p *ArchitectPlan) MarkAllRunning() int {
+	count := 0
+	for i := range p.Steps {
+		if p.Steps[i].Status == PlanStepPending {
+			p.Steps[i].Status = PlanStepRunning
+			count++
+		}
+	}
+	return count
+}
+
+// MarkAllCompleted sets all running steps to completed and returns the count
+// of steps transitioned.
+func (p *ArchitectPlan) MarkAllCompleted() int {
+	count := 0
+	for i := range p.Steps {
+		if p.Steps[i].Status == PlanStepRunning {
+			p.Steps[i].Status = PlanStepCompleted
+			count++
+		}
+	}
+	return count
+}
+
+// MarkAllFailed sets all running steps to failed and returns the count of
+// steps transitioned.
+func (p *ArchitectPlan) MarkAllFailed() int {
+	count := 0
+	for i := range p.Steps {
+		if p.Steps[i].Status == PlanStepRunning {
+			p.Steps[i].Status = PlanStepFailed
+			count++
+		}
+	}
+	return count
+}
