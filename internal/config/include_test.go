@@ -205,7 +205,7 @@ func TestUnmatchedEndifError(t *testing.T) {
 	content := `<!-- endif -->`
 	_, err := ProcessIncludes(content, tmp, 0, nil, nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unexpected <!-- endif -->")
+	require.Contains(t, err.Error(), "unexpected endif")
 }
 
 func TestUnclosedConditionalError(t *testing.T) {
@@ -519,6 +519,140 @@ func TestIncludeProcessing(t *testing.T) {
 	})
 }
 
+func TestAtIfSyntax(t *testing.T) {
+	t.Run("EnvSet", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		t.Setenv("CRUSH_AT_TEST", "1")
+
+		content := `before
+@if env=CRUSH_AT_TEST
+visible
+@endif
+after`
+		result, err := ProcessIncludes(content, tmp, 0, nil, nil)
+		require.NoError(t, err)
+		require.Contains(t, result, "visible")
+		require.Contains(t, result, "before")
+		require.Contains(t, result, "after")
+	})
+
+	t.Run("EnvUnset", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		content := `before
+@if env=NONEXISTENT_AT_VAR
+hidden
+@endif
+after`
+		result, err := ProcessIncludes(content, tmp, 0, nil, nil)
+		require.NoError(t, err)
+		require.NotContains(t, result, "hidden")
+		require.Contains(t, result, "before")
+		require.Contains(t, result, "after")
+	})
+
+	t.Run("LanguageCondition", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		eval := FileAwareEvaluator(filepath.Join(tmp, "main.go"))
+		content := `@if language=go
+go code
+@endif
+@if language=py
+py code
+@endif`
+		result, err := ProcessIncludes(content, tmp, 0, nil, eval)
+		require.NoError(t, err)
+		require.Contains(t, result, "go code")
+		require.NotContains(t, result, "py code")
+	})
+
+	t.Run("NestedError", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		content := `@if env=FOO
+@if env=BAR
+nested
+@endif
+@endif`
+		_, err := ProcessIncludes(content, tmp, 0, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "nested conditional")
+	})
+
+	t.Run("UnmatchedEndif", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		_, err := ProcessIncludes(`@endif`, tmp, 0, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unexpected endif")
+	})
+
+	t.Run("UnclosedConditional", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		content := "@if env=FOO\nno end"
+		_, err := ProcessIncludes(content, tmp, 0, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unclosed conditional")
+	})
+
+	t.Run("MixedSyntax", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		t.Setenv("CRUSH_MIXED_TEST", "1")
+
+		content := `before
+<!-- if: env:CRUSH_MIXED_TEST -->
+html-style visible
+<!-- endif -->
+@if env=CRUSH_MIXED_TEST
+at-style visible
+@endif
+after`
+		result, err := ProcessIncludes(content, tmp, 0, nil, nil)
+		require.NoError(t, err)
+		require.Contains(t, result, "html-style visible")
+		require.Contains(t, result, "at-style visible")
+		require.Contains(t, result, "before")
+		require.Contains(t, result, "after")
+	})
+
+	t.Run("CrossSyntaxEndifError", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		t.Setenv("CRUSH_CROSS_TEST", "1")
+
+		content := `@if env=CRUSH_CROSS_TEST
+content
+<!-- endif -->`
+		result, err := ProcessIncludes(content, tmp, 0, nil, nil)
+		require.NoError(t, err)
+		require.Contains(t, result, "content")
+	})
+
+	t.Run("ConditionalWithInclude", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		snippet := filepath.Join(tmp, "snippet.md")
+		require.NoError(t, os.WriteFile(snippet, []byte("included content"), 0o644))
+
+		t.Setenv("CRUSH_AT_INCLUDE", "yes")
+
+		content := `header
+@if env=CRUSH_AT_INCLUDE
+@include snippet.md
+@endif
+footer`
+		result, err := ProcessIncludes(content, tmp, 0, nil, nil)
+		require.NoError(t, err)
+		require.Contains(t, result, "included content")
+		require.Contains(t, result, "header")
+		require.Contains(t, result, "footer")
+	})
+}
+
 func TestConditionalSyntax(t *testing.T) {
 	t.Run("EnvSet", func(t *testing.T) {
 		tmp := t.TempDir()
@@ -602,7 +736,7 @@ nested
 
 		_, err := ProcessIncludes(`<!-- endif -->`, tmp, 0, nil, nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "unexpected <!-- endif -->")
+	require.Contains(t, err.Error(), "unexpected endif")
 	})
 
 	t.Run("UnclosedConditional", func(t *testing.T) {

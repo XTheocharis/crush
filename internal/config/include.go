@@ -32,6 +32,12 @@ var conditionalPattern = regexp.MustCompile(`^<!--\s*if:\s*(\w+):(\S+)\s*-->$`)
 // endifPattern matches `<!-- endif -->` closing tags.
 var endifPattern = regexp.MustCompile(`^<!--\s*endif\s*-->$`)
 
+// atIfPattern matches `@if key=value` opening tags.
+var atIfPattern = regexp.MustCompile(`^@if\s+(\w+)=(\S+)\s*$`)
+
+// atEndifPattern matches `@endif` closing tags.
+var atEndifPattern = regexp.MustCompile(`^@endif\s*$`)
+
 // ConditionEvaluator is a function that evaluates whether a condition holds.
 // The key identifies the condition type (e.g. "language", "file", "env") and
 // value is the condition argument (e.g. "go", "*.go", "CI").
@@ -76,7 +82,17 @@ func ProcessIncludes(
 	conditionMet := false
 
 	for _, line := range lines {
-		if matches := conditionalPattern.FindStringSubmatch(strings.TrimSpace(line)); matches != nil {
+		trimmed := strings.TrimSpace(line)
+
+		if matches := conditionalPattern.FindStringSubmatch(trimmed); matches != nil {
+			if inConditional {
+				return "", fmt.Errorf("nested conditional blocks are not supported: %q", line)
+			}
+			inConditional = true
+			conditionMet = eval(matches[1], matches[2])
+			continue
+		}
+		if matches := atIfPattern.FindStringSubmatch(trimmed); matches != nil {
 			if inConditional {
 				return "", fmt.Errorf("nested conditional blocks are not supported: %q", line)
 			}
@@ -85,9 +101,9 @@ func ProcessIncludes(
 			continue
 		}
 
-		if endifPattern.MatchString(strings.TrimSpace(line)) {
+		if endifPattern.MatchString(trimmed) || atEndifPattern.MatchString(trimmed) {
 			if !inConditional {
-				return "", fmt.Errorf("unexpected <!-- endif --> without matching <!-- if: ... -->")
+				return "", fmt.Errorf("unexpected endif without matching if")
 			}
 			inConditional = false
 			conditionMet = false
@@ -144,7 +160,7 @@ func ProcessIncludes(
 	}
 
 	if inConditional {
-		return "", fmt.Errorf("unclosed conditional block: missing <!-- endif -->")
+		return "", fmt.Errorf("unclosed conditional block: missing endif")
 	}
 
 	result := out.String()
