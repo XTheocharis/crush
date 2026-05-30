@@ -321,23 +321,20 @@ func (c *coordinator) executeWithArchitectEditor(
 	}
 
 	// Phase 1: Architect generates a plan.
-	archPrompt := fmt.Sprintf(
-		"Analyze this task and produce a structured execution plan as JSON.\n\nTask: %s\n\n"+
-			"Respond with a JSON object containing:\n"+
-			"- \"steps\": array of {\"description\": string, \"target_files\": [string], \"dependencies\": [int], \"status\": \"pending\"}\n"+
-			"- \"rationale\": string explaining the approach\n"+
-			"- \"approval_required\": boolean",
-		prompt,
-	)
+	archAgent, err := c.buildArchitectAgent(ctx, archModel, archProviderCfg)
+	if err != nil {
+		slog.Warn("Failed to build architect agent, falling back to single model", "error", err)
+		return c.Run(ctx, sessionID, prompt, attachments...)
+	}
 
 	maxArchTokens := archCatwalk.DefaultMaxTokens
 	if archModelCfg.MaxTokens != 0 {
 		maxArchTokens = archModelCfg.MaxTokens
 	}
 
-	archResult, err := c.currentAgent.Run(ctx, SessionAgentCall{
+	archResult, err := archAgent.Run(ctx, SessionAgentCall{
 		SessionID:        sessionID,
-		Prompt:           archPrompt,
+		Prompt:           prompt,
 		Attachments:      attachments,
 		MaxOutputTokens:  maxArchTokens,
 		ProviderOptions:  getProviderOptions(archModel, archProviderCfg),
@@ -624,6 +621,44 @@ func mergeCallOptions(model Model, cfg config.ProviderConfig) (fantasy.ProviderO
 	freqPenalty := cmp.Or(model.ModelCfg.FrequencyPenalty, model.CatwalkCfg.Options.FrequencyPenalty)
 	presPenalty := cmp.Or(model.ModelCfg.PresencePenalty, model.CatwalkCfg.Options.PresencePenalty)
 	return modelOptions, temp, topP, topK, freqPenalty, presPenalty
+}
+
+func (c *coordinator) buildArchitectAgent(ctx context.Context, archModel Model, archProviderCfg config.ProviderConfig) (SessionAgent, error) {
+	archPrompt, err := architectPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	if err != nil {
+		return nil, fmt.Errorf("architect prompt: %w", err)
+	}
+
+	smallModel := c.currentAgent.Model()
+
+	agent := NewSessionAgent(SessionAgentOptions{
+		LargeModel:           archModel,
+		SmallModel:           smallModel,
+		SystemPromptPrefix:   archProviderCfg.SystemPromptPrefix,
+		IsSubAgent:           true,
+		DisableAutoSummarize: true,
+		Sessions:             c.sessions,
+		Messages:             c.messages,
+		Notify:               c.notify,
+	})
+
+	systemPrompt, err := archPrompt.Build(ctx, archModel.Model.Provider(), archModel.Model.Model(), c.cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build architect system prompt: %w", err)
+	}
+	agent.SetSystemPrompt(systemPrompt)
+
+	agentCfg, ok := c.cfg.Config().Agents[config.AgentCoder]
+	if !ok {
+		return nil, errCoderAgentNotConfigured
+	}
+	tools, err := c.buildTools(ctx, agentCfg, true)
+	if err != nil {
+		return nil, fmt.Errorf("build architect tools: %w", err)
+	}
+	agent.SetTools(tools)
+
+	return agent, nil
 }
 
 func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, agent config.Agent, isSubAgent bool) (SessionAgent, error) {

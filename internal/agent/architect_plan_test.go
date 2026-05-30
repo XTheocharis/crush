@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/crush/internal/agent/prompt"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/stretchr/testify/require"
 )
@@ -405,4 +407,35 @@ func TestArchitectPlanExecutionPrompt(t *testing.T) {
 	require.Contains(t, s, "Read coordinator.go")
 	require.Contains(t, s, "Add two-phase flow")
 	require.Contains(t, s, "Separate planning from execution")
+}
+
+func TestArchitectTemplateLoaded(t *testing.T) {
+	t.Parallel()
+
+	p, err := architectPrompt(
+		prompt.WithTimeFunc(func() time.Time {
+			return time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+		}),
+		prompt.WithPlatform("linux"),
+		prompt.WithWorkingDir("/tmp/test-project"),
+	)
+	require.NoError(t, err, "architectPrompt() should load the embedded template without error")
+
+	cfg := config.NewTestStore(&config.Config{
+		Options: &config.Options{},
+	})
+	built, err := p.Build(context.Background(), "test-provider", "test-model", cfg)
+	require.NoError(t, err, "Build() should execute the template without error")
+
+	require.Contains(t, built, "You are the Architect agent", "built prompt should contain architect role definition")
+	require.Contains(t, built, "output_schema", "built prompt should contain JSON output schema")
+	require.Contains(t, built, `"step"`, "built prompt should reference step field")
+	require.Contains(t, built, `/tmp/test-project`, "built prompt should contain working directory")
+	require.Contains(t, built, "6/1/2025", "built prompt should contain the injected date")
+}
+
+func TestArchitectTemplateIsNonEmpty(t *testing.T) {
+	t.Parallel()
+
+	require.NotEmpty(t, architectPromptTmpl, "architectPromptTmpl should be embedded at compile time")
 }
