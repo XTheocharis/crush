@@ -44,7 +44,7 @@ critical information.
 
 ### Manager
 
-The `Manager` (`manager.go`, 1,633 lines) exposes 57 methods and 8 standalone functions (65 total) organized into
+The `Manager` (`manager.go`, ~1,658 lines) exposes 57 methods and 8 standalone functions (65 total) organized into
 functional groups:
 
 - **Compaction**: trigger compaction, query compaction state
@@ -87,7 +87,7 @@ persist across compaction cycles.
 
 ### Memory System
 
-**Location**: `internal/lcm/memory.go` (792 lines)
+**Location**: `internal/lcm/memory.go` (~812 lines)
 
 - `AutoMemoryExtractor` fires every 5 turns
 - Extracts 4 memory types: **fact**, **decision**, **preference**, **lesson**
@@ -112,17 +112,36 @@ content on demand.
 - Recursive CTE expansion for nested compaction chains
 - SQLite-backed persistence
 
+### Supporting Files
+
+Twelve additional LCM files supporting the core modules:
+
+- **File**: `compactor.go` (~381 lines) — Core compaction orchestration
+- **File**: `config.go` (~53 lines) — LCM configuration types
+- **File**: `content_replacement_store.go` (~122 lines) — Content replacement persistence
+- **File**: `context.go` (~53 lines) — Context management helpers
+- **File**: `errors.go` (~41 lines) — Sentinel error definitions
+- **File**: `id.go` (~25 lines) — LCM identifier generation
+- **File**: `lcm_hooks.go` (~134 lines) — Hook registration for LCM lifecycle events
+- **File**: `pressure.go` (~364 lines) — Memory pressure detection and response
+- **File**: `retrieval.go` (~310 lines) — Retrieval orchestration logic
+- **File**: `retrieval_tools.go` (~312 lines) — Retrieval tool constructor implementations
+- **File**: `summarizer.go` (~243 lines) — LLM-powered conversation summarization
+- **File**: `types.go` (~171 lines) — Shared LCM type definitions
+
 ### LCM Agent Tools (14)
 
-3 LCM tools via tool factory (registered in standard tool surface):
+5 tools via toolFactory (registered in standard tool surface):
 
 | Tool | Description |
 |------|-------------|
 | `lcm_grep` | Search conversation history (full-text and regex) |
 | `lcm_describe` | Describe a file or summary by LCM identifier |
 | `lcm_expand` | Expand an LCM summary to its original messages |
+| `llm_map` | Apply LLM transformation per JSONL item (read-only) |
+| `agentic_map` | Run sub-agent on each JSONL item, write results |
 
-11 tools via `ExtraAgentTools()` (injected directly into the coder agent):
+9 retrieval tools via `ExtraAgentTools()` (injected directly into the coder agent):
 
 | Tool | Description |
 |------|-------------|
@@ -135,8 +154,6 @@ content on demand.
 | `lcm_file_search` | Search files referenced in conversation history |
 | `lcm_active_context` | Show currently active LCM context window |
 | `lcm_lineage` | Trace compaction lineage for a content block |
-| `llm_map` | Apply LLM transformation per JSONL item (read-only) |
-| `agentic_map` | Run sub-agent on each JSONL item, write results |
 
 ### Reflector
 
@@ -468,6 +485,16 @@ file type processes it:
 | `ParityFixtures` | — | Test fixture SHA-256 checksums for cross-platform consistency |
 | `ParityProvenance` | — | Track provenance of ported code for attribution |
 | `Conformance` | 300 | Validation of handler output format |
+
+### Additional Explorer Files
+
+Five additional files supporting the explorer subsystem:
+
+- **File**: `protocol_artifacts.go` (~399 lines) — Parity/conformance testing types for cross-platform consistency
+- **File**: `extensions.go` (~97 lines) — File type classification maps and extension-to-handler dispatch
+- **File**: `explorer_prompts.go` (~124 lines) — Agent exploration prompt templates for deep analysis tier
+- **File**: `runtime.go` (~104 lines) — Runtime dependency detection helpers
+- **File**: `tempfile.go` (~23 lines) — Temporary file management for explorer processing
 
 ### Language Stdlib Mappings
 
@@ -949,7 +976,7 @@ Persistent role-based agents that maintain state across tasks.
 
 ### Forked Agent
 
-**File**: `forked.go` (528 lines)
+**File**: `forked.go` (~523 lines)
 
 Deep-copied parent context for parallel branching.
 
@@ -957,6 +984,17 @@ Deep-copied parent context for parallel branching.
 - Mailbox messaging (buffered channel, capacity 64)
 - Turn-limited execution (max 10 turns)
 - Tool filtering (subset of parent tools)
+
+### Additional Agent Files
+
+Six additional agent files not listed in the primary subsections above:
+
+- **File**: `usage_fallback.go` (~176 lines) — Token usage fallback heuristics when primary tracking is unavailable
+- **File**: `agentic_fetch_tool.go` (~206 lines) — Unregistered tool for LLM-powered URL content analysis (see §14)
+- **File**: `agentconfig.go` (~108 lines) — Per-subagent configuration struct
+- **File**: `agent_tool.go` (~68 lines) — "agent" tool for spawning sub-agents (see §14)
+- **File**: `event.go` (~51 lines) — Telemetry event helpers
+- **File**: `errors.go` (~10 lines) — Sentinel error definitions
 
 ### Structured Subagent
 
@@ -1037,26 +1075,25 @@ Runtime extension system with plugin-like capabilities.
   - `StepHookProvider` -- Hooks per agent step
   - `PromptHookProvider` -- Hooks for prompt assembly
 
-### Registered Extensions (19)
+### Registered Extensions (18)
 
 | Extension | Description |
 |-----------|-------------|
 | `lcm` | Lossless Context Management integration |
 | `repomap` | Repository map generation and caching |
-| `treesitter` | Tree-sitter parsing and analysis |
+| `treesitter-validation` | Tree-sitter parsing and analysis |
 | `processor` | Processor pipeline management |
 | `orchestration` | Multi-agent coordination |
-| `model-router` | Model routing and tier selection |
+| `model_router` | Model routing and tier selection |
 | `autofix` | Auto-fix loop integration |
 | `diag-gate` | Diagnostic quality gates |
-| `edit` | Enhanced edit operations (anchors, fuzzy, batch) |
+| `edit-advanced` | Enhanced edit operations (anchors, fuzzy, batch) |
 | `rewind` | Turn-based snapshot and rewind |
-| `doom` | Doom loop detection |
+| `doom-loop` | Doom loop detection |
 | `swarm` | Swarm pattern coordination |
 | `tool-surface` | Tool registry and surface descriptions |
 | `resource-limits` | Per-agent resource budgets |
 | `xrush-sessions` | Extended session management |
-| `xrush` | Agent registry and mailbox for parent-child orchestration |
 | `prompt-assembly` | System prompt assembly |
 | `lsp-tools` | LSP-powered code intelligence tools |
 | `StepAdapter` | Step-level adapter for agent coordination |
@@ -1074,7 +1111,7 @@ Runtime extension system with plugin-like capabilities.
 
 ### User-Facing Description
 
-The Extension Host is Crush's internal plugin system. It manages 19
+The Extension Host is Crush's internal plugin system. It manages 18
 compile-time extensions that provide capabilities like LCM integration,
 repository maps, tree-sitter parsing, the processor pipeline, orchestration,
 model routing, auto-fix, rewind, doom loop detection, and LSP tools. Users
@@ -1103,7 +1140,7 @@ There are no CLI commands or keybindings for the host itself.
 
 ### Default Behavior
 
-All 19 extensions are registered at startup. Panic-safe execution ensures one
+All 18 extensions are registered at startup. Panic-safe execution ensures one
 crashing extension does not affect others. Tool deduplication prevents
 conflicts when multiple extensions register the same tool. Extensions follow
 an ordered `Bootstrap` / `Shutdown` lifecycle.
@@ -1479,7 +1516,7 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | Backoff | 70 | Exponential backoff for failed requests |
 | NamePath | 117 | Language name to server path resolution |
 
-### New LSP Agent Tools (11)
+### New LSP Agent Tools (11 fork-new; 12 total built)
 
 | Tool | LSP Method |
 |------|-----------|
@@ -1494,6 +1531,8 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | `lsp_formatting` | `textDocument/formatting` |
 | `lsp_signature_help` | `textDocument/signatureHelp` |
 | `lsp_code_action` | `textDocument/codeAction` |
+
+> **Note**: `LSPToolsExtension.buildLSPTools()` creates 12 tools total. `lsp_restart` is also registered as an upstream tool (in `buildTools()`), so only 11 are fork-new additions.
 
 Supporting files: `lsp_symbolic.go` (shared symbol operations), `lsp_helpers.go`
 (shared utilities). These are not standalone tools but are used by the tools above.
@@ -1641,7 +1680,11 @@ explicit `url` and `sha256` configuration per server.
 `web_search`, `web_fetch`, `job_output`, `job_kill`, `list_mcp_resources`,
 `read_mcp_resource`, `todos`, `crush_logs`, `crush_info`
 
-### Fork-New Tools (23 in standard registry + 9 LCM retrieval = 32)
+> **Note**: `web_search` and `web_fetch` are listed as upstream tools. Their fork-point classification could not be independently verified from the current codebase state.
+
+### Fork-New Tools
+
+> **Tool surface**: The fork registers ~40 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (16 standard), `LSPToolsExtension.buildLSPTools()` (12 built; 11 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set.
 
 #### Standard Registry Tools (23)
 
@@ -1670,8 +1713,10 @@ explicit `url` and `sha256` configuration per server.
 | `lsp_formatting` | LSP | Document formatting |
 | `lsp_signature_help` | LSP | Function signature help |
 | `lsp_code_action` | LSP | Code actions |
+| `agentic_fetch` | Network | LLM-powered URL content analysis and extraction |
+| `agent` | Orchestration | Spawn sub-agents for task delegation |
 
-#### LCM Retrieval Tools (9, via `ExtraAgentTools()`)
+#### LCM Retrieval Tools (9 retrieval, via `ExtraAgentTools()`)
 
 `lcm_bindle`, `lcm_ancestry`, `lcm_dolt`, `lcm_archive`, `lcm_sprig`,
 `lcm_time_query`, `lcm_file_search`, `lcm_active_context`, `lcm_lineage`
@@ -1710,7 +1755,7 @@ auto-approve safe commands.
 
 ### User-Facing Description
 
-The fork provides 55 total tools: 23 inherited from upstream plus 32 new. The
+The fork provides ~40 registered tools: 23 inherited from upstream plus fork-new additions via xrushToolNames, LSPToolsExtension, and ExtraAgentTools. The
 enhanced edit subsystem introduces anchor-based edits (content-addressed hashes
 that survive minor file changes), fuzzy string matching for approximate edit
 targets, atomic multi-file batch editing with rollback, and a 12-stage
@@ -2422,6 +2467,11 @@ enabled, pressing `o` shows a "Rewind is not available" warning.
 | Background shell timeout | Timeout for background shell command execution |
 | `regexp_modernc` / `ncruces` adapters | Pure-Go regexp adapters (no CGO dependency for regex) |
 | `vacuum_guard` | Prevent SQLite vacuum during active operations |
+| `app_xrush_wiring` (~400L) | Top-level fork wiring: `initRewindService`, `wireAgentConfigRestorer` — connects rewind, LCM, extensions, hooks, and explorer subsystems at app startup |
+| `filetracker/service_xrush_lcm.go` (~35L) | LCM integration for file tracking service |
+| `skills/tracker_xrush.go` (~17L) | Skill discovery tracking for xrush extensions |
+| `workspace/app_workspace_xrush.go` (~7L) | App workspace LCM integration hooks |
+| `workspace/client_workspace_xrush.go` (~10L) | Client workspace LCM integration hooks |
 
 ### User-Facing Description
 
