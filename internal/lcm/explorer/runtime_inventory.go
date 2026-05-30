@@ -385,7 +385,9 @@ func explorerIdent(explorer Explorer) string {
 	case *FallbackExplorer:
 		return "FallbackExplorer"
 	default:
-		return fmt.Sprintf("UnknownExplorer_%T", e)
+		name := fmt.Sprintf("%T", e)
+		name = strings.TrimPrefix(name, "*explorer.")
+		return name
 	}
 }
 
