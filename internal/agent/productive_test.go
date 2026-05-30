@@ -591,7 +591,7 @@ func TestProductivePatternSubagentReceivesAccumulatedContext(t *testing.T) {
 }
 
 type productiveCapturingFactory struct {
-	requests *[]StructuredRequest
+	requests  *[]StructuredRequest
 	callCount atomic.Int32
 }
 

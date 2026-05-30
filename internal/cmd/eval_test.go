@@ -312,8 +312,8 @@ type stubEvalScorer struct {
 	passed bool
 }
 
-func (s *stubEvalScorer) Name() string                { return s.name }
-func (s *stubEvalScorer) Type() eval.ScorerType       { return s.sType }
+func (s *stubEvalScorer) Name() string          { return s.name }
+func (s *stubEvalScorer) Type() eval.ScorerType { return s.sType }
 func (s *stubEvalScorer) Score(_ context.Context, _ *eval.EvalInput) (*eval.ScoreResult, error) {
 	return &eval.ScoreResult{Score: s.score, Passed: s.passed, Explanation: "stub"}, nil
 }

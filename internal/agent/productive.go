@@ -157,15 +157,15 @@ func hashOutput(toolName, output string) string {
 // ---------------------------------------------------------------------------
 
 const (
-	productiveCachePrefix   = "productive"
-	defaultMaxIterations    = 10
-	defaultStallThreshold   = 2 // consecutive identical fingerprints → stall
+	productiveCachePrefix = "productive"
+	defaultMaxIterations  = 10
+	defaultStallThreshold = 2 // consecutive identical fingerprints → stall
 )
 
 // ProductiveConfig configures a Productive orchestration loop.
 type ProductiveConfig struct {
 	MaxIterations   int
-	StallThreshold  int           // consecutive identical fingerprints → stall
+	StallThreshold  int // consecutive identical fingerprints → stall
 	CacheTTL        time.Duration
 	SubagentTools   []string
 	SubagentSteps   int
@@ -292,8 +292,8 @@ func (p *Productive) Run(ctx context.Context, parentSessionID, task string) Prod
 			MaxSteps: p.cfg.SubagentSteps,
 			Timeout:  p.cfg.SubagentTimeout,
 			Context: map[string]string{
-				"iteration":    fmt.Sprintf("%d/%d", i+1, p.cfg.maxIterations()),
-				"accumulated":  accumulated,
+				"iteration":   fmt.Sprintf("%d/%d", i+1, p.cfg.maxIterations()),
+				"accumulated": accumulated,
 			},
 		})
 		if err != nil {
@@ -304,7 +304,7 @@ func (p *Productive) Run(ctx context.Context, parentSessionID, task string) Prod
 			}
 		}
 
-			fp := fingerprintOutput(resp.Result)
+		fp := fingerprintOutput(resp.Result)
 		if fp == lastFingerprint && fp != "" {
 			stallCount++
 			if stallCount >= p.cfg.stallThreshold() {
