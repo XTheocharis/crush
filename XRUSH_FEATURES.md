@@ -64,20 +64,19 @@ functional groups:
 
 ### Compaction Pipeline
 
-11-stage pipeline processes conversation content in priority order:
+9-layer pipeline processes conversation content in priority order:
 
 | Priority | Layer | Description |
 |----------|-------|-------------|
-| P1 | `MicroCompactor` | Stores large content (tool output, file contents) in `lcm_large_files` table, replaces with compact references |
-| P1b | `TimeGapCompactor` | Detects time gaps >30s between consecutive messages; compacts older tool-result outputs in gap regions |
-| P2 | `DedupCompactionLayer` | SHA-256 deduplication of repeated content blocks |
-| P3 | `StaleEvictionLayer` | Evicts tool output older than 30 minutes |
-| P4 | `post-compact-cleaner` | Cleans orphaned references after compaction |
-| P5 | `AdjacentCondensationLayer` | Merges adjacent summary blocks into unified summaries |
-| P5b | `pressure-compaction-selector` | Selects compaction strategy based on memory pressure |
-| P6 | `SessionCompactor` | Compiles full session history into a structured memory document via LLM (Decisions, Patterns, Errors, Current State) |
-| P7 | `FullCompactor` | Deep LLM summarization of entire conversation; cache-safe with frozen replacement state |
-| P8–P9 | `CacheOptimizer` | P8: `compact-prompt-structure` (9-section prompt assembly); P9: `anthropic-cache-management` (Anthropic prefix cache optimization) |
+| 1 | `micro-compactor` | Stores large content (tool output, file contents) in `lcm_large_files` table, replaces with compact references |
+| 2 | `dedup-compaction` | SHA-256 deduplication of repeated content blocks |
+| 3 | `stale-eviction` | Evicts tool output older than 30 minutes |
+| 4 | `post-compact-cleanup` | Cleans orphaned references after compaction |
+| 5 | `adjacent-condensation` | Merges adjacent summary blocks into unified summaries |
+| 5 | `pressure-selector` | Selects compaction sub-layers based on memory pressure tier (see below) |
+| 15 | `time-gap-compactor` | Detects time gaps >30s between messages; compacts older tool-result outputs in gap regions |
+| 60 | `compact-prompt-structure` | 9-section prompt assembly optimization |
+| 70 | `anthropic-cache-management` | Anthropic prefix cache optimization |
 
 ### Observation System
 
@@ -354,12 +353,15 @@ Four compression strategies (defined in `compressor.go`):
 - **PurgeErrorsCompression** (ratio 0.6): removes resolved error output while
   retaining resolutions
 
-**PressureCompactionSelector** (Layer 5b, priority 5) implements
+**PressureCompactionSelector** (priority 5) implements
 `CompactionLayer`. It selects compaction sub-layers per tier rather than
-individual strategies: Low → micro-compaction only; Medium → session memory
-compaction + tool-output compression; High → full compaction + aggressive
-summarization. Sub-layers are supplied at construction time via
+individual strategies. Sub-layers are supplied at construction time via
 `map[PressureTier][]CompactionLayer`.
+
+Exact tier dispatch:
+- **Low pressure**: runs `micro-compactor` only
+- **Medium pressure**: runs `session-compactor` (priority 20) then `micro-compactor`
+- **High pressure**: runs `full-compactor` (priority 30) then `micro-compactor`
 
 ### Provider Token Override
 
@@ -403,8 +405,7 @@ Also documents `llm_map` and `agentic_map` tools when available.
 
 **Location**: `internal/lcm/time_gap_compactor.go` (269 lines)
 
-Sub-layer between MicroCompactor (P1) and DedupCompactionLayer (P2), using
-priority 1b (15). Detects time gaps >30 seconds between consecutive messages
+Sub-layer running after all priority-1–5 layers (priority 15). Detects time gaps >30 seconds between consecutive messages
 and compacts older tool-result messages that fall before those gaps. Targets
 scenarios where the user stepped away or context-switched, making prior tool
 outputs less relevant. Replaces compacted content with archive stubs at ~10%
@@ -414,7 +415,7 @@ of the original token cost.
 
 **Location**: `internal/lcm/session_compactor.go` (270 lines)
 
-Layer 2 compactor (priority 20) that compiles the full session history into a
+Sub-layer of PressureCompactionSelector (priority 20) that compiles the full session history into a
 structured memory document via the LLM. Produces markdown with four sections:
 **Decisions**, **Patterns**, **Errors**, **Current State**. Targets a token
 range of 10K–40K output tokens, scaled by context pressure. Only activates
@@ -425,7 +426,7 @@ entries to avoid exceeding LLM token limits.
 ### User-Facing Description
 
 LCM keeps conversations from running out of memory. As your chat grows toward
-the model's context window limit, LCM automatically triggers an 11-layer
+the model's context window limit, LCM automatically triggers a 9-layer
 compaction pipeline that summarizes older content, stores large outputs
 separately, and evicts stale data -- all without losing critical information.
 Extracted insights persist across sessions in `CRUSH.memory.md`. When
