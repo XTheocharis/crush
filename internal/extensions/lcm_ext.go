@@ -129,6 +129,10 @@ func (e *LCMExtension) StepHooks() []ext.StepHook {
 				if mgr == nil {
 					return nil
 				}
+				promptTokens := step.Usage.InputTokens + step.Usage.CacheReadTokens
+				if promptTokens > 0 {
+					mgr.SetActualPromptTokens(sessionID, promptTokens)
+				}
 				mgr.CompactIfOverHardLimit(ctx, sessionID)
 				return nil
 			},

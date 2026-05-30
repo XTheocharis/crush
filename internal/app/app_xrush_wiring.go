@@ -559,6 +559,104 @@ func wireMessageDecorator(app *App, q db.Querier, conn *sql.DB, store *config.Co
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireLCMModelOutputLimit]
+// wireLCMModelOutputLimit reads the large model's default_max_tokens from the
+// config and propagates it to the LCM manager so that budget calculations
+// reserve the correct output token quota. When the model reports 0 or is not
+// available, the default (0) is kept, which causes the budget formula to fall
+// back to min(20000, contextWindow*0.25).
+func wireLCMModelOutputLimit(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+
+	// Use the same model resolution as wireLCMContextWindow.
+	var catModel *catwalk.Model
+	if cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.SummarizerModel != nil {
+		catModel = cfg.GetModel(cfg.Options.LCM.SummarizerModel.Provider, cfg.Options.LCM.SummarizerModel.Model)
+	}
+	if catModel == nil {
+		catModel = cfg.LargeModel()
+	}
+
+	if catModel == nil || catModel.DefaultMaxTokens <= 0 {
+		slog.Info("LCM model output limit kept at default (model unavailable or reports 0)")
+		return
+	}
+
+	mgr.SetModelOutputLimit(catModel.DefaultMaxTokens)
+	slog.Info("LCM model output limit set from model metadata",
+		"model_output_limit", catModel.DefaultMaxTokens,
+	)
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireLCMOverheadTokens]
+// wireLCMOverheadTokens sets default system prompt and tool token overhead
+// estimates for budget computation. These defaults account for the system
+// prompt template, tool definitions, and per-step injection overhead.
+func wireLCMOverheadTokens(_ *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	const defaultSystemPromptTokens = 4000
+	const defaultToolTokens = 8000
+
+	mgr.SetOverheadTokens(defaultSystemPromptTokens, defaultToolTokens)
+	slog.Info("LCM overhead tokens set",
+		"system_prompt_tokens", defaultSystemPromptTokens,
+		"tool_tokens", defaultToolTokens,
+	)
+}
+
+// [XRUSH: end]
+
+// [XRUSH: begin: wireLCMProviderType]
+// wireLCMProviderType reads the provider type from the selected model config
+// and propagates it to the LCM manager for cache-optimization decisions (e.g.
+// "anthropic" enables Anthropic prefix caching heuristics).
+func wireLCMProviderType(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+
+	// Use the same model resolution as wireLCMLLMClient.
+	var selected *config.SelectedModel
+	if cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.SummarizerModel != nil {
+		selected = cfg.Options.LCM.SummarizerModel
+	}
+	if selected == nil {
+		if sm, ok := cfg.Models[config.SelectedModelTypeLarge]; ok {
+			selected = &sm
+		}
+	}
+
+	if selected == nil {
+		return
+	}
+
+	providerCfg, ok := cfg.Providers.Get(selected.Provider)
+	if !ok {
+		return
+	}
+
+	mgr.SetProviderType(string(providerCfg.Type))
+	slog.Info("LCM provider type set",
+		"provider_type", providerCfg.Type,
+	)
+}
+
+// [XRUSH: end]
+
 // [XRUSH: end]
 
 // Verify interface compliance.

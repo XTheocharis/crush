@@ -62,6 +62,18 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMLargeOutputThreshold(store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM model output limit from model metadata]
+	wireLCMModelOutputLimit(store)
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire LCM overhead tokens]
+	wireLCMOverheadTokens(store)
+	// [XRUSH: end]
+
+	// [XRUSH: begin: wire LCM provider type]
+	wireLCMProviderType(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire nudge config from LCM options]
 	wireNudgeConfig(store)
 	// [XRUSH: end]

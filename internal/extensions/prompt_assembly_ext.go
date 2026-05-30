@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -103,6 +104,11 @@ func (e *PromptAssemblyExtension) systemPromptModifier(ctx context.Context, sess
 		mapString, tokenCount := e.repomap.LoadCachedMap(sessionID)
 		if mapString != "" && tokenCount > 0 {
 			fmt.Fprintf(&sb, "\n\n<context name=%q>\n%s\n</context>\n", "repo-map", mapString)
+			if mgr := TheLCMExtension.Manager(); mgr != nil {
+				if err := mgr.SetRepoMapTokens(ctx, sessionID, int64(tokenCount)); err != nil {
+					slog.Debug("LCM SetRepoMapTokens failed", "session_id", sessionID, "error", err)
+				}
+			}
 		}
 	}
 
