@@ -887,7 +887,11 @@ func (m *compactionManager) CompactUntilUnderLimit(ctx context.Context, sessionI
 			Blocking:        true,
 			DurationMs:      time.Since(start).Milliseconds(),
 		}
-		runPostCompactHooks(ctx, m.postCompactRunner, sessionID, postOutput)
+		postHookDecision := runPostCompactHooks(ctx, m.postCompactRunner, sessionID, postOutput)
+		if postHookDecision.Halt {
+			slog.Warn("LCM: PostCompact hook requested halt after blocking compaction",
+				"session_id", sessionID, "reason", postHookDecision.Reason)
+		}
 		go m.PostCompactionHook(ctx, sessionID)
 	}
 	return err
@@ -936,7 +940,11 @@ func (m *compactionManager) Compact(ctx context.Context, sessionID string) error
 	})
 
 	postOutput := buildPostCompactOutput(sessionID, result, false, start)
-	runPostCompactHooks(ctx, m.postCompactRunner, sessionID, postOutput)
+	postHookDecision := runPostCompactHooks(ctx, m.postCompactRunner, sessionID, postOutput)
+	if postHookDecision.Halt {
+		slog.Warn("LCM: PostCompact hook requested halt",
+			"session_id", sessionID, "reason", postHookDecision.Reason)
+	}
 
 	go m.PostCompactionHook(ctx, sessionID)
 
@@ -1133,7 +1141,11 @@ func (m *compactionManager) ScheduleCompaction(ctx context.Context, sessionID st
 		})
 
 		postOutput := buildPostCompactOutput(sessionID, result, false, start)
-		runPostCompactHooks(detachedCtx, m.postCompactRunner, sessionID, postOutput)
+		postHookDecision := runPostCompactHooks(detachedCtx, m.postCompactRunner, sessionID, postOutput)
+		if postHookDecision.Halt {
+			slog.Warn("LCM: PostCompact hook requested halt after scheduled compaction",
+				"session_id", sessionID, "reason", postHookDecision.Reason)
+		}
 
 		go m.PostCompactionHook(ctx, sessionID)
 
@@ -1244,10 +1256,10 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 	})
 
 	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
-		ProviderType:   m.providerType,
-		Store:          m.store,
-		SessionID:      sessionID,
-		NudgeInjector:  m.nudgeInjector,
+		ProviderType:  m.providerType,
+		Store:         m.store,
+		SessionID:     sessionID,
+		NudgeInjector: m.nudgeInjector,
 	})
 
 	microCompactor.cfg.CacheAware = true

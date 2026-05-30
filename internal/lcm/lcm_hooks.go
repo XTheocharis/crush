@@ -83,31 +83,61 @@ func runPreCompactHooks(
 	return decision
 }
 
+// PostCompactHookDecision is the outcome of running PostCompact hooks.
+type PostCompactHookDecision struct {
+	Halt   bool   // Hook requested halting the turn.
+	Reason string // Deny or halt reason from the hook.
+}
+
 func runPostCompactHooks(
 	ctx context.Context,
 	runner *hooks.Runner,
 	sessionID string,
 	output CompactHookOutput,
-) {
+) PostCompactHookDecision {
 	if runner == nil {
-		return
+		return PostCompactHookDecision{}
 	}
 
 	inputJSON, err := json.Marshal(output)
 	if err != nil {
 		slog.Warn("LCM hooks: failed to marshal PostCompact input", "error", err)
-		return
+		return PostCompactHookDecision{}
 	}
 
 	result, err := runner.Run(ctx, hooks.EventPostCompact, sessionID, lcmCompactTool, string(inputJSON))
 	if err != nil {
 		slog.Warn("LCM hooks: PostCompact hook execution error", "error", err)
-		return
+		return PostCompactHookDecision{}
 	}
 
-	// XRUSH: log error before discarding
-	slog.Debug("LCM hooks: PostCompact result discarded", "result", result)
-	_ = result
+	decision := PostCompactHookDecision{
+		Reason: result.Reason,
+	}
+
+	if result.Decision == hooks.DecisionDeny || result.Halt {
+		decision.Halt = result.Halt
+		if result.Decision == hooks.DecisionDeny {
+			slog.Warn("LCM hooks: PostCompact hook denied",
+				"session_id", sessionID,
+				"reason", result.Reason,
+			)
+		}
+		if result.Halt {
+			slog.Warn("LCM hooks: PostCompact hook requested halt",
+				"session_id", sessionID,
+				"reason", result.Reason,
+			)
+		}
+		return decision
+	}
+
+	slog.Info("LCM hooks: PostCompact hook completed",
+		"session_id", sessionID,
+		"decision", result.Decision.String(),
+		"hook_count", result.HookCount,
+	)
+	return decision
 }
 
 func buildPreCompactInput(sessionID string, tokenCount int64, budget Budget, blocking bool) CompactHookInput {

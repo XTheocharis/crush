@@ -193,3 +193,50 @@ func TestLCMHooks_BuildPostCompactOutput(t *testing.T) {
 	require.False(t, output.Blocking)
 	require.GreaterOrEqual(t, output.DurationMs, int64(0))
 }
+
+func TestPostCompactHookResultsProcessed(t *testing.T) {
+	t.Parallel()
+
+	output := CompactHookOutput{
+		SessionID:       "s1",
+		Success:         true,
+		Rounds:          2,
+		TokenCountAfter: 30000,
+		Blocking:        false,
+		DurationMs:      150,
+	}
+
+	t.Run("nil runner returns empty decision", func(t *testing.T) {
+		t.Parallel()
+		decision := runPostCompactHooks(context.Background(), nil, "s1", output)
+		require.False(t, decision.Halt)
+		require.Empty(t, decision.Reason)
+	})
+
+	t.Run("allow decision returns clean decision", func(t *testing.T) {
+		t.Parallel()
+		runner := newHookRunner(t, hooks.EventPostCompact,
+			`echo '{"decision":"allow"}'`)
+		decision := runPostCompactHooks(context.Background(), runner, "s1", output)
+		require.False(t, decision.Halt)
+		require.Empty(t, decision.Reason)
+	})
+
+	t.Run("deny decision returns reason", func(t *testing.T) {
+		t.Parallel()
+		runner := newHookRunner(t, hooks.EventPostCompact,
+			`echo '{"decision":"deny","reason":"compaction exceeded policy threshold"}'`)
+		decision := runPostCompactHooks(context.Background(), runner, "s1", output)
+		require.False(t, decision.Halt)
+		require.Equal(t, "compaction exceeded policy threshold", decision.Reason)
+	})
+
+	t.Run("halt decision is surfaced", func(t *testing.T) {
+		t.Parallel()
+		runner := newHookRunner(t, hooks.EventPostCompact,
+			`echo '{"decision":"deny"}'; echo "critical post-condition failed" >&2; exit 49`)
+		decision := runPostCompactHooks(context.Background(), runner, "s1", output)
+		require.True(t, decision.Halt)
+		require.Equal(t, "critical post-condition failed", decision.Reason)
+	})
+}
