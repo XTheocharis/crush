@@ -1168,7 +1168,7 @@ characteristics. No configuration is required.
 
 ## 7. Extension Host
 
-**Location**: `internal/ext/host.go` (329 lines) + `internal/extensions/`
+**Location**: `internal/ext/host.go` (334 lines) + `internal/extensions/`
 
 Runtime extension system with plugin-like capabilities.
 
@@ -1340,6 +1340,8 @@ Turn-based snapshot and rewind for code and conversation state.
 |-----------|-------|-------------|
 | `Snapshotter` | 131 | Capture file and conversation state per turn |
 | `Rewinder` | 151 | Restore to any previous snapshot |
+| `Forker` | 87 | Fork conversation branches from any snapshot point |
+| `Editor` | 98 | Edit specific messages in conversation history |
 | `Service` | 39 | Composes Snapshotter + Rewinder + Forker + Editor |
 | Types | 117 | Shared types for snapshot and rewind operations |
 
