@@ -1,20 +1,29 @@
 package config
 
+import "sync"
+
 // extensionToolNames returns tool names contributed by extensions.
 // Set once during app bootstrap via RegisterExtensionToolNames.
 // Nil means no extensions have registered tool names.
-var extensionToolNames func() []string
+var (
+	extensionToolNames   func() []string
+	extensionToolNamesMu sync.Mutex
+)
 
 // RegisterExtensionToolNames sets the function that returns
 // extension-contributed tool names. Must be called once during
-// bootstrap, before SetupAgents(). Not safe for concurrent use.
+// bootstrap, before SetupAgents().
 func RegisterExtensionToolNames(fn func() []string) {
+	extensionToolNamesMu.Lock()
+	defer extensionToolNamesMu.Unlock()
 	extensionToolNames = fn
 }
 
 // ResetExtensionToolNamesForTesting clears the extension tool names
 // function for test isolation.
 func ResetExtensionToolNamesForTesting() {
+	extensionToolNamesMu.Lock()
+	defer extensionToolNamesMu.Unlock()
 	extensionToolNames = nil
 }
 
@@ -120,8 +129,11 @@ func allToolNames() []string {
 		"view",
 		"write",
 	}
-	if extensionToolNames != nil {
-		base = append(base, extensionToolNames()...)
+	extensionToolNamesMu.Lock()
+	ext := extensionToolNames
+	extensionToolNamesMu.Unlock()
+	if ext != nil {
+		base = append(base, ext()...)
 	}
 	return base
 }

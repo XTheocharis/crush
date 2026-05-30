@@ -159,6 +159,9 @@ func TestConfigFlags(t *testing.T) {
 			"glob": true, "grep": true, "ls": true,
 			"sourcegraph": true, "view": true,
 			"lcm_grep": true, "lcm_describe": true, "lcm_expand": true,
+			"lcm_bindle": true, "lcm_ancestry": true, "lcm_dolt": true,
+			"lcm_archive": true, "lcm_sprig": true, "lcm_time_query": true,
+			"lcm_file_search": true, "lcm_active_context": true, "lcm_lineage": true,
 		}
 		for _, tool := range task.AllowedTools {
 			require.True(t, readOnly[tool],
