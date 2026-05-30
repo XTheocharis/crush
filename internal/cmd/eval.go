@@ -39,7 +39,7 @@ var evalFlags struct {
 
 func init() {
 	evalCmd.Flags().StringVar(&evalFlags.dataset, "dataset", "", "Path to JSON dataset file")
-	evalCmd.Flags().StringVar(&evalFlags.scorer, "scorer", "", "Scorer to run (e.g., build, test, quality)")
+	evalCmd.Flags().StringVar(&evalFlags.scorer, "scorer", "", "Scorer to run (e.g., build_success, code_quality, correctness)")
 	evalCmd.Flags().StringVar(&evalFlags.input, "input", ".", "Input file or directory")
 	evalCmd.Flags().StringVar(&evalFlags.output, "output", "", "Output report file (JSON)")
 }
@@ -52,7 +52,11 @@ func runEval(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
 
 	if evalFlags.scorer == "" {
-		fmt.Fprintln(out, "Available scorers: build, test, quality")
+		fmt.Fprintln(out, "Available scorers:")
+		fmt.Fprintln(out, "  Judge:   code_quality, correctness, completeness, clarity, safety, performance,")
+		fmt.Fprintln(out, "           maintainability, error_handling, documentation, conventions, testing_quality, edge_cases")
+		fmt.Fprintln(out, "  Metric:  build_success, test_pass_rate, syntax_validity, lint_score, edit_distance,")
+		fmt.Fprintln(out, "           coverage_score, typecheck_score")
 		return nil
 	}
 
