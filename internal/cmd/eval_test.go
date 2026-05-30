@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/eval"
 	"github.com/charmbracelet/crush/internal/eval/scorers/judge"
 	"github.com/spf13/cobra"
@@ -69,6 +70,7 @@ func TestEvalCommand_WithScorer_Runs(t *testing.T) {
 	var b bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&b)
+	cmd.SetContext(context.Background())
 
 	evalFlags.dataset = datasetPath
 	evalFlags.scorer = "build"
@@ -98,6 +100,7 @@ func TestEvalCommand_WithScorerAndOutput_Runs(t *testing.T) {
 	var b bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&b)
+	cmd.SetContext(context.Background())
 
 	evalFlags.dataset = datasetPath
 	evalFlags.scorer = "test"
@@ -266,3 +269,51 @@ func (m *stubLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall
 
 func (m *stubLanguageModel) Provider() string { return "stub" }
 func (m *stubLanguageModel) Model() string    { return "stub" }
+
+func TestEvalRunnerStorage_NonNilWithDB(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	conn, err := db.Connect(ctx, tmpDir)
+	require.NoError(t, err, "db.Connect should succeed")
+	t.Cleanup(func() { db.Release(tmpDir) })
+
+	storage := eval.NewScorerStorage(conn)
+	require.NotNil(t, storage, "ScorerStorage should be non-nil when backed by real DB")
+
+	h := eval.NewEvalHarness()
+	h.Register(&stubEvalScorer{name: "accuracy", sType: eval.ScorerMetric, score: 0.9, passed: true})
+
+	runner := eval.NewEvalRunner(h, storage)
+	require.NotNil(t, runner, "EvalRunner should be non-nil")
+
+	dataset := &eval.Dataset{
+		Name: "storage-test",
+		Examples: []eval.DatasetExample{
+			{ID: "ex_1", Name: "test", Input: &eval.EvalInput{SessionID: "s1"}},
+		},
+	}
+
+	outcome, err := runner.Run(ctx, dataset, "/data/test.json", "")
+	require.NoError(t, err)
+	require.True(t, outcome.Passed)
+
+	run, err := storage.GetRun(ctx, outcome.RunID)
+	require.NoError(t, err)
+	require.Equal(t, "/data/test.json", run.DatasetPath)
+}
+
+type stubEvalScorer struct {
+	name   string
+	sType  eval.ScorerType
+	score  float64
+	passed bool
+}
+
+func (s *stubEvalScorer) Name() string                { return s.name }
+func (s *stubEvalScorer) Type() eval.ScorerType       { return s.sType }
+func (s *stubEvalScorer) Score(_ context.Context, _ *eval.EvalInput) (*eval.ScoreResult, error) {
+	return &eval.ScoreResult{Score: s.score, Passed: s.passed, Explanation: "stub"}, nil
+}

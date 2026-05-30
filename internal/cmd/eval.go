@@ -14,6 +14,7 @@ import (
 	"charm.land/fantasy/providers/openrouter"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/eval"
 	"github.com/charmbracelet/crush/internal/eval/scorers/judge"
 	"github.com/charmbracelet/crush/internal/eval/scorers/metric"
@@ -45,6 +46,9 @@ func init() {
 
 func runEval(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	out := cmd.OutOrStdout()
 
 	if evalFlags.scorer == "" {
@@ -66,13 +70,31 @@ func runEval(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("resolve working directory: %w", err)
 	}
 
-	llmClient := resolveJudgeLLMClient(cwd, "")
+	dataDir, _ := cmd.Flags().GetString("data-dir")
+	cfgStore, err := config.Init(cwd, dataDir, false)
+	if err != nil {
+		return fmt.Errorf("failed to initialize config: %w", err)
+	}
+	if dataDir == "" {
+		dataDir = cfgStore.Config().Options.DataDirectory
+	}
+
+	llmClient := resolveJudgeLLMClient(cwd, dataDir)
 	harness := eval.NewEvalHarness()
 	registerScorers(harness, llmClient)
 
+	var storage *eval.ScorerStorage
+	conn, connErr := db.Connect(ctx, dataDir)
+	if connErr != nil {
+		slog.Warn("Failed to connect eval storage, results will not be persisted", "error", connErr)
+	} else {
+		defer db.Release(dataDir)
+		storage = eval.NewScorerStorage(conn)
+	}
+
 	criteria := eval.NewScoringCriteria()
 	reportGen := eval.NewReportGenerator(criteria)
-	runner := eval.NewEvalRunner(harness, nil)
+	runner := eval.NewEvalRunner(harness, storage)
 
 	outcome, err := runner.Run(ctx, dataset, evalFlags.dataset, evalFlags.scorer)
 	if err != nil {
