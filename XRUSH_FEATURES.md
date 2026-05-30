@@ -140,7 +140,7 @@ Twelve additional LCM files supporting the core modules:
 | `llm_map` | Apply LLM transformation per JSONL item (read-only) |
 | `agentic_map` | Run sub-agent on each JSONL item, write results |
 
-9 retrieval tools via `ExtraAgentTools()` (injected directly into the coder agent):
+14 tools via `ExtraAgentTools()` (5 via toolFactory + 9 retrieval; injected directly into the coder agent):
 
 | Tool | Description |
 |------|-------------|
@@ -552,24 +552,24 @@ file type processes it:
 
 | Handler | File Types | Lines |
 |---------|-----------|-------|
-| `Archive` | zip, tar, gz, bz2, xz, 7z, rar | 955 |
+| `Archive` | zip, tar, gz, bz2, xz, 7z, rar, jar, war, ear, apk, tgz, lz, lz4, zst, cab, ar, deb, rpm, cpio, iso, dmg, wim, nupkg, crx, xpi, vsix | 955 |
 | `PDF` | .pdf | 160 |
-| `Image` | png, jpg, gif, svg, webp, bmp, ico | 441 |
-| `Executable` | ELF, Mach-O, PE binaries | 630 |
+| `Image` | png, jpg, gif, webp, bmp, ico, jpeg, tiff, tif, raw, cr2, nef, arw, dng, psd, heic, heif, avif | 441 |
+| `Executable` | ELF, Mach-O, PE binaries, wasm, class, pyc | 630 |
 | `Binary` | Generic binary files | 169 |
-| `JSON` | .json, .jsonl | (in Data) |
+| `JSON` | .json, .jsonc, .json5 | (in Data) |
 | `CSV` | .csv, .tsv | (in Data) |
 | `YAML` | .yaml, .yml | (in Data) |
 | `TOML` | .toml | (in Data) |
-| `INI` | .ini, .cfg, .conf | (in Data) |
-| `XML` | .xml, .xsl, .xsd | (in Data) |
-| `HTML` | .html, .htm | (in Data) |
-| `Markdown` | .md, .mdx | 420 |
-| `LaTeX` | .tex, .latex | 456 |
+| `INI` | .ini, .cfg, .conf, .config, .properties | (in Data) |
+| `XML` | .xml, .xsl, .xsd, .xslt, .svg | (in Data) |
+| `HTML` | .html, .htm, .xhtml | (in Data) |
+| `Markdown` | .md, .markdown | 420 |
+| `LaTeX` | .tex, .latex, .bst | 456 |
 | `SQLite` | .db, .sqlite, .sqlite3 | 627 |
-| `Logs` | .log, structured logs | 724 |
-| `TreeSitter` | 38 programming languages (see §3) | 161 |
-| `Shell` | .sh, .bash, .zsh | 80 |
+| `Logs` | .log, structured logs, .stderr, .stdout | 724 |
+| `TreeSitter` | 38 programming languages (see §3; conditionally registered via `WithTreeSitter` option) | 163 |
+| `Shell` | .sh, .bash, .zsh, .fish | 80 |
 | `Text` | .txt, .rst, .adoc | (fallback) |
 | `Fallback` | Any unrecognized file | (fallback) |
 
@@ -581,7 +581,7 @@ file type processes it:
 | `Heuristic` | 503 | File-type detection heuristics |
 | `FileStructure` | 167 | Directory structure analysis |
 | `LLMExplorer` | 165 | LLM-based fallback exploration |
-| `RuntimeInventory` | 692 | Runtime dependency detection |
+| `RuntimeInventory` | 694 | Runtime dependency detection |
 | `ParityFixtures` | — | Test fixture SHA-256 checksums for cross-platform consistency |
 | `ParityProvenance` | — | Track provenance of ported code for attribution |
 | `Conformance` | 300 | Validation of handler output format |
@@ -877,11 +877,11 @@ files in this package (entire package added by the fork).
 
 #### Pipeline Configuration
 
-The pipeline requires explicit `processors` configuration in `crush.json` to
-activate. When `ProcessorsOptions` is nil (the default), the entire processor
-extension is inactive. When configured, **3 processors are active by default**
-(`TokenLimiter`, `SystemPromptScrubber`, `PIIDetector` — marked with \* below).
-The remaining 7 configurable processors must be explicitly listed to activate.
+The pipeline is **active by default** with 3 processors
+(`TokenLimiter`, `SystemPromptScrubber`, `PIIDetector` — marked with \* below)
+when `ProcessorsOptions` is nil. Explicit `processors` configuration in
+`crush.json` can override defaults and activate the remaining 7 configurable
+processors.
 
 #### Configurable Processors (10)
 
@@ -1202,7 +1202,7 @@ Runtime extension system with plugin-like capabilities.
 | `xrush-sessions` | Extended session management |
 | `prompt-assembly` | System prompt assembly (see details below) |
 | `lsp-tools` | LSP-powered code intelligence tools |
-| `StepAdapter` | Step-level adapter for agent coordination *(Infrastructure Adapter — bridges `PrepareStepHook` message mutation with extension host lifecycle, not a feature extension)* |
+| `step-adapter` | Step-level adapter for agent coordination *(Infrastructure Adapter — bridges `PrepareStepHook` message mutation with extension host lifecycle, not a feature extension)* |
 
 ### Prompt Assembly (`prompt-assembly`) — Implementation Details
 
@@ -1953,7 +1953,7 @@ explicit `url` and `sha256` configuration per server.
 
 > **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built; 14 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
 
-#### Registered Agent Tools (28)
+#### Registered Agent Tools (32)
 
 | Tool | Category | Description |
 |------|----------|-------------|
@@ -1985,8 +1985,12 @@ explicit `url` and `sha256` configuration per server.
 | `lsp_workspace_symbols` | LSP | Workspace symbol search |
 | `agentic_fetch` | Network | LLM-powered URL content analysis and extraction |
 | `agent` | Orchestration | Spawn sub-agents for task delegation |
+| `multiedit` | Edit | Atomic multi-file edits with anchors |
+| `read_mcp_resource` | MCP | Read MCP server resources |
+| `sourcegraph` | Search | Sourcegraph code search integration |
+| `list_mcp_resources` | MCP | List available MCP server resources |
 
-#### LCM Retrieval Tools (9 retrieval, via `ExtraAgentTools()`)
+#### LCM Retrieval Tools (14 tools via `ExtraAgentTools()`: 5 via toolFactory + 9 retrieval)
 
 `lcm_bindle`, `lcm_ancestry`, `lcm_dolt`, `lcm_archive`, `lcm_sprig`,
 `lcm_time_query`, `lcm_file_search`, `lcm_active_context`, `lcm_lineage`
@@ -2085,7 +2089,7 @@ tools from the agent's surface.
 
 ### Include Directives
 
-**File**: `internal/config/include.go` (351 lines)
+**File**: `internal/config/include.go` (367 lines)
 
 - `@include` directives in `crush.json` for modular configuration
 - Conditional blocks (environment-based)
@@ -2108,7 +2112,7 @@ tools from the agent's surface.
 | Hyper Provider | 124 | Charm Hyper provider auto-configuration: fetches provider metadata from `/api/v1/provider`, ETag-based caching, embedded fallback, `sync.Once` init |
 | Atomic Writes | 38 | Safe config file writes via temp-file + rename, preventing concurrent readers from seeing partial writes |
 | Xrush Types | 61 | Fork-specific config types: `RoutingTier`, `ArchitectOptions`, `ValidationOptions`, `ProcessorsOptions`, `SnapshotConfig`, `AutoDownloadConfig` |
-| Xrush Tools Registry | 129 | Fork-only tool name registry (`xrushToolNames`, `xrushReadOnlyTools`) merged into sorted `allToolNames` alongside extension-contributed tools |
+| Xrush Tools Registry | 141 | Fork-only tool name registry (`xrushToolNames`, `xrushReadOnlyTools`) merged into sorted `allToolNames` alongside extension-contributed tools |
 | Migration | 44 | Config schema migration |
 | Walking | 134 | Walk config tree for validation |
 | YAML | 352 | YAML config file support |
