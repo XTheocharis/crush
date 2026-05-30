@@ -24,7 +24,7 @@ memory.go, cue.go. Tools: retrieval_tools.go. Analysis: explorer/.
 - **Post-hooks**: PostCompactionHook, PostTurnHook (auto-memory)
 - **Token tracking**: SetActualPromptTokens, AddPendingItemTokens
 
-## Compaction Pipeline (8 layers)
+## Compaction Pipeline (9 layers)
 
 Phase 1: layers in priority order. Phase 2: LLM summarization fallback
 if still over soft threshold.
@@ -34,8 +34,12 @@ if still over soft threshold.
 3. StaleEvictionLayer -- evict stale tool outputs
 4. PostCompactCleaner -- restore preserved context
 5. AdjacentCondensationLayer -- merge adjacent summaries
-5b. PressureCompactionSelector -- Low/Medium/High pressure tiers
-6-7. CacheOptimizer -- memory pruning, emergency truncation
+5. PressureCompactionSelector -- dispatches sub-layers per tier (Low/Medium/High)
+15. TimeGapCompactor -- compact older outputs in time-gap regions
+60–70. CacheOptimizer -- prompt structure optimization + Anthropic cache management
+
+SessionCompactor (20) and FullCompactor (30) are sub-layers of
+PressureCompactionSelector, not top-level entries.
 
 ## Budget Formula
 

@@ -87,7 +87,7 @@ internal/
     manager.go                     Manager: LCM lifecycle, 37 methods
     compactor.go                   Core compaction logic
     store.go                       LCM persistent storage (SQLite-backed)
-    compaction_layers.go           8-layer compaction pipeline
+    compaction_layers.go           9-layer compaction pipeline
     summarizer.go                  LLM-powered conversation summarization
     memory.go                      Auto-memory: persist insights across sessions
     explorer/                      File-type exploration (see internal/lcm/explorer/AGENTS.md)
@@ -172,7 +172,7 @@ internal/
   the coordinator level. Hooks run before permission checks. See
   `HOOKS.md` for the user-facing protocol.
 - **LCM (Lossless Context Management)**: conversation summarization and
-  compaction via an 8-layer pipeline. Manages token budgets, large-output
+  compaction via a 9-layer pipeline. Manages token budgets, large-output
   storage, and auto-memory across sessions. See `internal/lcm/AGENTS.md`.
 - **Repository Map**: scope-aware code outlines for LLM context. Uses
   PageRank over a def/ref/import graph, rendered within a token budget.
