@@ -21,6 +21,8 @@ var _ Explorer = (*TreeSitterExplorer)(nil)
 
 func (*TreeSitterExplorer) explorerKind() string { return "code_format_enhanced" }
 
+func (*TreeSitterExplorer) specificityTier() SpecificityTier { return SpecificitySpecialized }
+
 // NewTreeSitterExplorer creates a tree-sitter-backed explorer.
 func NewTreeSitterExplorer(parser treesitter.Parser) *TreeSitterExplorer {
 	return &TreeSitterExplorer{parser: parser, formatterProfile: OutputProfileEnhancement}

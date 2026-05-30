@@ -24,11 +24,41 @@ type ExploreInput struct {
 	SessionID string
 }
 
+// SpecificityTier classifies how deeply an explorer understands a file.
+type SpecificityTier int
+
+const (
+	// SpecificityGeneric is the lowest tier: no format-specific understanding
+	// (e.g., BinaryExplorer, TextExplorer, FallbackExplorer).
+	SpecificityGeneric SpecificityTier = iota
+	// SpecificityFamily means the explorer understands the file's format family
+	// (e.g., JSONExplorer, ArchiveExplorer, ShellExplorer).
+	SpecificityFamily
+	// SpecificitySpecialized means the explorer performs deep, AST-level analysis
+	// (e.g., TreeSitterExplorer with full symbol extraction).
+	SpecificitySpecialized
+)
+
+// String returns a human-readable name for the specificity tier.
+func (t SpecificityTier) String() string {
+	switch t {
+	case SpecificitySpecialized:
+		return "specialized"
+	case SpecificityFamily:
+		return "family"
+	case SpecificityGeneric:
+		return "generic"
+	default:
+		return "unknown"
+	}
+}
+
 // ExploreResult is the result of exploring a file.
 type ExploreResult struct {
-	Summary       string
-	ExplorerUsed  string
-	TokenEstimate int
+	Summary         string
+	ExplorerUsed    string
+	TokenEstimate   int
+	SpecificityTier SpecificityTier
 }
 
 // Explorer is the interface all file explorers implement.
@@ -42,6 +72,27 @@ type Explorer interface {
 // explorerWithKind is an optional interface that explorers can implement to
 // declare their runtime kind (e.g. "code_format_enhanced" for tree-sitter).
 type explorerWithKind interface{ explorerKind() string }
+
+// explorerWithSpecificity is an optional interface for explorers to declare
+// their specificity tier explicitly. Explorers that don't implement this
+// default to SpecificityFamily (format-aware) unless they match a known
+// generic type (BinaryExplorer, TextExplorer, FallbackExplorer).
+type explorerWithSpecificity interface{ specificityTier() SpecificityTier }
+
+// explorerSpecificity returns the specificity tier for the given explorer.
+// It uses the explorerWithSpecificity interface if implemented, otherwise
+// falls back to type-based classification.
+func explorerSpecificity(e Explorer) SpecificityTier {
+	if ws, ok := e.(explorerWithSpecificity); ok {
+		return ws.specificityTier()
+	}
+	switch e.(type) {
+	case *BinaryExplorer, *TextExplorer, *FallbackExplorer:
+		return SpecificityGeneric
+	default:
+		return SpecificityFamily
+	}
+}
 
 // RegistryOption configures a Registry.
 type RegistryOption func(*Registry)
@@ -182,21 +233,31 @@ func (r *Registry) Explore(ctx context.Context, input ExploreInput) (ExploreResu
 
 	// Attempt LLM-enhanced exploration (tiers 2 and 3).
 	enhanced := exploreLLMEnhanced(ctx, r.llm, r.agentFn, input, staticResult)
+	enhanced.SpecificityTier = staticResult.SpecificityTier
 	return formatExploreResult(enhanced, r.formatterProfile), nil
 }
 
-// exploreStatic runs the static (template-based) explorer chain.
+// exploreStatic runs the static (template-based) explorer chain using
+// three-tier specificity dispatch: specialized → family → generic.
 func (r *Registry) exploreStatic(ctx context.Context, input ExploreInput) (ExploreResult, error) {
-	for _, e := range r.explorers {
-		if e.CanHandle(input.Path, input.Content) {
-			result, err := e.Explore(ctx, input)
-			if err == nil {
-				return formatExploreResult(result, r.formatterProfile), nil
+	for _, tier := range []SpecificityTier{SpecificitySpecialized, SpecificityFamily, SpecificityGeneric} {
+		for _, e := range r.explorers {
+			if explorerSpecificity(e) != tier {
+				continue
 			}
+			if !e.CanHandle(input.Path, input.Content) {
+				continue
+			}
+			result, err := e.Explore(ctx, input)
+			if err != nil {
+				continue
+			}
+			result.SpecificityTier = tier
+			return formatExploreResult(result, r.formatterProfile), nil
 		}
 	}
 	// Should never reach here since FallbackExplorer handles everything.
-	result := ExploreResult{Summary: "Unknown file type", ExplorerUsed: "fallback"}
+	result := ExploreResult{Summary: "Unknown file type", ExplorerUsed: "fallback", SpecificityTier: SpecificityGeneric}
 	return formatExploreResult(result, r.formatterProfile), nil
 }
 

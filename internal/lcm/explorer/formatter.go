@@ -19,6 +19,12 @@ const (
 	OutputProfileParity OutputProfile = "parity"
 	// OutputProfileEnhancement emits canonical enhancement overflow markers.
 	OutputProfileEnhancement OutputProfile = "enhancement"
+	// OutputProfileCompact is an alias for parity: minimal output with truncation.
+	OutputProfileCompact OutputProfile = "compact"
+	// OutputProfileStandard is an alias for enhancement: normal output with truncation.
+	OutputProfileStandard OutputProfile = "standard"
+	// OutputProfileVerbose shows full output with no truncation.
+	OutputProfileVerbose OutputProfile = "verbose"
 )
 
 type summarySection struct {
@@ -33,10 +39,22 @@ func formatExploreResult(result ExploreResult, profile OutputProfile) ExploreRes
 		return result
 	}
 
-	formatted := formatSummary(summary, profile)
+	normalized := normalizeProfile(profile)
+	formatted := formatSummary(summary, normalized)
 	result.Summary = formatted
 	result.TokenEstimate = estimateTokens(formatted)
 	return result
+}
+
+func normalizeProfile(profile OutputProfile) OutputProfile {
+	switch profile {
+	case OutputProfileCompact:
+		return OutputProfileParity
+	case OutputProfileStandard:
+		return OutputProfileEnhancement
+	default:
+		return profile
+	}
 }
 
 func formatSummary(summary string, profile OutputProfile) string {
@@ -119,6 +137,16 @@ func normalizeSummaryLine(line string) string {
 
 func renderSection(out *strings.Builder, section summarySection, profile OutputProfile) {
 	fmt.Fprintf(out, "\n### %s\n", section.title)
+	if profile == OutputProfileVerbose {
+		if section.raw {
+			writeSectionLines(out, section.lines, 0, profile, true)
+			return
+		}
+		items := dedupe(section.lines)
+		sort.Strings(items)
+		writeSectionLines(out, items, 0, profile, false)
+		return
+	}
 	if section.raw {
 		writeSectionLines(out, section.lines, defaultSectionLineLimit, profile, true)
 		return
@@ -158,16 +186,20 @@ func overflowMarker(profile OutputProfile, count int, raw bool) string {
 	if count <= 0 {
 		return ""
 	}
-	if profile == OutputProfileParity {
+	switch profile {
+	case OutputProfileVerbose:
+		return ""
+	case OutputProfileParity, OutputProfileCompact:
 		if raw {
 			return fmt.Sprintf("[TRUNCATED] (+%d more lines)", count)
 		}
 		return fmt.Sprintf("(+%d more)", count)
+	default:
+		if raw {
+			return fmt.Sprintf("[TRUNCATED] ... and %d more lines", count)
+		}
+		return fmt.Sprintf("... and %d more", count)
 	}
-	if raw {
-		return fmt.Sprintf("[TRUNCATED] ... and %d more lines", count)
-	}
-	return fmt.Sprintf("... and %d more", count)
 }
 
 func dedupe(items []string) []string {
