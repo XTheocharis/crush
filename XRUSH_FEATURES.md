@@ -44,7 +44,7 @@ critical information.
 
 ### Manager
 
-The `Manager` (`manager.go`, ~1,706 lines) exposes 48 interface methods and 5 standalone functions (53 total) organized into
+The `Manager` (`manager.go`, ~1,718 lines) exposes 48 interface methods and 5 standalone functions (53 total) organized into
 functional groups:
 
 - **Compaction**: trigger compaction, query compaction state
@@ -121,7 +121,7 @@ Twelve additional LCM files supporting the core modules:
 - **File**: `context.go` (~53 lines) — Context management helpers
 - **File**: `errors.go` (~41 lines) — Sentinel error definitions
 - **File**: `id.go` (~25 lines) — LCM identifier generation
-- **File**: `lcm_hooks.go` (~134 lines) — Hook registration for LCM lifecycle events
+- **File**: `lcm_hooks.go` (~164 lines) — Hook registration for LCM lifecycle events
 - **File**: `pressure.go` (~364 lines) — Graduated pressure system with tiered compaction strategies (see [Graduated Pressure System](#graduated-pressure-system) below)
 - **File**: `retrieval.go` (~310 lines) — Retrieval orchestration logic
 - **File**: `retrieval_tools.go` (~312 lines) — Retrieval tool constructor implementations
@@ -577,7 +577,7 @@ file type processes it:
 
 | Component | Lines | Description |
 |-----------|-------|-------------|
-| `Formatter` | 188 | Output formatting for explorer results |
+| `Formatter` | 220 | Output formatting for explorer results |
 | `Heuristic` | 503 | File-type detection heuristics |
 | `FileStructure` | 167 | Directory structure analysis |
 | `LLMExplorer` | 165 | LLM-based fallback exploration |
@@ -785,7 +785,6 @@ budget. Only the most relevant lines are included based on PageRank scores.
 | Tag Extraction | 473 | Tree-sitter tag extraction for definitions/references (`tags.go`) |
 | Blame | 198 | Git blame integration with 7-day half-life decay |
 | Proximity | 266 | Test file co-location scoring |
-| Staging | 140 | 4-stage file staging for incremental updates |
 | Budget | 226 | Token budget management for map rendering |
 | DiffWatch | 202 | Watch file diffs for incremental updates |
 | Mentions | 260 | Extract file/identifier mentions from conversation |
@@ -1092,7 +1091,7 @@ Deep-copied parent context for parallel branching.
 
 ### Additional Agent Files
 
-Seven additional agent files not listed in the primary subsections above:
+Eight additional agent files not listed in the primary subsections above:
 
 - **File**: `coordinator_xrush_recovery.go` (~72 lines) — Coordinator recovery: post-compaction config restore and interrupted session recovery. `RestoreAgentConfig()` restores checkpointed agent configuration (skills, tools, agents) after LCM compaction events. `RecoverSession()` finishes interrupted thinking blocks or tool calls after mid-stream disruptions (network error, crash). These are recovery hooks ensuring the multi-agent system resumes cleanly after disruptions.
 - **File**: `usage_fallback.go` (~176 lines) — Token usage fallback heuristics when primary tracking is unavailable
@@ -1100,7 +1099,7 @@ Seven additional agent files not listed in the primary subsections above:
 - **File**: `agentconfig.go` (~108 lines) — Per-subagent configuration struct
 - **File**: `agent_tool.go` (~68 lines) — "agent" tool for spawning sub-agents (see §14)
 - **File**: `event.go` (~51 lines) — Telemetry event helpers
-- **File**: `orchestration_types.go` (~40 lines) — Shared types for Operator, Parallel, and Swarm orchestration patterns
+- **File**: `tools/orchestration_types.go` (~40 lines) — Shared types for Operator, Parallel, and Swarm orchestration patterns
 - **File**: `errors.go` (~10 lines) — Sentinel error definitions
 
 ### Structured Subagent
@@ -1207,7 +1206,7 @@ Runtime extension system with plugin-like capabilities.
 
 ### Prompt Assembly (`prompt-assembly`) — Implementation Details
 
-**Location**: `internal/extensions/prompt_assembly_ext.go` (119 lines)
+**Location**: `internal/extensions/prompt_assembly_ext.go` (125 lines)
 
 `PromptAssemblyExtension` implements `ext.Extension` + `ext.PromptHookProvider`.
 It mutates the system prompt via a `PromptHook.SystemPromptModifier` callback
@@ -1483,7 +1482,7 @@ command is invoked.
 
 ### Doom Loop Detection
 
-**File**: `internal/agent/doom.go` (394 lines)
+**File**: `internal/agent/doom.go` (538 lines)
 
 Detects when the agent is stuck in repetitive tool-call cycles.
 
@@ -1560,7 +1559,7 @@ The doom loop detector recognizes when the agent is stuck repeating the same
 tool calls and intervenes with three escalation tiers: a warning at 3 repeats,
 a forced tool switch at 5 repeats, and agent termination at 7 repeats.
 
-**File**: `internal/agent/productive.go` (~150 lines) -- Productive-loop awareness layer
+**File**: `internal/agent/productive.go` (~369 lines) -- Productive-loop awareness layer
 
 A **"productive loop" exception** prevents false positives when the agent is
 making meaningful progress through repeated similar operations. The
@@ -1712,7 +1711,7 @@ available on `$PATH`, falling back to `go vet` with a 60-second timeout.
 
 ## 12. Architect Planning
 
-**File**: `internal/agent/architect_plan.go` (187 lines)
+**File**: `internal/agent/architect_plan.go` (262 lines)
 
 Structured planning before code changes:
 
@@ -1777,7 +1776,7 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | Backoff | 70 | Exponential backoff for failed requests |
 | NamePath | 117 | Language name to server path resolution |
 
-### New LSP Agent Tools (11 fork-new; 12 total built)
+### New LSP Agent Tools (14 fork-new; 15 total built by extension)
 
 | Tool | LSP Method |
 |------|-----------|
@@ -1792,8 +1791,12 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | `lsp_formatting` | `textDocument/formatting` |
 | `lsp_signature_help` | `textDocument/signatureHelp` |
 | `lsp_code_action` | `textDocument/codeAction` |
+| `lsp_symbols` | `textDocument/documentSymbol` (symbols tree) |
+| `lsp_document_symbols` | `textDocument/documentSymbol` (flat list) |
+| `lsp_workspace_symbols` | `workspace/symbol` |
+| `lsp_restart` | Restart LSP server (also registered upstream) |
 
-> **Note**: `LSPToolsExtension.buildLSPTools()` creates 17 tools total (12 original + 4 added in T16 + 3 added in T17). `lsp_restart` is also registered as an upstream tool (in `buildTools()`), so only 16 are fork-new additions.
+> **Note**: `LSPToolsExtension.buildLSPTools()` creates 15 tools total. `lsp_restart` is also registered as an upstream tool (in `coordinator.go`), so only 14 are fork-new additions.
 
 Supporting files: `lsp_symbolic.go` (shared symbol operations), `lsp_helpers.go`
 (shared utilities). These are not standalone tools but are used by the tools above.
@@ -1852,9 +1855,10 @@ parsing utilities (`remarshal`, `parseLocationArray`, `parseCompletionResult`).
 The enhanced LSP integration provides robust language server connectivity with
 automatic crash recovery (always-on, exponential backoff from 1s to 60s, up to
 5 retries), on-demand server binary download with SHA256 verification, and
-health monitoring. 11 new agent tools expose LSP capabilities: go-to-definition,
+health monitoring. 14 new agent tools expose LSP capabilities: go-to-definition,
 hover, rename, symbol replacement, insertion, deletion with reference checking,
-completion, formatting, signature help, and code actions.
+completion, formatting, signature help, code actions, document symbols (tree and
+flat list), workspace symbols, and server restart.
 
 ### Configuration
 
@@ -1920,7 +1924,7 @@ completion, formatting, signature help, and code actions.
 LSP servers are configured exclusively through `crush.json`. Servers
 auto-start when the agent opens a file matching a configured language. If a
 server crashes, it is automatically restarted with exponential backoff. The
-11 LSP tools are available to the agent automatically when a matching server
+14 LSP tools are available to the agent automatically when a matching server
 is running.
 
 ### Default Behavior
@@ -1943,13 +1947,13 @@ explicit `url` and `sha256` configuration per server.
 
 > **Note**: `web_search` and `web_fetch` are listed as upstream tools. Their fork-point classification could not be independently verified from the current codebase state.
 
-> **Overlap note**: 4 of these 23 tools — `multiedit`, `sourcegraph`, `list_mcp_resources`, `read_mcp_resource` — also appear in `xrushToolNames()` (the 16-entry fork-specific tool list). They are genuinely upstream tools (registered in `buildTools()`) but were included in the fork configuration list so that the fork's ordering and permission logic can reference them uniformly. They appear in exactly one place in each classification; the dual listing reflects their dual role as upstream implementations with fork-specific configuration.
+> **Overlap note**: 4 of these 23 tools — `multiedit`, `sourcegraph`, `list_mcp_resources`, `read_mcp_resource` — also appear in `xrushToolNames()` (the 25-entry fork-specific tool list). They are genuinely upstream tools (registered in `buildTools()`) but were included in the fork configuration list so that the fork's ordering and permission logic can reference them uniformly. They appear in exactly one place in each classification; the dual listing reflects their dual role as upstream implementations with fork-specific configuration.
 
 ### Fork-New Tools
 
-> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (17 built; 16 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
+> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built; 14 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
 
-#### Standard Registry Tools (25)
+#### Registered Agent Tools (28)
 
 | Tool | Category | Description |
 |------|----------|-------------|
@@ -1976,6 +1980,9 @@ explicit `url` and `sha256` configuration per server.
 | `lsp_formatting` | LSP | Document formatting |
 | `lsp_signature_help` | LSP | Function signature help |
 | `lsp_code_action` | LSP | Code actions |
+| `lsp_symbols` | LSP | Document symbol tree |
+| `lsp_document_symbols` | LSP | Document symbol flat list |
+| `lsp_workspace_symbols` | LSP | Workspace symbol search |
 | `agentic_fetch` | Network | LLM-powered URL content analysis and extraction |
 | `agent` | Orchestration | Spawn sub-agents for task delegation |
 
@@ -2078,7 +2085,7 @@ tools from the agent's surface.
 
 ### Include Directives
 
-**File**: `internal/config/include.go` (231 lines)
+**File**: `internal/config/include.go` (351 lines)
 
 - `@include` directives in `crush.json` for modular configuration
 - Conditional blocks (environment-based)
@@ -2101,10 +2108,10 @@ tools from the agent's surface.
 | Hyper Provider | 124 | Charm Hyper provider auto-configuration: fetches provider metadata from `/api/v1/provider`, ETag-based caching, embedded fallback, `sync.Once` init |
 | Atomic Writes | 38 | Safe config file writes via temp-file + rename, preventing concurrent readers from seeing partial writes |
 | Xrush Types | 61 | Fork-specific config types: `RoutingTier`, `ArchitectOptions`, `ValidationOptions`, `ProcessorsOptions`, `SnapshotConfig`, `AutoDownloadConfig` |
-| Xrush Tools Registry | 95 | Fork-only tool name registry (`xrushToolNames`, `xrushReadOnlyTools`) merged into sorted `allToolNames` alongside extension-contributed tools |
+| Xrush Tools Registry | 129 | Fork-only tool name registry (`xrushToolNames`, `xrushReadOnlyTools`) merged into sorted `allToolNames` alongside extension-contributed tools |
 | Migration | 44 | Config schema migration |
 | Walking | 134 | Walk config tree for validation |
-| YAML | 345 | YAML config file support |
+| YAML | 352 | YAML config file support |
 
 Note: `schema.json` exists at the project root (1,073 lines) as a general
 config schema, not within `internal/config/`.
@@ -2888,7 +2895,7 @@ side-by-side. Syntax highlighting in diffs and markdown is always active.
 | `WrittenFiles` (79L) | Track files written during a session |
 | Background shell timeout | Timeout for background shell command execution |
 | `regexp_modernc` / `ncruces` adapters | Pure-Go regexp adapters (no CGO dependency for regex) |
-| `app_xrush_wiring` (~400L) | Top-level fork wiring: `initRewindService`, `wireAgentConfigRestorer` — connects rewind, LCM, extensions, hooks, and explorer subsystems at app startup |
+| `app_xrush_wiring` (~669L) | Top-level fork wiring: `initRewindService`, `wireAgentConfigRestorer` — connects rewind, LCM, extensions, hooks, and explorer subsystems at app startup |
 | `filetracker/service_xrush_lcm.go` (~35L) | LCM integration for file tracking service |
 | `skills/tracker_xrush.go` (~17L) | Skill discovery tracking for xrush extensions |
 | `workspace/app_workspace_xrush.go` (~7L) | App workspace LCM integration hooks |
