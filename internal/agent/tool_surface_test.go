@@ -22,12 +22,22 @@ func TestRegisterDefaults(t *testing.T) {
 		"synthetic_output should have CapabilityObservation")
 	require.Greater(t, s.GetToolCapabilities("synthetic_output"), Capability(0),
 		"synthetic_output should be registered")
+	require.True(t, s.HasToolMarker("synthetic_output", MarkerBeta),
+		"synthetic_output should have MarkerBeta")
 
-	// Both should be visible by default.
+	// batch_edit is visible by default (not beta).
 	require.True(t, s.IsVisible("batch_edit"),
 		"batch_edit should be visible by default")
+	// synthetic_output is hidden by default (beta, BetaTools=false).
 	require.True(t, s.IsVisible("synthetic_output"),
-		"synthetic_output should be visible by default")
+		"synthetic_output should be visible before UpdateCapabilities")
+
+	// After UpdateCapabilities with BetaTools=false, beta tools are hidden.
+	s.UpdateCapabilities(SurfaceContext{})
+	require.False(t, s.IsVisible("synthetic_output"),
+		"synthetic_output should be hidden when BetaTools=false")
+	require.True(t, s.IsVisible("batch_edit"),
+		"batch_edit should remain visible when BetaTools=false")
 }
 
 func TestToolMarkers(t *testing.T) {
@@ -132,4 +142,55 @@ func TestToolMarkerRegistration(t *testing.T) {
 	s.Register("plain_tool", CapabilityExecution)
 	require.Equal(t, ToolMarker(0), s.GetToolMarkers("plain_tool"))
 	require.Equal(t, CapabilityExecution, s.GetToolCapabilities("plain_tool"))
+}
+
+func TestBetaToolVisibility(t *testing.T) {
+	t.Parallel()
+
+	s := NewToolSurface()
+	s.RegisterWithMarkers("beta_experimental", CapabilityFS, MarkerBeta)
+	s.Register("stable_tool", CapabilityFS)
+
+	// Before any UpdateCapabilities call, all tools are visible (default).
+	require.True(t, s.IsVisible("beta_experimental"))
+	require.True(t, s.IsVisible("stable_tool"))
+
+	// With BetaTools=false, beta tools are hidden.
+	s.UpdateCapabilities(SurfaceContext{BetaTools: false})
+	require.False(t, s.IsVisible("beta_experimental"))
+	require.True(t, s.IsVisible("stable_tool"))
+
+	// With BetaTools=true, beta tools become visible.
+	s.UpdateCapabilities(SurfaceContext{BetaTools: true})
+	require.True(t, s.IsVisible("beta_experimental"))
+	require.True(t, s.IsVisible("stable_tool"))
+
+	// Toggling back hides beta tools again.
+	s.UpdateCapabilities(SurfaceContext{BetaTools: false})
+	require.False(t, s.IsVisible("beta_experimental"))
+
+	// synthetic_output is registered as beta by default.
+	s2 := NewToolSurface()
+	s2.UpdateCapabilities(SurfaceContext{})
+	require.False(t, s2.IsVisible("synthetic_output"))
+	s2.UpdateCapabilities(SurfaceContext{BetaTools: true})
+	require.True(t, s2.IsVisible("synthetic_output"))
+}
+
+func TestBetaToolsHiddenFromGetVisibleTools(t *testing.T) {
+	t.Parallel()
+
+	s := NewToolSurface()
+	s.RegisterWithMarkers("beta_a", CapabilityObservation, MarkerBeta)
+	s.Register("stable_b", CapabilityObservation)
+
+	s.UpdateCapabilities(SurfaceContext{})
+
+	hidden := s.GetHiddenTools()
+	visible := s.GetVisibleTools()
+
+	require.Contains(t, hidden, "beta_a")
+	require.NotContains(t, visible, "beta_a")
+	require.Contains(t, visible, "stable_b")
+	require.NotContains(t, hidden, "stable_b")
 }

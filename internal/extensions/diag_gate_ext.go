@@ -9,6 +9,7 @@ import (
 	"charm.land/fantasy"
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
@@ -37,7 +38,9 @@ func (e *DiagGateExtension) Init(_ context.Context, host ext.HostContext) error 
 		return nil
 	}
 
-	e.gate = tools.NewDiagnosticGate(lspManager)
+	e.gate = tools.NewDiagnosticGate(lspManager, tools.WithSeverityFilter(
+		tools.ParseSeverityFilter(severityFilterFromConfig(host.Config())),
+	))
 	e.tools = []fantasy.AgentTool{tools.NewDiagnosticsTool(lspManager)}
 	e.toolName = tools.DiagnosticsToolName
 	e.active = true
@@ -183,6 +186,13 @@ func parseFilePathsFromJSON(input string) []string {
 		}
 	}
 	return paths
+}
+
+func severityFilterFromConfig(cfg *config.Config) string {
+	if cfg == nil || cfg.Options == nil || cfg.Options.Validation == nil {
+		return ""
+	}
+	return cfg.Options.Validation.SeverityFilter
 }
 
 var (

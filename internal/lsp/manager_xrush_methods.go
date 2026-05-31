@@ -144,6 +144,54 @@ func (s *Manager) FindReferencesForServer(ctx context.Context, name, filepath st
 	return result, err
 }
 
+// RenameForServer renames the symbol at the given position using the named
+// LSP server. The call is serialised through the task executor. Returns
+// ErrClientNotFound if the server is not running.
+func (s *Manager) RenameForServer(ctx context.Context, name, filepath string, line, character int, newName string) (*protocol.WorkspaceEdit, error) {
+	client, ok := s.clients.Get(name)
+	if !ok {
+		return nil, ErrClientNotFound
+	}
+
+	var result *protocol.WorkspaceEdit
+	err := s.executor.Submit(ctx, name, func() error {
+		var ferr error
+		result, ferr = client.Rename(ctx, filepath, line, character, newName)
+		return ferr
+	})
+	return result, err
+}
+
+// SafeDeleteForServer checks whether the symbol at the given position can be
+// safely deleted by querying references through the named LSP server. The call
+// is serialised through the task executor. Returns ErrClientNotFound if the
+// server is not running.
+func (s *Manager) SafeDeleteForServer(ctx context.Context, name, filepath string, line, character int) ([]protocol.Location, error) {
+	client, ok := s.clients.Get(name)
+	if !ok {
+		return nil, ErrClientNotFound
+	}
+
+	var result []protocol.Location
+	err := s.executor.Submit(ctx, name, func() error {
+		var ferr error
+		result, ferr = client.FindReferences(ctx, filepath, line, character, true)
+		return ferr
+	})
+	return result, err
+}
+
+// FindClientForFile returns the server name and client that handles the given
+// file path, or ("", nil) if no match is found.
+func (s *Manager) FindClientForFile(absPath string) (string, *Client) {
+	for name, client := range s.clients.Seq2() {
+		if client.HandlesFile(absPath) {
+			return name, client
+		}
+	}
+	return "", nil
+}
+
 // StartAll starts all configured LSP servers concurrently using an errgroup.
 // Only servers that are not already running are started. It does not block on
 // individual server readiness.

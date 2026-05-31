@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
+	"time"
 )
 
 // TargetDetail controls the level of detail returned by Decompress.
@@ -63,12 +66,19 @@ func (t *BlockIDTracker) Current() int64 {
 // summaries flagged as reversible store originals — non-reversible summaries
 // fall back to the existing ExpandSummary path.
 type ReversibleCompactor struct {
-	store *Store
+	store      *Store
+	summarizer *Summarizer
 }
 
 // NewReversibleCompactor creates a ReversibleCompactor backed by the given Store.
 func NewReversibleCompactor(store *Store) *ReversibleCompactor {
 	return &ReversibleCompactor{store: store}
+}
+
+// SetSummarizer sets the LLM summarizer used for partial detail compression.
+// When nil, partial detail falls back to simple truncation.
+func (rc *ReversibleCompactor) SetSummarizer(s *Summarizer) {
+	rc.summarizer = s
 }
 
 // SaveReversibleState persists the original messages for a summary so it can
@@ -111,7 +121,7 @@ func (rc *ReversibleCompactor) Decompress(ctx context.Context, cmd DecompressCom
 	if err != nil {
 		return nil, fmt.Errorf("decompressing summary %s: %v: %w", cmd.SummaryID, ErrDecompressFailed, err)
 	}
-	return applyDetailLevel(msgs, cmd.TargetDetail), nil
+	return rc.applyDetailLevel(ctx, msgs, cmd.TargetDetail), nil
 }
 
 // loadOriginalMessages attempts to load original messages via block_id.
@@ -221,7 +231,9 @@ func (rc *ReversibleCompactor) IsDecompressed(ctx context.Context, summaryID str
 }
 
 // applyDetailLevel filters messages based on the requested detail level.
-func applyDetailLevel(msgs []MessageForSummary, detail TargetDetail) []MessageForSummary {
+// For TargetPartial, uses LLM summarization when available (with a 5s timeout),
+// falling back to simple truncation when the LLM is unavailable or fails.
+func (rc *ReversibleCompactor) applyDetailLevel(ctx context.Context, msgs []MessageForSummary, detail TargetDetail) []MessageForSummary {
 	switch detail {
 	case TargetFull:
 		return msgs
@@ -230,7 +242,7 @@ func applyDetailLevel(msgs []MessageForSummary, detail TargetDetail) []MessageFo
 		for i, m := range msgs {
 			content := m.Content
 			if len(content) > partialContentLimit {
-				content = content[:partialContentLimit]
+				content = rc.summarizePartialContent(ctx, content)
 			}
 			result[i] = MessageForSummary{
 				ID:        m.ID,
@@ -256,6 +268,52 @@ func applyDetailLevel(msgs []MessageForSummary, detail TargetDetail) []MessageFo
 		return msgs
 	}
 }
+
+// summarizePartialContent attempts to generate an LLM summary of content
+// limited to partialContentLimit characters. Falls back to truncation when
+// the LLM is nil, returns an error, or exceeds the 5-second timeout.
+func (rc *ReversibleCompactor) summarizePartialContent(ctx context.Context, content string) string {
+	if rc.summarizer == nil {
+		return truncatePartial(content)
+	}
+
+	llm := rc.summarizer.llmClient()
+	if llm == nil {
+		return truncatePartial(content)
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	summary, err := llm.Complete(timeoutCtx, partialSummarySystemPrompt, content)
+	if err != nil {
+		if !strings.Contains(err.Error(), "context canceled") {
+			slog.Debug("Partial content LLM summary failed, falling back to truncation",
+				"error", err)
+		}
+		return truncatePartial(content)
+	}
+
+	summary = strings.TrimSpace(summary)
+	if len(summary) > partialContentLimit {
+		summary = summary[:partialContentLimit]
+	}
+	if summary == "" {
+		return truncatePartial(content)
+	}
+	return summary
+}
+
+func truncatePartial(content string) string {
+	if len(content) > partialContentLimit {
+		return content[:partialContentLimit]
+	}
+	return content
+}
+
+// partialSummarySystemPrompt instructs the LLM to produce a compact summary
+// that preserves key technical information within the partial content budget.
+const partialSummarySystemPrompt = `Summarize the following content in under 200 characters. Preserve function signatures, key decisions, data flows, and error handling patterns. Be concise and technical. Output only the summary, no preamble.`
 
 // ---------------------------------------------------------------------------
 // Nested placeholder resolution

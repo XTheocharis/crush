@@ -55,12 +55,12 @@ func NewRenameTool(lspManager *lsp.Manager) fantasy.AgentTool {
 
 			lspManager.Start(ctx, absPath)
 
-			client := findClientForFile(lspManager, absPath)
+			name, client := lspManager.FindClientForFile(absPath)
 			if client == nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("no LSP server available for file type: %s", filepath.Ext(absPath))), nil
 			}
 
-			edit, err := client.Rename(ctx, absPath, params.Line, params.Character, params.NewName)
+			edit, err := lspManager.RenameForServer(ctx, name, absPath, params.Line, params.Character, params.NewName)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("rename request failed: %s", err)), nil
 			}

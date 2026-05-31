@@ -96,6 +96,49 @@ Respond ONLY with a JSON object: {"score": <0.0-1.0>, "explanation": "<brief exp
 func (s *MastraScorer) Name() string          { return s.scorerName }
 func (s *MastraScorer) Type() eval.ScorerType { return eval.ScorerMastra }
 
+func (s *MastraScorer) Preprocess(ctx context.Context, input *eval.EvalInput, pctx *eval.PipelineContext) error {
+	out, err := s.steps[StepPreprocess].Handle(ctx, &StepInput{EvalInput: input})
+	if err != nil {
+		return err
+	}
+	pctx.Preprocessed = out.Result
+	return nil
+}
+
+func (s *MastraScorer) Analyze(ctx context.Context, pctx *eval.PipelineContext) error {
+	out, err := s.steps[StepAnalyze].Handle(ctx, &StepInput{
+		EvalInput:      pctx.Input,
+		PreviousOutput: pctx.Preprocessed,
+	})
+	if err != nil {
+		return err
+	}
+	pctx.Analysis = out.Result
+	return nil
+}
+
+func (s *MastraScorer) GenerateScore(ctx context.Context, pctx *eval.PipelineContext) (float64, error) {
+	out, err := s.steps[StepGenerateScore].Handle(ctx, &StepInput{
+		EvalInput:      pctx.Input,
+		PreviousOutput: pctx.Analysis,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return out.Score, nil
+}
+
+func (s *MastraScorer) GenerateReason(ctx context.Context, pctx *eval.PipelineContext) (string, error) {
+	out, err := s.steps[StepGenerateReason].Handle(ctx, &StepInput{
+		EvalInput:      pctx.Input,
+		PreviousOutput: pctx.Analysis,
+	})
+	if err != nil {
+		return "", err
+	}
+	return out.Result, nil
+}
+
 func (s *MastraScorer) Score(ctx context.Context, input *eval.EvalInput) (*eval.ScoreResult, error) {
 	stepInput := &StepInput{EvalInput: input}
 	var lastOutput *StepOutput

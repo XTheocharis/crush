@@ -51,12 +51,15 @@ func (e *ToolSurfaceExtension) RunHooks() []ext.RunHook {
 				if e.surface == nil {
 					return nil
 				}
+				cfg := e.host.Config()
+				betaTools := cfg != nil && cfg.Options != nil && cfg.Options.BetaTools
 				lspManager := e.host.LSP()
 				ctx := agent.SurfaceContext{
 					HasLSP:     lspManager != nil && lspManager.Clients().Len() > 0,
 					HasLCM:     TheLCMExtension.Manager() != nil,
 					HasRepoMap: TheRepomapExtension.isActive(),
 					HasMCP:     hasMCPTools(),
+					BetaTools:  betaTools,
 				}
 				e.surface.UpdateCapabilities(ctx)
 				return nil

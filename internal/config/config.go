@@ -327,6 +327,10 @@ type Options struct {
 
 	// Snapshot configures snapshot retention for the rewind system.
 	Snapshot *SnapshotConfig `json:"snapshot,omitempty" jsonschema:"description=Snapshot retention configuration"`
+
+	// BetaTools enables tools marked with the MarkerBeta marker. When false
+	// (default), beta tools are hidden from the tool surface.
+	BetaTools bool `json:"beta_tools,omitempty" jsonschema:"description=Enable beta tools that are hidden by default,default=false"`
 	// [XRUSH: end]
 }
 

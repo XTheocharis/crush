@@ -239,10 +239,12 @@ func (ra *ReflectorAgent) listUnreflectedObservations(ctx context.Context, sessi
 		`SELECT content, token_count FROM lcm_observation_buffer
 		 WHERE session_id = ? AND buffer_type = 'observation'
 		 ORDER BY CASE priority
-		     WHEN 'high' THEN 0
-		     WHEN 'medium' THEN 1
-		     WHEN 'low' THEN 2
-		     ELSE 1
+		     WHEN 'critical' THEN 0
+		     WHEN 'high' THEN 1
+		     WHEN 'medium' THEN 2
+		     WHEN 'low' THEN 3
+		     WHEN 'info' THEN 4
+		     ELSE 2
 		 END ASC, created_at ASC`,
 		sessionID,
 	)
@@ -401,11 +403,13 @@ func parseReflections(raw string) ([]Reflection, error) {
 // observationPriorityText converts a numeric priority score to a text label.
 func observationPriorityText(p float64) string {
 	switch {
-	case p >= 0.7:
+	case p >= PriorityCritical:
+		return "critical"
+	case p >= PriorityHigh:
 		return "high"
-	case p >= 0.4:
+	case p >= PriorityMedium:
 		return "medium"
-	case p >= 0.15:
+	case p >= PriorityLow:
 		return "low"
 	default:
 		return "info"

@@ -86,6 +86,49 @@ func newLLMJudgeScorer(name string, client LLMClient, threshold float64, criteri
 func (s *LLMJudgeScorer) Name() string          { return s.scorerName }
 func (s *LLMJudgeScorer) Type() eval.ScorerType { return eval.ScorerLLMJudge }
 
+func (s *LLMJudgeScorer) Preprocess(_ context.Context, input *eval.EvalInput, pctx *eval.PipelineContext) error {
+	data := judgePromptData{
+		Conversation: formatConversation(input.Conversation),
+		Edits:        formatEdits(input.Edits),
+		Files:        formatFiles(input.Files),
+		TestResults:  formatTestResults(input.TestResults),
+	}
+
+	var buf strings.Builder
+	if err := s.promptTmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("judge: failed to render prompt for %s: %w", s.scorerName, err)
+	}
+	pctx.Preprocessed = buf.String()
+	return nil
+}
+
+func (s *LLMJudgeScorer) Analyze(ctx context.Context, pctx *eval.PipelineContext) error {
+	resp, err := s.client.Complete(ctx, pctx.Preprocessed)
+	if err != nil {
+		return fmt.Errorf("judge LLM call: %w", err)
+	}
+	pctx.Analysis = resp
+	pctx.Metadata["raw_response"] = resp
+	pctx.Metadata["criteria"] = s.criteria
+	return nil
+}
+
+func (s *LLMJudgeScorer) GenerateScore(_ context.Context, pctx *eval.PipelineContext) (float64, error) {
+	judgeResp := parseJudgeResponse(pctx.Analysis)
+	score := math.Max(0, math.Min(1, judgeResp.Score))
+	pctx.Metadata["parsed_score"] = score
+	pctx.Metadata["parsed_explanation"] = judgeResp.Explanation
+	return score, nil
+}
+
+func (s *LLMJudgeScorer) GenerateReason(_ context.Context, pctx *eval.PipelineContext) (string, error) {
+	explanation, _ := pctx.Metadata["parsed_explanation"].(string)
+	if explanation == "" {
+		explanation = "No explanation available."
+	}
+	return explanation, nil
+}
+
 func (s *LLMJudgeScorer) Score(ctx context.Context, input *eval.EvalInput) (*eval.ScoreResult, error) {
 	data := judgePromptData{
 		Conversation: formatConversation(input.Conversation),

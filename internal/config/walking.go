@@ -22,11 +22,34 @@ var walkContextFileNames = []string{
 	"CRUSH.memory.md",
 }
 
+// defaultWalkDownDepth is the default directory depth for downward scanning.
+const defaultWalkDownDepth = 2
+
+// skipDirs are directory names that are skipped during downward walking.
+var skipDirs = map[string]bool{
+	"node_modules": true,
+	".git":         true,
+	"vendor":       true,
+	"dist":         true,
+	"build":        true,
+	".next":        true,
+	".cache":       true,
+	"__pycache__":  true,
+	".tox":         true,
+	".venv":        true,
+	".svn":         true,
+	".hg":          true,
+}
+
 // WalkContextPaths walks from root upward toward the user's home directory,
 // collecting paths to context files (AGENTS.md, CLAUDE.md, CRUSH.md, etc.)
-// that exist at each level. Walking stops at the home directory (inclusive).
-// Results are deduplicated by absolute path and returned in order from root
-// (deepest) to home (shallowest), with the root directory's matches first.
+// that exist at each level. It also scans downward from root into immediate
+// subdirectories up to [defaultWalkDownDepth] levels deep, skipping common
+// dependency and build directories.
+//
+// Walking stops at the home directory (inclusive). Results are deduplicated
+// by absolute path and returned in priority order: upward (deepest first),
+// then downward (shallowest subdirectory first).
 func WalkContextPaths(root string) ([]string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -42,8 +65,6 @@ func WalkContextPaths(root string) ([]string, error) {
 		return nil, fmt.Errorf("failed to resolve home directory: %w", err)
 	}
 
-	// Build the walk order from home down to root so deeper matches are
-	// appended last, then the final reverse puts deepest first.
 	var dirs []string
 	cur := root
 	for {
@@ -80,7 +101,75 @@ func WalkContextPaths(root string) ([]string, error) {
 	}
 
 	slices.Reverse(result)
+
+	downward := walkDownward(root, defaultWalkDownDepth, seen)
+	result = append(result, downward...)
+
 	return result, nil
+}
+
+// walkDownward scans subdirectories of root up to maxDepth levels, collecting
+// context files. It skips directories listed in skipDirs. The seen map is
+// mutated in place to deduplicate against upward results.
+func walkDownward(root string, maxDepth int, seen map[string]bool) []string {
+	var result []string
+
+	// Walk starting from depth 1 (immediate children of root).
+	for _, entry := range readDirNames(root) {
+		if skipDirs[entry] {
+			continue
+		}
+		sub := filepath.Join(root, entry)
+		walkDownwardLevel(sub, 1, maxDepth, seen, &result)
+	}
+
+	return result
+}
+
+func walkDownwardLevel(dir string, depth, maxDepth int, seen map[string]bool, result *[]string) {
+	for _, name := range walkContextFileNames {
+		candidate := filepath.Join(dir, name)
+		absCandidate, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		if seen[absCandidate] {
+			continue
+		}
+		if fileExists(candidate) {
+			seen[absCandidate] = true
+			*result = append(*result, absCandidate)
+		}
+	}
+
+	if depth >= maxDepth {
+		return
+	}
+
+	for _, entry := range readDirNames(dir) {
+		if skipDirs[entry] {
+			continue
+		}
+		sub := filepath.Join(dir, entry)
+		walkDownwardLevel(sub, depth+1, maxDepth, seen, result)
+	}
+}
+
+// readDirNames returns sorted directory entry names for the given path.
+// Non-directory entries and unreadable dirs are silently skipped.
+func readDirNames(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 // ResolveContextPaths resolves context file paths across 4 layers:

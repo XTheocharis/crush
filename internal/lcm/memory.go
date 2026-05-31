@@ -27,6 +27,14 @@ const (
 	MemoryLesson     = "lesson"
 )
 
+// Memory priority thresholds for TF-IDF based priority classification.
+const (
+	MemoryPriorityCritical float64 = 0.9
+	MemoryPriorityHigh     float64 = 0.7
+	MemoryPriorityMedium   float64 = 0.3
+	MemoryPriorityLow      float64 = 0.0
+)
+
 // Memory extraction limits.
 const (
 	// MemoryMaxLines is the maximum number of lines per memory content.
@@ -435,12 +443,14 @@ func (e *AutoMemoryExtractor) getSessionMemorySize(ctx context.Context, sessionI
 }
 
 // priorityToText converts a numeric TF-IDF priority score to the text bucket
-// stored in the database ('high', 'medium', 'low').
+// stored in the database ('critical', 'high', 'medium', 'low').
 func priorityToText(p float64) string {
 	switch {
-	case p >= 0.7:
+	case p >= MemoryPriorityCritical:
+		return "critical"
+	case p >= MemoryPriorityHigh:
 		return "high"
-	case p >= 0.3:
+	case p >= MemoryPriorityMedium:
 		return "medium"
 	default:
 		return "low"
@@ -452,12 +462,14 @@ func priorityToText(p float64) string {
 // need the exact score should recompute it.
 func textToPriority(s string) float64 {
 	switch s {
+	case "critical":
+		return MemoryPriorityCritical
 	case "high":
-		return 0.8
+		return MemoryPriorityHigh
 	case "medium":
-		return 0.5
+		return MemoryPriorityMedium
 	default:
-		return 0.2
+		return MemoryPriorityLow
 	}
 }
 

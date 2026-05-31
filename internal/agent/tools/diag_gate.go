@@ -75,15 +75,60 @@ func (r GateResult) Message() string {
 }
 
 type DiagnosticGate struct {
-	manager  *lsp.Manager
-	baseline map[diagnosticKey]DiagnosticInfo
+	manager        *lsp.Manager
+	baseline       map[diagnosticKey]DiagnosticInfo
+	severityFilter DiagnosticSeverity
+	severitySet    bool
 }
 
-func NewDiagnosticGate(manager *lsp.Manager) *DiagnosticGate {
-	return &DiagnosticGate{
+// SeverityFilter returns the configured severity filter, defaulting to
+// SeverityWarning (show errors and warnings, hide info and hints).
+func (g *DiagnosticGate) SeverityFilter() DiagnosticSeverity {
+	if !g.severitySet {
+		return SeverityWarning
+	}
+	return g.severityFilter
+}
+
+// ParseSeverityFilter parses a severity filter string ("error", "warning",
+// "info", "hint") and returns the corresponding DiagnosticSeverity. Returns
+// SeverityWarning for empty or unrecognized values.
+func ParseSeverityFilter(s string) DiagnosticSeverity {
+	switch s {
+	case "error":
+		return SeverityError
+	case "warning":
+		return SeverityWarning
+	case "info":
+		return SeverityInfo
+	case "hint":
+		return SeverityHint
+	default:
+		return SeverityWarning
+	}
+}
+
+// GateOption is a functional option for configuring a DiagnosticGate.
+type GateOption func(*DiagnosticGate)
+
+// WithSeverityFilter sets the minimum severity level for the gate. Diagnostics
+// at or below this level are reported; those below are ignored.
+func WithSeverityFilter(sev DiagnosticSeverity) GateOption {
+	return func(g *DiagnosticGate) {
+		g.severityFilter = sev
+		g.severitySet = true
+	}
+}
+
+func NewDiagnosticGate(manager *lsp.Manager, opts ...GateOption) *DiagnosticGate {
+	g := &DiagnosticGate{
 		manager:  manager,
 		baseline: make(map[diagnosticKey]DiagnosticInfo),
 	}
+	for _, opt := range opts {
+		opt(g)
+	}
+	return g
 }
 
 func (g *DiagnosticGate) CaptureBaseline(ctx context.Context, filePaths []string) {
@@ -126,11 +171,13 @@ func (g *DiagnosticGate) Compare(ctx context.Context, filePaths []string) GateRe
 	}
 
 	for _, di := range diff.Added {
-		switch di.Severity {
-		case SeverityError:
+		if di.Severity > g.SeverityFilter() {
+			continue
+		}
+		if di.Severity == SeverityError {
 			result.NewErrors = append(result.NewErrors, di)
 			result.Pass = false
-		case SeverityWarning:
+		} else {
 			result.Warnings = append(result.Warnings, di)
 		}
 	}

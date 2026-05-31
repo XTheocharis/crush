@@ -118,11 +118,27 @@ func NewEvalHarness() *EvalHarness {
 	return &EvalHarness{}
 }
 
-// Register adds a scorer to the harness. It panics if a scorer with
-// the same name is already registered.
+// Register adds a scorer to the harness. If the scorer implements
+// ScorerPipeline directly (not already wrapped in a PipelineScorer), it
+// is wrapped automatically. It panics if a scorer with the same name is
+// already registered.
 func (h *EvalHarness) Register(s Scorer) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	// Unwrap PipelineScorer to check the inner type; avoid double-wrapping.
+	inner := s
+	if ps, ok := s.(*PipelineScorer); ok {
+		inner = ps.impl
+	}
+
+	// If the scorer implements ScorerPipeline natively and is not already
+	// wrapped, wrap it so the harness runs it through the pipeline.
+	if _, ok := inner.(ScorerPipeline); ok {
+		if _, alreadyWrapped := s.(*PipelineScorer); !alreadyWrapped {
+			s = NewPipelineScorer(inner.(ScorerPipeline))
+		}
+	}
 
 	for _, existing := range h.scorers {
 		if existing.Name() == s.Name() {

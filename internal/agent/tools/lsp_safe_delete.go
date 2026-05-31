@@ -48,7 +48,7 @@ func NewSafeDeleteTool(lspManager *lsp.Manager) fantasy.AgentTool {
 
 			lspManager.Start(ctx, absPath)
 
-			client := findClientForFile(lspManager, absPath)
+			name, client := lspManager.FindClientForFile(absPath)
 			if client == nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("no LSP server available for file type: %s", filepath.Ext(absPath))), nil
 			}
@@ -57,7 +57,7 @@ func NewSafeDeleteTool(lspManager *lsp.Manager) fantasy.AgentTool {
 			position := protocol.Position{Line: uint32(params.Line - 1), Character: uint32(params.Character - 1)}
 
 			refsFn := func(ctx context.Context, _ string, pos protocol.Position) ([]protocol.Location, error) {
-				return client.FindReferences(ctx, absPath, int(pos.Line)+1, int(pos.Character)+1, true)
+				return lspManager.SafeDeleteForServer(ctx, name, absPath, int(pos.Line)+1, int(pos.Character)+1)
 			}
 
 			result, err := SafeDeleteSymbol(ctx, string(uri), position, refsFn)

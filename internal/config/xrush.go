@@ -9,6 +9,11 @@ type RoutingTier struct {
 	UpToTokens int `json:"up_to_tokens,omitempty" jsonschema:"description=Token count threshold for this tier"`
 	// ModelType is the SelectedModelType to use for prompts within this tier.
 	ModelType SelectedModelType `json:"model_type,omitempty" jsonschema:"description=Model type for this tier,example=small,example=large"`
+	// FallbackChain is an ordered list of model IDs to try when the primary
+	// model fails with a retryable error (429, 5xx, timeout). Each fallback
+	// model is tried in order until one succeeds or the chain is exhausted.
+	// Optional; defaults to empty (no fallback).
+	FallbackChain []string `json:"fallback_chain,omitempty" jsonschema:"description=Ordered list of model IDs to try on retryable failures"`
 }
 
 // ModelRole identifies the purpose a model serves within the
@@ -30,9 +35,10 @@ type ArchitectOptions struct {
 // false (the default), the ValidationHandler is inert and no post-edit
 // diagnostics or auto-fixes run.
 type ValidationOptions struct {
-	Enabled            bool `json:"enabled,omitempty" jsonschema:"description=Enable post-edit validation pipeline,default=false"`
-	AutoFix            bool `json:"auto_fix,omitempty" jsonschema:"description=Enable automatic fix attempts when validation fails,default=false"`
-	AutoFixLoopEnabled bool `json:"autofix_loop_enabled,omitempty" jsonschema:"description=Enable post-turn auto-fix quality cycle,default=false"`
+	Enabled            bool   `json:"enabled,omitempty" jsonschema:"description=Enable post-edit validation pipeline,default=false"`
+	AutoFix            bool   `json:"auto_fix,omitempty" jsonschema:"description=Enable automatic fix attempts when validation fails,default=false"`
+	AutoFixLoopEnabled bool   `json:"autofix_loop_enabled,omitempty" jsonschema:"description=Enable post-turn auto-fix quality cycle,default=false"`
+	SeverityFilter     string `json:"severity_filter,omitempty" jsonschema:"description=Minimum diagnostic severity to report: error, warning (default), info, or hint,enum=error,enum=warning,enum=info,enum=hint"`
 }
 
 // SnapshotConfig configures snapshot retention for the rewind system.

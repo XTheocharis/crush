@@ -59,6 +59,8 @@ func (m *mockMailbox) Send(msg tools.MailboxMessage) error {
 
 func (m *mockMailbox) HasInbox(_ string) bool { return true }
 
+func (m *mockMailbox) Broadcast(_ tools.MailboxMessage, _ string) []error { return nil }
+
 func newActiveExtension(t *testing.T) *OrchestrationExtension {
 	t.Helper()
 	e := &OrchestrationExtension{}

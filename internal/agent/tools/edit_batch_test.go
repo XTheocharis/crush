@@ -254,3 +254,137 @@ func TestBatchProcessorPreEditDiagnosticsUnavailable(t *testing.T) {
 	require.NotNil(t, result.BaselineDiagnostics)
 	require.Empty(t, result.BaselineDiagnostics.Diags)
 }
+
+func TestDetectOverlapsOverlappingEditsSameFile(t *testing.T) {
+	t.Parallel()
+
+	content := "aaa BBBB ccc"
+	initial := map[string]string{"f.go": content}
+
+	store := NewMapContentStore(initial)
+	ops := []EditOp{
+		{FilePath: "f.go", OldContent: "aaa BBBB", NewContent: "xxx"},
+		{FilePath: "f.go", OldContent: "BBBB ccc", NewContent: "yyy"},
+	}
+
+	err := detectOverlaps(ops, store)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "batch overlap:")
+	require.Contains(t, err.Error(), "overlap in f.go")
+}
+
+func TestDetectOverlapsInsertAtSamePositionFlagged(t *testing.T) {
+	t.Parallel()
+
+	content := "AAAAAA"
+	initial := map[string]string{"f.go": content}
+
+	store := NewMapContentStore(initial)
+	ops := []EditOp{
+		{FilePath: "f.go", OldContent: "AAA", NewContent: "xxx"},
+		{FilePath: "f.go", OldContent: "AAAAAA", NewContent: "yyy"},
+	}
+
+	err := detectOverlaps(ops, store)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "batch overlap:")
+}
+
+func TestDetectOverlapsNonOverlappingSameFile(t *testing.T) {
+	t.Parallel()
+
+	content := "aaa bbb ccc"
+	initial := map[string]string{"f.go": content}
+
+	store := NewMapContentStore(initial)
+	ops := []EditOp{
+		{FilePath: "f.go", OldContent: "aaa", NewContent: "xxx"},
+		{FilePath: "f.go", OldContent: "ccc", NewContent: "yyy"},
+	}
+
+	err := detectOverlaps(ops, store)
+	require.NoError(t, err)
+}
+
+func TestDetectOverlapsDifferentFilesNoConflict(t *testing.T) {
+	t.Parallel()
+
+	initial := map[string]string{
+		"a.go": "same content",
+		"b.go": "same content",
+	}
+
+	store := NewMapContentStore(initial)
+	ops := []EditOp{
+		{FilePath: "a.go", OldContent: "same content", NewContent: "xxx"},
+		{FilePath: "b.go", OldContent: "same content", NewContent: "yyy"},
+	}
+
+	err := detectOverlaps(ops, store)
+	require.NoError(t, err)
+}
+
+func TestDetectOverlapsSingleOpNoConflict(t *testing.T) {
+	t.Parallel()
+
+	initial := map[string]string{"f.go": "hello world"}
+	store := NewMapContentStore(initial)
+	ops := []EditOp{
+		{FilePath: "f.go", OldContent: "hello", NewContent: "goodbye"},
+	}
+
+	err := detectOverlaps(ops, store)
+	require.NoError(t, err)
+}
+
+func TestDetectOverlapsFileNotFoundSkipped(t *testing.T) {
+	t.Parallel()
+
+	initial := map[string]string{"a.go": "hello world"}
+	store := NewMapContentStore(initial)
+	ops := []EditOp{
+		{FilePath: "a.go", OldContent: "hello", NewContent: "goodbye"},
+		{FilePath: "missing.go", OldContent: "hello", NewContent: "goodbye"},
+	}
+
+	err := detectOverlaps(ops, store)
+	require.NoError(t, err)
+}
+
+func TestDetectOverlapsOldContentNotFoundSkipped(t *testing.T) {
+	t.Parallel()
+
+	initial := map[string]string{"f.go": "hello world"}
+	store := NewMapContentStore(initial)
+	ops := []EditOp{
+		{FilePath: "f.go", OldContent: "hello", NewContent: "goodbye"},
+		{FilePath: "f.go", OldContent: "nonexistent", NewContent: "xxx"},
+	}
+
+	err := detectOverlaps(ops, store)
+	require.NoError(t, err)
+}
+
+func TestBatchProcessorOverlapRejected(t *testing.T) {
+	t.Parallel()
+
+	initial := map[string]string{
+		"f.go": "aaa BBBB ccc",
+	}
+
+	store := NewMapContentStore(initial)
+	bp := NewBatchProcessor(store, nil, 0)
+
+	ops := []EditOp{
+		{FilePath: "f.go", OldContent: "aaa BBBB", NewContent: "xxx"},
+		{FilePath: "f.go", OldContent: "BBBB ccc", NewContent: "yyy"},
+	}
+
+	_, err := bp.Apply(ops)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "batch overlap:")
+
+	// Verify file was not modified.
+	current, _ := store.Get("f.go")
+	require.Equal(t, "aaa BBBB ccc", current)
+}

@@ -864,6 +864,7 @@ func TestAutoMemoryPriorityRoundTrip(t *testing.T) {
 		priority float64
 		bucket   string
 	}{
+		{"critical", 0.95, "critical"},
 		{"high", 0.85, "high"},
 		{"medium", 0.5, "medium"},
 		{"low", 0.1, "low"},
@@ -896,6 +897,8 @@ func TestAutoMemoryPriorityRoundTrip(t *testing.T) {
 func TestPriorityToTextBuckets(t *testing.T) {
 	t.Parallel()
 
+	require.Equal(t, "critical", priorityToText(0.95))
+	require.Equal(t, "critical", priorityToText(0.9))
 	require.Equal(t, "high", priorityToText(0.85))
 	require.Equal(t, "high", priorityToText(0.7))
 	require.Equal(t, "medium", priorityToText(0.5))
@@ -903,9 +906,10 @@ func TestPriorityToTextBuckets(t *testing.T) {
 	require.Equal(t, "low", priorityToText(0.1))
 	require.Equal(t, "low", priorityToText(0.0))
 
-	require.InDelta(t, 0.8, textToPriority("high"), 0.001)
-	require.InDelta(t, 0.5, textToPriority("medium"), 0.001)
-	require.InDelta(t, 0.2, textToPriority("low"), 0.001)
+	require.InDelta(t, 0.9, textToPriority("critical"), 0.001)
+	require.InDelta(t, 0.7, textToPriority("high"), 0.001)
+	require.InDelta(t, 0.3, textToPriority("medium"), 0.001)
+	require.InDelta(t, 0.0, textToPriority("low"), 0.001)
 }
 
 type testLLMError struct{}

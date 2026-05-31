@@ -542,6 +542,9 @@ func (m *compactionManager) SetLLMClient(llm LLMClient) {
 	if m.autoMemoryExtractor != nil {
 		m.autoMemoryExtractor.SetLLMClient(llm)
 	}
+	if m.reversibleCompactor != nil {
+		m.reversibleCompactor.SetSummarizer(m.summarizer)
+	}
 }
 
 // CompressWith delegates to the configured Compressor strategy. Returns
@@ -1209,6 +1212,7 @@ func (m *compactionManager) ExtraAgentTools() []fantasy.AgentTool {
 		newFileSearchTool(m.store),
 		newActiveContextTool(m.store),
 		newLineageTool(m.store),
+		newCompactTool(m),
 	)
 	return base
 }

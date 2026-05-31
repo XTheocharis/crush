@@ -87,6 +87,7 @@ type SurfaceContext struct {
 	HasMCP     bool
 	HasLCM     bool
 	HasRepoMap bool
+	BetaTools  bool
 }
 
 // toolMeta holds the bitmask and visibility state for a registered tool.
@@ -177,7 +178,7 @@ func (s *ToolSurface) registerDefaults() {
 	s.Register("agent", CapabilityExecution)
 
 	s.Register("batch_edit", CapabilityFS)
-	s.Register("synthetic_output", CapabilityObservation)
+	s.RegisterWithMarkers("synthetic_output", CapabilityObservation, MarkerBeta)
 }
 
 // Register adds a tool to the surface with the given capability bitmask.
@@ -231,6 +232,12 @@ func (s *ToolSurface) isVisible(name string, caps Capability, ctx SurfaceContext
 
 	if (name == "list_mcp_resources" || name == "read_mcp_resource") && !ctx.HasMCP {
 		return false
+	}
+
+	if !ctx.BetaTools {
+		if meta, ok := s.tools[name]; ok && meta.Markers&MarkerBeta != 0 {
+			return false
+		}
 	}
 
 	return true

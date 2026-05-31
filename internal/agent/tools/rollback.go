@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -20,26 +22,77 @@ type Snapshot struct {
 	CapturedAt time.Time
 }
 
+// PersistentSnapshot represents a snapshot that has been persisted via the
+// Rewind system. It records metadata about when and why the snapshot was
+// stored.
+type PersistentSnapshot struct {
+	ID        string
+	CreatedAt time.Time
+	Reason    string
+	Files     []string
+}
+
+// PersistentSnapshotter is the subset of the Rewind Snapshotter interface
+// that RollbackManager uses to persist snapshots. This avoids a direct
+// dependency on the rewind package.
+type PersistentSnapshotter interface {
+	// CaptureSnapshot persists file state at the given user message sequence.
+	CaptureSnapshot(ctx context.Context, sessionID string, userMessageSeq int) error
+}
+
 // RollbackManager captures pre-edit file state and supports restoring files
 // on failure. It operates directly on the filesystem and does not depend on
-// git.
-type RollbackManager struct{}
+// git. When a PersistentSnapshotter is configured via SetSnapshotter,
+// snapshots are also persisted through the Rewind system for durable storage.
+type RollbackManager struct {
+	mu          sync.Mutex
+	snapshotter PersistentSnapshotter
+	sessionID   string
+	history     []PersistentSnapshot
+}
 
 // NewRollbackManager creates a new RollbackManager.
 func NewRollbackManager() *RollbackManager {
 	return &RollbackManager{}
 }
 
+// SetSnapshotter configures an optional PersistentSnapshotter for persisting
+// snapshots via the Rewind system. When set, each Capture call also records
+// metadata in the rollback history and persists through the Rewind system.
+// Pass nil to disable persistence.
+func (rm *RollbackManager) SetSnapshotter(s PersistentSnapshotter, sessionID string) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	rm.snapshotter = s
+	rm.sessionID = sessionID
+}
+
+// History returns the list of snapshots that were persisted via the Rewind
+// system. If no PersistentSnapshotter is configured, the list is empty.
+func (rm *RollbackManager) History() []PersistentSnapshot {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	out := make([]PersistentSnapshot, len(rm.history))
+	copy(out, rm.history)
+	return out
+}
+
 // Capture reads the contents and metadata of the given file paths, returning
 // a Snapshot that can be used to restore the files later. Files that do not
 // exist on disk are captured with empty content and a zero ModTime so that
 // they can be tracked as "did not exist before edit".
+//
+// When a PersistentSnapshotter is configured, the capture is also persisted
+// through the Rewind system. Persistence errors are logged but do not fail
+// the capture — the in-memory snapshot is always returned.
 func (rm *RollbackManager) Capture(filePaths []string) (*Snapshot, error) {
 	if len(filePaths) == 0 {
-		return &Snapshot{
+		snap := &Snapshot{
 			Files:      []FileSnapshot{},
 			CapturedAt: time.Now(),
-		}, nil
+		}
+		rm.persistSnapshot(snap, "empty capture")
+		return snap, nil
 	}
 
 	files := make([]FileSnapshot, len(filePaths))
@@ -69,10 +122,58 @@ func (rm *RollbackManager) Capture(filePaths []string) (*Snapshot, error) {
 		}
 	}
 
-	return &Snapshot{
+	snap := &Snapshot{
 		Files:      files,
 		CapturedAt: time.Now(),
-	}, nil
+	}
+
+	rm.persistSnapshot(snap, "file capture")
+	return snap, nil
+}
+
+// persistSnapshot records snapshot metadata in the rollback history and, if
+// a PersistentSnapshotter is configured, persists via the Rewind system.
+// Errors from the PersistentSnapshotter are logged but not propagated.
+func (rm *RollbackManager) persistSnapshot(snap *Snapshot, reason string) {
+	rm.mu.Lock()
+	snapshotter := rm.snapshotter
+	sessionID := rm.sessionID
+	rm.mu.Unlock()
+
+	if snapshotter == nil {
+		return
+	}
+
+	// Build file path list for the history record.
+	filePaths := make([]string, len(snap.Files))
+	for i, f := range snap.Files {
+		filePaths[i] = f.FilePath
+	}
+
+	// Persist through the Rewind system. We use seq=0 as a placeholder
+	// since the RollbackManager operates outside the turn-sequence model.
+	// The Rewind system will assign its own ID.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := snapshotter.CaptureSnapshot(ctx, sessionID, 0); err != nil {
+		slog.Error("RollbackManager failed to persist snapshot via Rewind",
+			"error", err,
+			"sessionID", sessionID,
+		)
+		return
+	}
+
+	entry := PersistentSnapshot{
+		ID:        fmt.Sprintf("rollback-%d", snap.CapturedAt.UnixNano()),
+		CreatedAt: snap.CapturedAt,
+		Reason:    reason,
+		Files:     filePaths,
+	}
+
+	rm.mu.Lock()
+	rm.history = append(rm.history, entry)
+	rm.mu.Unlock()
 }
 
 // Restore writes the snapshot contents back to their original file paths.

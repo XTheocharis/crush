@@ -15,7 +15,18 @@ const (
 	defaultMaxDepth       = 3
 	defaultMaxWorkers     = 16
 	minTaskLength     int = 10
+
+	// Conditional strategy thresholds. Approximate token count using
+	// character count at ~4 chars/token, so 500 tokens ≈ 2000 chars.
+	conditionalCharThreshold = 2000
+	conditionalFileThreshold = 1
 )
+
+// architectureKeywords signal complex tasks that warrant decomposition.
+var architectureKeywords = []string{
+	"refactor", "redesign", "migrate", "restructure",
+	"rewrite", "rearchitect", "overhaul",
+}
 
 // DecomposeStrategy selects how an Operator decomposes a task into subtasks.
 type DecomposeStrategy int
@@ -35,6 +46,10 @@ const (
 	// StrategySequential runs subtasks one after another, piping each
 	// output into the next input.
 	StrategySequential
+
+	// StrategyConditional classifies task complexity using heuristics.
+	// Simple tasks execute directly; complex tasks are decomposed.
+	StrategyConditional
 )
 
 func (s DecomposeStrategy) String() string {
@@ -47,6 +62,8 @@ func (s DecomposeStrategy) String() string {
 		return "batch"
 	case StrategySequential:
 		return "sequential"
+	case StrategyConditional:
+		return "conditional"
 	default:
 		return fmt.Sprintf("unknown(%d)", s)
 	}
@@ -54,10 +71,11 @@ func (s DecomposeStrategy) String() string {
 
 // Subtask is a single decomposed unit of work.
 type Subtask struct {
-	ID      string
-	Task    string
-	Context map[string]string
-	Tools   []string
+	ID        string
+	Task      string
+	Context   map[string]string
+	Tools     []string
+	DependsOn []string `json:"depends_on,omitempty"`
 }
 
 // Decomposer splits a parent task into subtasks. Implementations may use an
@@ -164,6 +182,24 @@ func (op *Operator) run(ctx context.Context, task string, context map[string]str
 		}
 	}
 
+	// Conditional strategy: simple tasks execute directly without
+	// decomposition; complex tasks proceed to decompose.
+	if op.cfg.Strategy == StrategyConditional && !isComplexTask(task, context) {
+		resp, err := op.executor(ctx, StructuredRequest{
+			Task:    task,
+			Context: context,
+		})
+		if err != nil {
+			return OperatorResult{Strategy: StrategyConditional, Depth: depth, Error: err.Error()}
+		}
+		return OperatorResult{
+			Success:  resp.Success,
+			Result:   resp.Result,
+			Depth:    depth,
+			Strategy: StrategyConditional,
+		}
+	}
+
 	subtasks, err := op.decomposer.Decompose(ctx, task, context)
 	if err != nil {
 		return OperatorResult{
@@ -181,6 +217,16 @@ func (op *Operator) run(ctx context.Context, task string, context map[string]str
 		return OperatorResult{Success: resp.Success, Result: resp.Result, Depth: depth, Strategy: op.cfg.Strategy}
 	}
 
+	sorted, err := topologicalSort(subtasks)
+	if err != nil {
+		return OperatorResult{
+			Strategy: op.cfg.Strategy,
+			Depth:    depth,
+			Error:    fmt.Sprintf("dependency resolution failed: %v", err),
+		}
+	}
+	subtasks = sorted
+
 	if op.cfg.AutoSelect != nil && *op.cfg.AutoSelect {
 		op.cfg.Strategy = SelectStrategy(subtasks)
 	}
@@ -193,6 +239,8 @@ func (op *Operator) run(ctx context.Context, task string, context map[string]str
 	case StrategyBatch:
 		return op.runBatch(ctx, subtasks, depth)
 	case StrategySequential:
+		return op.runSequential(ctx, subtasks, depth)
+	case StrategyConditional:
 		return op.runSequential(ctx, subtasks, depth)
 	default:
 		return OperatorResult{Strategy: op.cfg.Strategy, Depth: depth, Error: fmt.Sprintf("unknown strategy: %d", op.cfg.Strategy)}
@@ -211,6 +259,25 @@ func (op *Operator) checkGuardrails(task string, depth int) error {
 
 func (op *Operator) isDecomposable(task string) bool {
 	return len(strings.TrimSpace(task)) >= minTaskLength
+}
+
+// isComplexTask returns true when the task exhibits characteristics of a
+// complex task: large character count (proxy for token count), multiple
+// files referenced in context, or architecture-level keywords.
+func isComplexTask(task string, context map[string]string) bool {
+	if len(task) >= conditionalCharThreshold {
+		return true
+	}
+	if len(context) > conditionalFileThreshold {
+		return true
+	}
+	taskLower := strings.ToLower(task)
+	for _, kw := range architectureKeywords {
+		if strings.Contains(taskLower, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 func (op *Operator) runLLMMap(ctx context.Context, subtasks []Subtask, depth int) OperatorResult {
@@ -413,6 +480,83 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// topologicalSort orders subtasks by their DependsOn relationships using
+// Kahn's algorithm. Tasks with no dependencies have in-degree 0 and are
+// processed first. Returns an error if a circular dependency is detected or
+// if a DependsOn references a non-existent task ID.
+func topologicalSort(tasks []Subtask) ([]Subtask, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+
+	index := make(map[string]int, len(tasks))
+	for i, t := range tasks {
+		if _, dup := index[t.ID]; dup {
+			return nil, fmt.Errorf("duplicate subtask ID: %q", t.ID)
+		}
+		index[t.ID] = i
+	}
+
+	hasDeps := false
+	for _, t := range tasks {
+		if len(t.DependsOn) > 0 {
+			hasDeps = true
+			break
+		}
+	}
+	if !hasDeps {
+		return tasks, nil
+	}
+
+	inDegree := make([]int, len(tasks))
+	dependents := make(map[int][]int)
+
+	for i, t := range tasks {
+		for _, dep := range t.DependsOn {
+			depIdx, ok := index[dep]
+			if !ok {
+				return nil, fmt.Errorf("subtask %q depends on unknown task %q", t.ID, dep)
+			}
+			inDegree[i]++
+			dependents[depIdx] = append(dependents[depIdx], i)
+		}
+	}
+
+	queue := make([]int, 0, len(tasks))
+	for i, d := range inDegree {
+		if d == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	sorted := make([]Subtask, 0, len(tasks))
+	for len(queue) > 0 {
+		idx := queue[0]
+		queue = queue[1:]
+		sorted = append(sorted, tasks[idx])
+
+		for _, depIdx := range dependents[idx] {
+			inDegree[depIdx]--
+			if inDegree[depIdx] == 0 {
+				queue = append(queue, depIdx)
+			}
+		}
+	}
+
+	if len(sorted) < len(tasks) {
+		remaining := make([]string, 0)
+		for i, d := range inDegree {
+			if d > 0 {
+				remaining = append(remaining, tasks[i].ID)
+			}
+		}
+		return nil, fmt.Errorf("circular dependency detected among subtasks: %s",
+			strings.Join(remaining, ", "))
+	}
+
+	return sorted, nil
 }
 
 // SelectStrategy analyzes subtasks and returns the most appropriate

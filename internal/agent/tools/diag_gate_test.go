@@ -426,3 +426,164 @@ func TestImportCascade_DefaultConfig(t *testing.T) {
 	require.Len(t, result, 1)
 	require.Contains(t, result, importerFile)
 }
+
+func TestSeverityFilter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		filter        DiagnosticSeverity
+		addedDiags    []DiagnosticInfo
+		wantPass      bool
+		wantNewErrors int
+		wantWarnings  int
+	}{
+		{
+			name:   "error_filter_only_errors",
+			filter: SeverityError,
+			addedDiags: []DiagnosticInfo{
+				{FilePath: "a.go", Line: 1, Severity: SeverityError, Message: "err"},
+				{FilePath: "a.go", Line: 2, Severity: SeverityWarning, Message: "warn"},
+				{FilePath: "a.go", Line: 3, Severity: SeverityInfo, Message: "info"},
+				{FilePath: "a.go", Line: 4, Severity: SeverityHint, Message: "hint"},
+			},
+			wantPass:      false,
+			wantNewErrors: 1,
+			wantWarnings:  0,
+		},
+		{
+			name:   "warning_filter_errors_and_warnings",
+			filter: SeverityWarning,
+			addedDiags: []DiagnosticInfo{
+				{FilePath: "a.go", Line: 1, Severity: SeverityError, Message: "err"},
+				{FilePath: "a.go", Line: 2, Severity: SeverityWarning, Message: "warn"},
+				{FilePath: "a.go", Line: 3, Severity: SeverityInfo, Message: "info"},
+				{FilePath: "a.go", Line: 4, Severity: SeverityHint, Message: "hint"},
+			},
+			wantPass:      false,
+			wantNewErrors: 1,
+			wantWarnings:  1,
+		},
+		{
+			name:   "info_filter_up_to_info",
+			filter: SeverityInfo,
+			addedDiags: []DiagnosticInfo{
+				{FilePath: "a.go", Line: 1, Severity: SeverityError, Message: "err"},
+				{FilePath: "a.go", Line: 2, Severity: SeverityWarning, Message: "warn"},
+				{FilePath: "a.go", Line: 3, Severity: SeverityInfo, Message: "info"},
+				{FilePath: "a.go", Line: 4, Severity: SeverityHint, Message: "hint"},
+			},
+			wantPass:      false,
+			wantNewErrors: 1,
+			wantWarnings:  2,
+		},
+		{
+			name:   "hint_filter_all_reported",
+			filter: SeverityHint,
+			addedDiags: []DiagnosticInfo{
+				{FilePath: "a.go", Line: 1, Severity: SeverityError, Message: "err"},
+				{FilePath: "a.go", Line: 2, Severity: SeverityWarning, Message: "warn"},
+				{FilePath: "a.go", Line: 3, Severity: SeverityInfo, Message: "info"},
+				{FilePath: "a.go", Line: 4, Severity: SeverityHint, Message: "hint"},
+			},
+			wantPass:      false,
+			wantNewErrors: 1,
+			wantWarnings:  3,
+		},
+		{
+			name:   "default_filter_warn_only",
+			filter: 0,
+			addedDiags: []DiagnosticInfo{
+				{FilePath: "a.go", Line: 1, Severity: SeverityError, Message: "err"},
+				{FilePath: "a.go", Line: 2, Severity: SeverityWarning, Message: "warn"},
+				{FilePath: "a.go", Line: 3, Severity: SeverityInfo, Message: "info"},
+				{FilePath: "a.go", Line: 4, Severity: SeverityHint, Message: "hint"},
+			},
+			wantPass:      false,
+			wantNewErrors: 1,
+			wantWarnings:  1,
+		},
+		{
+			name:   "error_filter_warnings_only_passes",
+			filter: SeverityError,
+			addedDiags: []DiagnosticInfo{
+				{FilePath: "a.go", Line: 1, Severity: SeverityWarning, Message: "warn"},
+				{FilePath: "a.go", Line: 2, Severity: SeverityInfo, Message: "info"},
+			},
+			wantPass:      true,
+			wantNewErrors: 0,
+			wantWarnings:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gate *DiagnosticGate
+			if tt.name == "default_filter_warn_only" {
+				gate = NewDiagnosticGate(nil)
+			} else {
+				gate = NewDiagnosticGate(nil, WithSeverityFilter(tt.filter))
+			}
+
+			baseline := map[diagnosticKey]DiagnosticInfo{}
+			post := map[diagnosticKey]DiagnosticInfo{}
+			for _, di := range tt.addedDiags {
+				post[di.Key()] = di
+			}
+
+			diff := computeDiff(baseline, post)
+			result := GateResult{Pass: true, Diff: diff}
+			for _, di := range diff.Added {
+				if di.Severity > gate.SeverityFilter() {
+					continue
+				}
+				if di.Severity == SeverityError {
+					result.NewErrors = append(result.NewErrors, di)
+					result.Pass = false
+				} else {
+					result.Warnings = append(result.Warnings, di)
+				}
+			}
+
+			require.Equal(t, tt.wantPass, result.Pass)
+			require.Len(t, result.NewErrors, tt.wantNewErrors)
+			require.Len(t, result.Warnings, tt.wantWarnings)
+		})
+	}
+}
+
+func TestParseSeverityFilter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input    string
+		expected DiagnosticSeverity
+	}{
+		{"error", SeverityError},
+		{"warning", SeverityWarning},
+		{"info", SeverityInfo},
+		{"hint", SeverityHint},
+		{"", SeverityWarning},
+		{"unknown", SeverityWarning},
+		{"ERROR", SeverityWarning},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.expected, ParseSeverityFilter(tt.input))
+		})
+	}
+}
+
+func TestSeverityFilterDefault(t *testing.T) {
+	t.Parallel()
+
+	gate := NewDiagnosticGate(nil)
+	require.Equal(t, SeverityWarning, gate.SeverityFilter())
+
+	gateExplicit := NewDiagnosticGate(nil, WithSeverityFilter(SeverityError))
+	require.Equal(t, SeverityError, gateExplicit.SeverityFilter())
+}

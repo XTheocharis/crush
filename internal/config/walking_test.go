@@ -357,3 +357,149 @@ func TestFileExists(t *testing.T) {
 	require.NoError(t, os.Mkdir(filepath.Join(tmp, "subdir"), 0o755))
 	require.True(t, fileExists(filepath.Join(tmp, "subdir")))
 }
+
+func TestWalkDownwardFindsContextFiles(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "pkg"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "pkg", "CRUSH.md"), []byte("pkg context"), 0o644))
+
+	paths, err := WalkContextPaths(tmp)
+	require.NoError(t, err)
+
+	var basenames []string
+	for _, p := range paths {
+		basenames = append(basenames, filepath.Base(p))
+	}
+	require.Contains(t, basenames, "CRUSH.md")
+	found := false
+	for _, p := range paths {
+		if filepath.Base(p) == "CRUSH.md" {
+			found = true
+			require.Contains(t, p, "pkg", "CRUSH.md should be from subdirectory")
+		}
+	}
+	require.True(t, found, "should find CRUSH.md in subdirectory")
+}
+
+func TestWalkDownwardRespectsDepth(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	// Level 1: sub/
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "sub", "CRUSH.md"), []byte("l1"), 0o644))
+
+	// Level 2: sub/deep/
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "sub", "deep"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "sub", "deep", "AGENTS.md"), []byte("l2"), 0o644))
+
+	// Level 3: sub/deep/deeper/ — should NOT be found with default depth 2.
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "sub", "deep", "deeper"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "sub", "deep", "deeper", "CLAUDE.md"), []byte("l3"), 0o644))
+
+	paths, err := WalkContextPaths(tmp)
+	require.NoError(t, err)
+
+	var basenames []string
+	for _, p := range paths {
+		basenames = append(basenames, filepath.Base(p))
+	}
+	require.Contains(t, basenames, "CRUSH.md", "should find file at depth 1")
+	require.Contains(t, basenames, "AGENTS.md", "should find file at depth 2")
+	require.NotContains(t, basenames, "CLAUDE.md", "should NOT find file at depth 3")
+}
+
+func TestWalkDownwardSkipsExcludedDirs(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	for _, skip := range []string{"node_modules", ".git", "vendor", "dist", "build", ".next", ".cache"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(tmp, skip), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(tmp, skip, "CRUSH.md"), []byte(skip), 0o644))
+	}
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "src"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "src", "AGENTS.md"), []byte("src"), 0o644))
+
+	paths, err := WalkContextPaths(tmp)
+	require.NoError(t, err)
+
+	for _, p := range paths {
+		base := filepath.Base(p)
+		dir := filepath.Dir(p)
+		for _, skip := range []string{"node_modules", ".git", "vendor", "dist", "build", ".next", ".cache"} {
+			require.NotContains(t, dir, skip, "%s should not appear in skipped directory %s", base, skip)
+		}
+	}
+
+	found := false
+	for _, p := range paths {
+		if filepath.Base(p) == "AGENTS.md" {
+			found = true
+		}
+	}
+	require.True(t, found, "should still find files in non-skipped directories")
+}
+
+func TestWalkDownwardDeduplicatesWithUpward(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	// Root-level file found by upward walk.
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte("root"), 0o644))
+
+	paths, err := WalkContextPaths(tmp)
+	require.NoError(t, err)
+
+	count := 0
+	for _, p := range paths {
+		if filepath.Base(p) == "AGENTS.md" {
+			count++
+		}
+	}
+	require.Equal(t, 1, count, "AGENTS.md should appear exactly once even with both upward and downward scans")
+}
+
+func TestWalkDownwardFindsMultipleLevels(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "pkg"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "pkg", "CRUSH.md"), []byte("pkg"), 0o644))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "cmd"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "cmd", "CLAUDE.md"), []byte("cmd"), 0o644))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "internal", "server"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "internal", "server", "GEMINI.md"), []byte("server"), 0o644))
+
+	paths, err := WalkContextPaths(tmp)
+	require.NoError(t, err)
+
+	var basenames []string
+	for _, p := range paths {
+		basenames = append(basenames, filepath.Base(p))
+	}
+	require.Contains(t, basenames, "CRUSH.md")
+	require.Contains(t, basenames, "CLAUDE.md")
+	require.Contains(t, basenames, "GEMINI.md", "should find context files at depth 2")
+}
+
+func TestWalkDownwardEmptySubdirs(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "empty"), 0o755))
+
+	paths, err := WalkContextPaths(tmp)
+	require.NoError(t, err)
+	require.Empty(t, paths, "empty subdirectories should produce no results")
+}

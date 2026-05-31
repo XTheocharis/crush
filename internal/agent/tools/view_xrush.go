@@ -40,7 +40,13 @@ func handleBatchRead(
 
 	unique := dedupBatchPaths(resolved)
 
-	results := batchReadFiles(ctx, unique, batchDefaultTokenBudget)
+	readFiles, _ := ft.ListReadFiles(ctx, sessionID)
+	readSet := make(map[string]struct{}, len(readFiles))
+	for _, p := range readFiles {
+		readSet[p] = struct{}{}
+	}
+
+	results := batchReadFiles(ctx, unique, batchDefaultTokenBudget, readSet, nil)
 
 	var b strings.Builder
 	var paths []string
@@ -73,10 +79,17 @@ func handleBatchRead(
 	return fantasy.NewTextResponse(b.String()), nil
 }
 
-func batchReadFiles(ctx context.Context, paths []string, tokenBudget int) map[string]batchReadResult {
+func batchReadFiles(ctx context.Context, paths []string, tokenBudget int, readSet map[string]struct{}, fileScores map[string]float64) map[string]batchReadResult {
 	ordered := make([]string, len(paths))
 	copy(ordered, paths)
-	sort.Strings(ordered)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		pi := filePriority(ordered[i], readSet, fileScores)
+		pj := filePriority(ordered[j], readSet, fileScores)
+		if pi != pj {
+			return pi > pj
+		}
+		return ordered[i] < ordered[j]
+	})
 
 	sem := make(chan struct{}, batchMaxWorkers)
 
@@ -173,4 +186,20 @@ func sliceContent(content string, offset, limit int) string {
 		lines = lines[:limit]
 	}
 	return strings.Join(lines, "\n")
+}
+
+const (
+	priorityRecentlyRead = 1000
+	priorityPageRankBase = 100
+)
+
+func filePriority(path string, readSet map[string]struct{}, fileScores map[string]float64) float64 {
+	var score float64
+	if _, ok := readSet[path]; ok {
+		score += priorityRecentlyRead
+	}
+	if rank, ok := fileScores[path]; ok && rank > 0 {
+		score += priorityPageRankBase + rank*10
+	}
+	return score
 }

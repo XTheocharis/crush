@@ -373,7 +373,7 @@ func TestObservationPriorityColumn(t *testing.T) {
 	// They arrive in this order so we can verify that sorting reorders them.
 	obsJSON := `[
 		{"event":"low priority event","context":"c1","implication":"i1","priority":0.2},
-		{"event":"high priority event","context":"c2","implication":"i2","priority":0.9},
+		{"event":"high priority event","context":"c2","implication":"i2","priority":0.75},
 		{"event":"medium priority event","context":"c3","implication":"i3","priority":0.5}
 	]`
 	mockLLM := &mockLLMClient{response: obsJSON}
@@ -411,7 +411,9 @@ func TestObservationPriorityText_FourLevels(t *testing.T) {
 		priority float64
 		want     string
 	}{
-		{0.9, "high"},
+		{0.95, "critical"},
+		{0.9, "critical"},
+		{0.89, "high"},
 		{0.7, "high"},
 		{0.69, "medium"},
 		{0.5, "medium"},
@@ -432,6 +434,7 @@ func TestObservationPriorityText_EmojiMapping(t *testing.T) {
 		priority float64
 		want     string
 	}{
+		{0.95, "critical"},
 		{0.8, "high"},
 		{0.45, "medium"},
 		{0.2, "low"},
@@ -448,16 +451,17 @@ func TestObservationFourPriorityRoundTrip(t *testing.T) {
 	queries, store := setupObservationTestDB(t)
 	ctx := context.Background()
 
-	sessionID := "obs-test-4priority"
+	sessionID := "obs-test-5priority"
 	createTestSession(t, queries, sessionID)
-	createTestMessage(t, queries, sessionID, "msg-1", "user", "4 priority levels test")
+	createTestMessage(t, queries, sessionID, "msg-1", "user", "5 priority levels test")
 	createTestMessage(t, queries, sessionID, "msg-2", "assistant", "acknowledged")
 
 	obsJSON := `[
 		{"event":"info event","context":"c1","implication":"i1","priority":0.05},
 		{"event":"low event","context":"c2","implication":"i2","priority":0.2},
 		{"event":"medium event","context":"c3","implication":"i3","priority":0.5},
-		{"event":"high event","context":"c4","implication":"i4","priority":0.9}
+		{"event":"high event","context":"c4","implication":"i4","priority":0.75},
+		{"event":"critical event","context":"c5","implication":"i5","priority":0.95}
 	]`
 	mockLLM := &mockLLMClient{response: obsJSON}
 	oc := NewObservationCoordinator(store, mockLLM, 0, nil)
@@ -465,16 +469,17 @@ func TestObservationFourPriorityRoundTrip(t *testing.T) {
 	require.NotNil(t, ch)
 	result := <-ch
 	require.NoError(t, result.Error)
-	require.Len(t, result.Observations, 4)
+	require.Len(t, result.Observations, 5)
 
 	stored, err := oc.ListObservations(ctx, sessionID)
 	require.NoError(t, err)
-	require.Len(t, stored, 4)
+	require.Len(t, stored, 5)
 
-	require.Equal(t, "high event", stored[0].Event)
-	require.Equal(t, "medium event", stored[1].Event)
-	require.Equal(t, "low event", stored[2].Event)
-	require.Equal(t, "info event", stored[3].Event)
+	require.Equal(t, "critical event", stored[0].Event)
+	require.Equal(t, "high event", stored[1].Event)
+	require.Equal(t, "medium event", stored[2].Event)
+	require.Equal(t, "low event", stored[3].Event)
+	require.Equal(t, "info event", stored[4].Event)
 }
 
 func TestDegenerateRing_PushAndItems(t *testing.T) {
@@ -604,4 +609,54 @@ func TestObservationSummary(t *testing.T) {
 	t.Parallel()
 	obs := Observation{Event: "event", Context: "context", Implication: "ignored"}
 	require.Equal(t, "event|context", observationSummary(obs))
+}
+
+func TestPriorityOrdering(t *testing.T) {
+	t.Parallel()
+
+	t.Run("observation_constants_ordering", func(t *testing.T) {
+		t.Parallel()
+		require.True(t, PriorityCritical > PriorityHigh, "critical must be > high")
+		require.True(t, PriorityHigh > PriorityMedium, "high must be > medium")
+		require.True(t, PriorityMedium > PriorityLow, "medium must be > low")
+		require.True(t, PriorityLow > PriorityInfo, "low must be > info")
+	})
+
+	t.Run("observation_text_mapping", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "critical", observationPriorityText(0.95))
+		require.Equal(t, "critical", observationPriorityText(0.9))
+		require.Equal(t, "high", observationPriorityText(0.89))
+		require.Equal(t, "high", observationPriorityText(0.7))
+		require.Equal(t, "medium", observationPriorityText(0.4))
+		require.Equal(t, "low", observationPriorityText(0.15))
+		require.Equal(t, "info", observationPriorityText(0.0))
+	})
+
+	t.Run("memory_constants_ordering", func(t *testing.T) {
+		t.Parallel()
+		require.True(t, MemoryPriorityCritical > MemoryPriorityHigh, "critical must be > high")
+		require.True(t, MemoryPriorityHigh > MemoryPriorityMedium, "high must be > medium")
+		require.True(t, MemoryPriorityMedium > MemoryPriorityLow, "medium must be > low")
+	})
+
+	t.Run("memory_priority_round_trip", func(t *testing.T) {
+		t.Parallel()
+		levels := []struct {
+			name      string
+			threshold float64
+		}{
+			{"critical", 0.95},
+			{"high", 0.75},
+			{"medium", 0.5},
+			{"low", 0.1},
+		}
+		for _, l := range levels {
+			text := priorityToText(l.threshold)
+			back := textToPriority(text)
+			require.Equal(t, text, priorityToText(back),
+				"round-trip failed for threshold %.2f: got text=%q back=%.2f",
+				l.threshold, text, back)
+		}
+	})
 }

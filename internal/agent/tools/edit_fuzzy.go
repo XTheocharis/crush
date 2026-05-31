@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/crush/internal/fsext"
 )
@@ -126,6 +129,21 @@ func findBestMatch(content, oldString string) (string, bool, bool) {
 	}
 
 	return "", false, false
+}
+
+// FuzzyLookup attempts to find a match for query in the given file content.
+// It first tries string-level fuzzy matching via findBestMatch. If that fails
+// and tree-sitter is available, it falls back to symbol-level fuzzy lookup.
+// Returns the string match if found, or symbol matches as a fallback.
+func FuzzyLookup(ctx context.Context, query, filePath string, content []byte) (stringMatch string, found bool, symbols []SymbolMatch) {
+	normalized := normalizeOldStringForMatching(query)
+	matched, found, _ := findBestMatch(string(content), normalized)
+	if found {
+		return matched, true, nil
+	}
+
+	syms, _ := fuzzySymbolLookup(ctx, query, filePath, content)
+	return "", false, syms
 }
 
 func normalizeOldStringForMatching(oldString string) string {
@@ -304,4 +322,154 @@ func tryNormalizeIndentation(content, oldString string) (string, bool, bool) {
 		return content[matches[0][0]:matches[0][1]], true, true
 	}
 	return content[matches[0][0]:matches[0][1]], true, false
+}
+
+// SymbolMatch represents a symbol found by tree-sitter fuzzy lookup.
+type SymbolMatch struct {
+	Name     string
+	Kind     string // e.g., "function", "type", "method", "struct".
+	Line     int    // 1-based line number.
+	Score    int    // Higher is better.
+	FilePath string
+}
+
+// symbolParser is a minimal interface for tree-sitter analysis. This avoids
+// importing the treesitter package directly (which requires CGO). The real
+// implementation is provided via build-tag-conditional files.
+type symbolParser interface {
+	Analyze(ctx context.Context, path string, content []byte) (*symbolAnalysis, error)
+}
+
+// symbolAnalysis mirrors the subset of treesitter.FileAnalysis needed for
+// symbol fuzzy matching.
+type symbolAnalysis struct {
+	Symbols []symbolDef
+}
+
+// symbolDef mirrors the subset of treesitter.SymbolInfo needed for fuzzy
+// matching.
+type symbolDef struct {
+	Name string
+	Kind string
+	Line int
+}
+
+// globalSymbolParser holds the optional tree-sitter parser for symbol lookup.
+// Set via SetSymbolParser; nil when tree-sitter is unavailable.
+var globalSymbolParser symbolParser
+
+// SetSymbolParser sets the global tree-sitter parser used for symbol-level
+// fuzzy matching. Pass nil to disable symbol lookup.
+func SetSymbolParser(p symbolParser) {
+	globalSymbolParser = p
+}
+
+// fuzzySymbolLookup attempts to find symbol definitions in filePath whose
+// names fuzzy-match the query. Returns matches sorted by descending score.
+// Returns an empty slice (not an error) if tree-sitter is unavailable or the
+// file cannot be parsed.
+func fuzzySymbolLookup(ctx context.Context, query, filePath string, content []byte) ([]SymbolMatch, error) {
+	if globalSymbolParser == nil || query == "" {
+		return nil, nil
+	}
+
+	analysis, err := globalSymbolParser.Analyze(ctx, filePath, content)
+	if err != nil {
+		return nil, nil //nolint:nilerr // Graceful fallback on parse errors.
+	}
+	if analysis == nil {
+		return nil, nil
+	}
+
+	var matches []SymbolMatch
+	for _, sym := range analysis.Symbols {
+		score := fuzzyMatchScore(query, sym.Name)
+		if score > 0 {
+			kind := sym.Kind
+			if kind == "" {
+				kind = "symbol"
+			}
+			matches = append(matches, SymbolMatch{
+				Name:     sym.Name,
+				Kind:     kind,
+				Line:     sym.Line,
+				Score:    score,
+				FilePath: filePath,
+			})
+		}
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].Score != matches[j].Score {
+			return matches[i].Score > matches[j].Score
+		}
+		return matches[i].Name < matches[j].Name
+	})
+
+	return matches, nil
+}
+
+// fuzzyMatchScore returns a score indicating how well query matches target
+// using subsequence matching. A score of 0 means no match. Higher scores
+// indicate better matches. The scoring rewards:
+//   - Matching at word boundaries (camelCase, underscore, start of string)
+//   - Consecutive character matches
+//   - Shorter target names (normalized by length)
+func fuzzyMatchScore(query, target string) int {
+	if query == "" || target == "" {
+		return 0
+	}
+
+	qRunes := []rune(strings.ToLower(query))
+	tRunes := []rune(strings.ToLower(target))
+
+	qi := 0
+	score := 0
+	lastMatchIdx := -2
+
+	for ti, tr := range tRunes {
+		if qi >= len(qRunes) {
+			break
+		}
+
+		if tr == qRunes[qi] {
+			if ti == 0 || isWordBoundary(tRunes, ti) {
+				score += 3
+			}
+			if lastMatchIdx == ti-1 {
+				score += 2
+			}
+			score += 1
+			lastMatchIdx = ti
+			qi++
+		}
+	}
+
+	// Subsequence check: all query chars must be matched.
+	if qi < len(qRunes) {
+		return 0
+	}
+
+	// Prefer shorter names; penalize length.
+	score = score * 10 / (len(tRunes) + 1)
+
+	return score
+}
+
+// isWordBoundary reports whether position i in runes is the start of a new
+// word segment (camelCase transition, underscore boundary, or hyphen
+// boundary).
+func isWordBoundary(runes []rune, i int) bool {
+	if i == 0 {
+		return true
+	}
+	prev := runes[i-1]
+	curr := runes[i]
+	if prev == '_' || prev == '-' {
+		return true
+	}
+	if unicode.IsLower(prev) && unicode.IsUpper(curr) {
+		return true
+	}
+	return false
 }

@@ -84,6 +84,26 @@ func (m *Mailbox) HasInbox(name string) bool {
 	return ok
 }
 
+func (m *Mailbox) Broadcast(msg MailboxMessage, exclude string) []error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var errs []error
+	for name, ch := range m.inboxes {
+		if name == exclude {
+			continue
+		}
+		toMsg := msg
+		toMsg.To = name
+		select {
+		case ch <- toMsg:
+		default:
+			errs = append(errs, fmt.Errorf("mailbox: inbox full for agent %q", name))
+		}
+	}
+	return errs
+}
+
 // AgentRegistry tracks named ForkedAgents for orchestration operations.
 type AgentRegistry struct {
 	mu     sync.RWMutex

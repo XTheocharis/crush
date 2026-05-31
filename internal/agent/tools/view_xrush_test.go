@@ -11,6 +11,113 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFilePriority_RecentlyReadBeatsUnread(t *testing.T) {
+	t.Parallel()
+
+	path := "/tmp/recent.go"
+	readSet := map[string]struct{}{path: {}}
+	got := filePriority(path, readSet, nil)
+	gotOther := filePriority("/tmp/other.go", readSet, nil)
+	require.Greater(t, got, gotOther, "recently read file should have higher priority")
+}
+
+func TestFilePriority_PageRankBeatsNoRank(t *testing.T) {
+	t.Parallel()
+
+	fileScores := map[string]float64{"/tmp/important.go": 0.5}
+	got := filePriority("/tmp/important.go", nil, fileScores)
+	gotOther := filePriority("/tmp/unimportant.go", nil, fileScores)
+	require.Greater(t, got, gotOther, "file with PageRank should have higher priority")
+}
+
+func TestFilePriority_RecentlyReadBeatsPageRank(t *testing.T) {
+	t.Parallel()
+
+	readSet := map[string]struct{}{"/tmp/recent.go": {}}
+	fileScores := map[string]float64{"/tmp/ranked.go": 1.0}
+	gotRead := filePriority("/tmp/recent.go", readSet, fileScores)
+	gotRanked := filePriority("/tmp/ranked.go", readSet, fileScores)
+	require.Greater(t, gotRead, gotRanked, "recently read should beat PageRank")
+}
+
+func TestFilePriority_AlphabeticalTiebreaker(t *testing.T) {
+	t.Parallel()
+
+	p1 := filePriority("/tmp/a.go", nil, nil)
+	p2 := filePriority("/tmp/b.go", nil, nil)
+	require.Equal(t, p1, p2, "files with no signals should have equal priority")
+}
+
+func TestBatchReadFiles_PriorityOrdering(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "alpha.txt"), []byte("a"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "bravo.txt"), []byte("b"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "charlie.txt"), []byte("c"), 0o644))
+
+	readSet := map[string]struct{}{
+		filepath.Join(workingDir, "charlie.txt"): {},
+	}
+
+	paths := []string{
+		filepath.Join(workingDir, "alpha.txt"),
+		filepath.Join(workingDir, "charlie.txt"),
+		filepath.Join(workingDir, "bravo.txt"),
+	}
+
+	results := batchReadFiles(context.Background(), paths, batchDefaultTokenBudget, readSet, nil)
+	require.Len(t, results, 3)
+
+	require.Contains(t, results[filepath.Join(workingDir, "charlie.txt")].content, "c")
+	require.Contains(t, results[filepath.Join(workingDir, "alpha.txt")].content, "a")
+	require.Contains(t, results[filepath.Join(workingDir, "bravo.txt")].content, "b")
+}
+
+func TestBatchReadFiles_PageRankOrdering(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "low.go"), []byte("low"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "high.go"), []byte("high"), 0o644))
+
+	fileScores := map[string]float64{
+		filepath.Join(workingDir, "high.go"): 0.9,
+		filepath.Join(workingDir, "low.go"):  0.1,
+	}
+
+	paths := []string{
+		filepath.Join(workingDir, "low.go"),
+		filepath.Join(workingDir, "high.go"),
+	}
+
+	results := batchReadFiles(context.Background(), paths, batchDefaultTokenBudget, nil, fileScores)
+	require.Len(t, results, 2)
+	require.Contains(t, results[filepath.Join(workingDir, "high.go")].content, "high")
+	require.Contains(t, results[filepath.Join(workingDir, "low.go")].content, "low")
+}
+
+func TestBatchReadFiles_NilSignalsFallsBackToAlphabetical(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "c.txt"), []byte("c"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "a.txt"), []byte("a"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "b.txt"), []byte("b"), 0o644))
+
+	paths := []string{
+		filepath.Join(workingDir, "c.txt"),
+		filepath.Join(workingDir, "a.txt"),
+		filepath.Join(workingDir, "b.txt"),
+	}
+
+	results := batchReadFiles(context.Background(), paths, batchDefaultTokenBudget, nil, nil)
+	require.Len(t, results, 3)
+	require.Contains(t, results[filepath.Join(workingDir, "a.txt")].content, "a")
+	require.Contains(t, results[filepath.Join(workingDir, "b.txt")].content, "b")
+	require.Contains(t, results[filepath.Join(workingDir, "c.txt")].content, "c")
+}
+
 func TestViewDirectoryListing(t *testing.T) {
 	t.Parallel()
 
@@ -123,7 +230,7 @@ func TestViewBatchRead_ExceedsTokenBudget(t *testing.T) {
 		filepath.Join(workingDir, "big0.txt"),
 		filepath.Join(workingDir, "big1.txt"),
 		filepath.Join(workingDir, "big2.txt"),
-	}, 50)
+	}, 50, nil, nil)
 
 	totalChars := 0
 	for _, r := range results {

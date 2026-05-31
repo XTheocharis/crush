@@ -51,7 +51,9 @@ func (e *TreesitterExtension) Init(_ context.Context, host ext.HostContext) erro
 
 	var diagGate *tools.DiagnosticGate
 	if lspMgr := host.LSP(); lspMgr != nil {
-		diagGate = tools.NewDiagnosticGate(lspMgr)
+		diagGate = tools.NewDiagnosticGate(lspMgr, tools.WithSeverityFilter(
+			tools.ParseSeverityFilter(vcfg.SeverityFilter),
+		))
 	}
 
 	e.handler = tools.NewValidationHandler(parser, diagGate, handlerCfg)

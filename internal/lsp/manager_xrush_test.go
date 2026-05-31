@@ -186,6 +186,129 @@ func TestStartServerCleansUpOnWaitForReadyError(t *testing.T) {
 	require.False(t, mgr.recentlyUnavailable("test-server"))
 }
 
+func TestRenameForServer(t *testing.T) {
+	t.Parallel()
+
+	tmpdir := t.TempDir()
+	tmpfile, err := os.CreateTemp(tmpdir, "main.*.go")
+	require.NoError(t, err)
+	tmpPath := tmpfile.Name()
+	_, err = tmpfile.WriteString("package main\nfunc main() {}\n")
+	require.NoError(t, err)
+	tmpfile.Close()
+
+	var calls atomic.Int32
+
+	c := &Client{
+		name:        "gopls",
+		fileTypes:   []string{".go"},
+		diagnostics: csync.NewVersionedMap[protocol.DocumentURI, []protocol.Diagnostic](),
+		openFiles:   csync.NewMap[string, *OpenFileInfo](),
+		xrushClientFields: xrushClientFields{
+			callLSP: func(_ context.Context, _ string, _ any, result any) error {
+				calls.Add(1)
+				*(result.(*any)) = map[string]any{
+					"changes": map[string]any{},
+				}
+				return nil
+			},
+		},
+		cwd:    tmpdir,
+		config: config.LSPConfig{FileTypes: []string{".go"}},
+	}
+	c.serverState.Store(StateReady)
+
+	uri := string(protocol.URIFromPath(tmpPath))
+	c.openFiles.Set(uri, &OpenFileInfo{Version: 1, URI: protocol.DocumentURI(uri)})
+
+	mgr := &Manager{
+		clients:  csync.NewMap[string, *Client](),
+		executor: NewTaskExecutor(0),
+		callback: func(string, *Client) {},
+	}
+	mgr.executor.Start()
+	t.Cleanup(mgr.executor.Stop)
+	mgr.clients.Set("gopls", c)
+
+	edit, err := mgr.RenameForServer(context.Background(), "gopls", tmpPath, 1, 5, "newMain")
+	require.NoError(t, err)
+	require.NotNil(t, edit)
+	require.Equal(t, int32(1), calls.Load())
+}
+
+func TestRenameForServerClientNotFound(t *testing.T) {
+	t.Parallel()
+
+	mgr := &Manager{
+		clients:  csync.NewMap[string, *Client](),
+		executor: NewTaskExecutor(0),
+		callback: func(string, *Client) {},
+	}
+	mgr.executor.Start()
+	t.Cleanup(mgr.executor.Stop)
+
+	edit, err := mgr.RenameForServer(context.Background(), "missing", "/tmp/test.go", 1, 1, "newName")
+	require.ErrorIs(t, err, ErrClientNotFound)
+	require.Nil(t, edit)
+}
+
+func TestSafeDeleteForServerClientNotFound(t *testing.T) {
+	t.Parallel()
+
+	mgr := &Manager{
+		clients:  csync.NewMap[string, *Client](),
+		executor: NewTaskExecutor(0),
+		callback: func(string, *Client) {},
+	}
+	mgr.executor.Start()
+	t.Cleanup(mgr.executor.Stop)
+
+	locs, err := mgr.SafeDeleteForServer(context.Background(), "missing", "/tmp/test.go", 1, 1)
+	require.ErrorIs(t, err, ErrClientNotFound)
+	require.Nil(t, locs)
+}
+
+func TestFindClientForFile(t *testing.T) {
+	t.Parallel()
+
+	tmpdir := t.TempDir()
+
+	goClient := &Client{
+		name:      "gopls",
+		fileTypes: []string{".go"},
+		cwd:       tmpdir,
+		config:    config.LSPConfig{FileTypes: []string{".go"}},
+	}
+	goClient.serverState.Store(StateReady)
+
+	tsClient := &Client{
+		name:      "typescript-language-server",
+		fileTypes: []string{".ts"},
+		cwd:       tmpdir,
+		config:    config.LSPConfig{FileTypes: []string{".ts"}},
+	}
+	tsClient.serverState.Store(StateReady)
+
+	mgr := &Manager{
+		clients:  csync.NewMap[string, *Client](),
+		callback: func(string, *Client) {},
+	}
+	mgr.clients.Set("gopls", goClient)
+	mgr.clients.Set("typescript-language-server", tsClient)
+
+	name, client := mgr.FindClientForFile(tmpdir + "/main.go")
+	require.Equal(t, "gopls", name)
+	require.NotNil(t, client)
+
+	name, client = mgr.FindClientForFile(tmpdir + "/app.ts")
+	require.Equal(t, "typescript-language-server", name)
+	require.NotNil(t, client)
+
+	name, client = mgr.FindClientForFile(tmpdir + "/unknown.py")
+	require.Equal(t, "", name)
+	require.Nil(t, client)
+}
+
 func TestCrashRecoveryFieldDefaultsEnabled(t *testing.T) {
 	t.Parallel()
 

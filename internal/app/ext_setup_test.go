@@ -434,8 +434,9 @@ var _ tools.Mailbox = (*stubMailbox)(nil)
 
 type stubMailbox struct{}
 
-func (stubMailbox) Send(tools.MailboxMessage) error { return nil }
-func (stubMailbox) HasInbox(string) bool            { return false }
+func (stubMailbox) Send(tools.MailboxMessage) error         { return nil }
+func (stubMailbox) HasInbox(string) bool                    { return false }
+func (stubMailbox) Broadcast(tools.MailboxMessage, string) []error { return nil }
 
 func TestMessageDecoratorWired(t *testing.T) {
 	origLCM := extensions.TheLCMExtension

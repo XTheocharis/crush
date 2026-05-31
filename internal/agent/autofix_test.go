@@ -449,3 +449,118 @@ func TestReflectionStrategy_GeneratesPrompt(t *testing.T) {
 	require.Contains(t, prompt, "func Compute() int { return 0 }")
 	require.Contains(t, prompt, "Suggest a fix")
 }
+
+func TestParseGoTestJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    []GoTestJSONResult
+		wantLen int
+		check   func(t *testing.T, results []GoTestJSONResult)
+	}{
+		{
+			name: "single passing test",
+			input: `{"Time":"2024-01-01T00:00:00Z","Action":"run","Package":"pkg/example","Test":"TestPass"}
+{"Time":"2024-01-01T00:00:00.001Z","Action":"output","Package":"pkg/example","Test":"TestPass","Output":"=== RUN   TestPass\n"}
+{"Time":"2024-01-01T00:00:00.002Z","Action":"pass","Package":"pkg/example","Test":"TestPass","Elapsed":0.001}`,
+			check: func(t *testing.T, results []GoTestJSONResult) {
+				require.Len(t, results, 1)
+				require.Equal(t, "pkg/example", results[0].Package)
+				require.Equal(t, "TestPass", results[0].Test)
+				require.Equal(t, "pass", results[0].Action)
+				require.Equal(t, "=== RUN   TestPass", results[0].Output)
+				require.InDelta(t, 0.001, results[0].Elapsed, 0.0001)
+			},
+		},
+		{
+			name: "single failing test",
+			input: `{"Time":"2024-01-01T00:00:00Z","Action":"run","Package":"pkg/example","Test":"TestFail"}
+{"Time":"2024-01-01T00:00:00.001Z","Action":"output","Package":"pkg/example","Test":"TestFail","Output":"    file_test.go:10: expected true\n"}
+{"Time":"2024-01-01T00:00:00.002Z","Action":"fail","Package":"pkg/example","Test":"TestFail","Elapsed":0.002}`,
+			check: func(t *testing.T, results []GoTestJSONResult) {
+				require.Len(t, results, 1)
+				require.Equal(t, "fail", results[0].Action)
+				require.Contains(t, results[0].Output, "file_test.go:10: expected true")
+			},
+		},
+		{
+			name: "skipped test",
+			input: `{"Time":"2024-01-01T00:00:00Z","Action":"run","Package":"pkg/example","Test":"TestSkip"}
+{"Time":"2024-01-01T00:00:00.001Z","Action":"output","Package":"pkg/example","Test":"TestSkip","Output":"    skipping\n"}
+{"Time":"2024-01-01T00:00:00.002Z","Action":"skip","Package":"pkg/example","Test":"TestSkip","Elapsed":0.0}`,
+			check: func(t *testing.T, results []GoTestJSONResult) {
+				require.Len(t, results, 1)
+				require.Equal(t, "skip", results[0].Action)
+			},
+		},
+		{
+			name: "multiple tests mixed results",
+			input: `{"Time":"2024-01-01T00:00:00Z","Action":"run","Package":"pkg/example","Test":"TestPass"}
+{"Time":"2024-01-01T00:00:00.001Z","Action":"pass","Package":"pkg/example","Test":"TestPass","Elapsed":0.001}
+{"Time":"2024-01-01T00:00:00.002Z","Action":"run","Package":"pkg/example","Test":"TestFail"}
+{"Time":"2024-01-01T00:00:00.003Z","Action":"output","Package":"pkg/example","Test":"TestFail","Output":"error msg\n"}
+{"Time":"2024-01-01T00:00:00.004Z","Action":"fail","Package":"pkg/example","Test":"TestFail","Elapsed":0.002}`,
+			check: func(t *testing.T, results []GoTestJSONResult) {
+				require.Len(t, results, 2)
+				require.Equal(t, "TestPass", results[0].Test)
+				require.Equal(t, "pass", results[0].Action)
+				require.Equal(t, "TestFail", results[1].Test)
+				require.Equal(t, "fail", results[1].Action)
+			},
+		},
+		{
+			name: "output aggregation across multiple events",
+			input: `{"Time":"2024-01-01T00:00:00Z","Action":"run","Package":"pkg/example","Test":"TestMulti"}
+{"Time":"2024-01-01T00:00:00.001Z","Action":"output","Package":"pkg/example","Test":"TestMulti","Output":"line1\n"}
+{"Time":"2024-01-01T00:00:00.002Z","Action":"output","Package":"pkg/example","Test":"TestMulti","Output":"line2\n"}
+{"Time":"2024-01-01T00:00:00.003Z","Action":"output","Package":"pkg/example","Test":"TestMulti","Output":"line3\n"}
+{"Time":"2024-01-01T00:00:00.004Z","Action":"fail","Package":"pkg/example","Test":"TestMulti","Elapsed":0.004}`,
+			check: func(t *testing.T, results []GoTestJSONResult) {
+				require.Len(t, results, 1)
+				require.Equal(t, "line1\nline2\nline3", results[0].Output)
+			},
+		},
+		{
+			name:    "empty input returns empty",
+			input:   "",
+			wantLen: 0,
+		},
+		{
+			name:    "malformed lines skipped",
+			input:   "not json at all\n{\"Action\":\"pass\",\"Package\":\"p\",\"Test\":\"T\",\"Elapsed\":0.1}\nalso not json",
+			wantLen: 1,
+		},
+		{
+			name:  "package level events ignored",
+			input: `{"Time":"2024-01-01T00:00:00Z","Action":"pass","Package":"pkg/example","Elapsed":0.5}`,
+			check: func(t *testing.T, results []GoTestJSONResult) {
+				require.Empty(t, results)
+			},
+		},
+		{
+			name: "subtests with slash in name",
+			input: `{"Time":"2024-01-01T00:00:00Z","Action":"run","Package":"pkg/example","Test":"TestGroup/subtest_a"}
+{"Time":"2024-01-01T00:00:00.001Z","Action":"output","Package":"pkg/example","Test":"TestGroup/subtest_a","Output":"hello\n"}
+{"Time":"2024-01-01T00:00:00.002Z","Action":"fail","Package":"pkg/example","Test":"TestGroup/subtest_a","Elapsed":0.001}`,
+			check: func(t *testing.T, results []GoTestJSONResult) {
+				require.Len(t, results, 1)
+				require.Equal(t, "TestGroup/subtest_a", results[0].Test)
+				require.Equal(t, "fail", results[0].Action)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			results := ParseGoTestJSON(tc.input)
+			if tc.check != nil {
+				tc.check(t, results)
+			} else {
+				require.Len(t, results, tc.wantLen)
+			}
+		})
+	}
+}

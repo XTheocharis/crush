@@ -5,6 +5,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/crush/internal/treesitter"
@@ -135,6 +136,10 @@ func (bp *BatchProcessor) Apply(ops []EditOp) (*BatchResult, error) {
 		return nil, fmt.Errorf("batch exceeds maximum of %d files", MaxBatchFiles)
 	}
 
+	if err := detectOverlaps(ops, bp.store); err != nil {
+		return nil, err
+	}
+
 	baseline := bp.captureBaseline(context.Background(), ops)
 
 	snapshot := bp.snapshotStore()
@@ -239,6 +244,80 @@ func (bp *BatchProcessor) restoreSnapshot(snap map[string]string) {
 	for filePath, content := range snap {
 		bp.store.Set(filePath, content)
 	}
+}
+
+// resolvedRange holds the byte offsets for a single EditOp within a file.
+type resolvedRange struct {
+	filePath string
+	start    int // byte offset of OldContent within file
+	end      int // start + len(OldContent)
+	opIndex  int // index in the original ops slice
+}
+
+// detectOverlaps checks all ops for overlapping byte ranges on the same file.
+// It resolves each OldContent to its position in the current file content and
+// returns an error listing all conflicting operation pairs. The content store
+// is read but not modified.
+func detectOverlaps(ops []EditOp, store ContentStore) error {
+	type fileRanges struct {
+		ranges []resolvedRange
+	}
+	byFile := make(map[string]*fileRanges)
+
+	for i, op := range ops {
+		content, exists := store.Get(op.FilePath)
+		if !exists {
+			continue
+		}
+
+		idx := strings.Index(content, op.OldContent)
+		if idx < 0 {
+			continue
+		}
+
+		fr, ok := byFile[op.FilePath]
+		if !ok {
+			fr = &fileRanges{}
+			byFile[op.FilePath] = fr
+		}
+		fr.ranges = append(fr.ranges, resolvedRange{
+			filePath: op.FilePath,
+			start:    idx,
+			end:      idx + len(op.OldContent),
+			opIndex:  i,
+		})
+	}
+
+	var conflicts []string
+	for _, fr := range byFile {
+		ranges := fr.ranges
+		if len(ranges) < 2 {
+			continue
+		}
+
+		sort.Slice(ranges, func(i, j int) bool {
+			return ranges[i].start < ranges[j].start
+		})
+
+		for i := 0; i < len(ranges)-1; i++ {
+			for j := i + 1; j < len(ranges); j++ {
+				if ranges[i].end > ranges[j].start {
+					conflicts = append(conflicts, fmt.Sprintf(
+						"ops[%d] [%d:%d) and ops[%d] [%d:%d) overlap in %s",
+						ranges[i].opIndex, ranges[i].start, ranges[i].end,
+						ranges[j].opIndex, ranges[j].start, ranges[j].end,
+						ranges[i].filePath,
+					))
+				}
+				break
+			}
+		}
+	}
+
+	if len(conflicts) > 0 {
+		return fmt.Errorf("batch overlap: %s", strings.Join(conflicts, "; "))
+	}
+	return nil
 }
 
 // ASTAnchorBridge verifies edited files parse correctly via tree-sitter

@@ -80,6 +80,15 @@ func NewValidationHandler(
 		}
 	}
 
+	if cfg.AutoFix {
+		for i, stage := range vh.pipeline.stages {
+			if _, ok := stage.(*FormatStage); ok {
+				vh.pipeline.stages[i] = &FormatStageAutoFix{AutoFix: true}
+				break
+			}
+		}
+	}
+
 	return vh
 }
 

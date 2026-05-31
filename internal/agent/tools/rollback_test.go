@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -332,4 +334,211 @@ func TestShouldRollback_NoNewErrors(t *testing.T) {
 		NetChange:      -1,
 	}
 	require.False(t, ShouldRollback(delta))
+}
+
+// mockSnapshotter records calls to CaptureSnapshot for test assertions.
+type mockSnapshotter struct {
+	mu    sync.Mutex
+	calls []captureCall
+	err   error
+}
+
+type captureCall struct {
+	sessionID string
+	seq       int
+}
+
+func (m *mockSnapshotter) CaptureSnapshot(_ context.Context, sessionID string, seq int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.calls = append(m.calls, captureCall{sessionID: sessionID, seq: seq})
+	return nil
+}
+
+func (m *mockSnapshotter) getCalls() []captureCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]captureCall, len(m.calls))
+	copy(out, m.calls)
+	return out
+}
+
+func TestRollbackManager_Persistence_NoSnapshotter(t *testing.T) {
+	t.Parallel()
+
+	rm := NewRollbackManager()
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.txt")
+	require.NoError(t, os.WriteFile(fileA, []byte("hello"), 0o644))
+
+	snap, err := rm.Capture([]string{fileA})
+	require.NoError(t, err)
+	require.NotNil(t, snap)
+
+	// History is empty when no snapshotter is configured.
+	require.Empty(t, rm.History())
+}
+
+func TestRollbackManager_Persistence_WithSnapshotter(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockSnapshotter{}
+	rm := NewRollbackManager()
+	rm.SetSnapshotter(mock, "session-1")
+
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.txt")
+	fileB := filepath.Join(dir, "b.txt")
+	require.NoError(t, os.WriteFile(fileA, []byte("hello"), 0o644))
+	require.NoError(t, os.WriteFile(fileB, []byte("world"), 0o644))
+
+	snap, err := rm.Capture([]string{fileA, fileB})
+	require.NoError(t, err)
+	require.Len(t, snap.Files, 2)
+
+	// Snapshotter was called.
+	calls := mock.getCalls()
+	require.Len(t, calls, 1)
+	require.Equal(t, "session-1", calls[0].sessionID)
+
+	// History was recorded.
+	history := rm.History()
+	require.Len(t, history, 1)
+	require.Equal(t, "file capture", history[0].Reason)
+	require.Len(t, history[0].Files, 2)
+	require.Contains(t, history[0].Files, fileA)
+	require.Contains(t, history[0].Files, fileB)
+	require.False(t, history[0].CreatedAt.IsZero())
+}
+
+func TestRollbackManager_Persistence_EmptyCapture(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockSnapshotter{}
+	rm := NewRollbackManager()
+	rm.SetSnapshotter(mock, "session-2")
+
+	snap, err := rm.Capture(nil)
+	require.NoError(t, err)
+	require.Empty(t, snap.Files)
+
+	// Snapshotter was still called.
+	calls := mock.getCalls()
+	require.Len(t, calls, 1)
+
+	history := rm.History()
+	require.Len(t, history, 1)
+	require.Equal(t, "empty capture", history[0].Reason)
+}
+
+func TestRollbackManager_Persistence_SnapshotterError(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockSnapshotter{err: context.DeadlineExceeded}
+	rm := NewRollbackManager()
+	rm.SetSnapshotter(mock, "session-3")
+
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.txt")
+	require.NoError(t, os.WriteFile(fileA, []byte("data"), 0o644))
+
+	// Capture succeeds even when persistence fails.
+	snap, err := rm.Capture([]string{fileA})
+	require.NoError(t, err)
+	require.Len(t, snap.Files, 1)
+	require.Equal(t, "data", snap.Files[0].Content)
+
+	// History is empty because persistence failed.
+	require.Empty(t, rm.History())
+}
+
+func TestRollbackManager_Persistence_MultipleCaptures(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockSnapshotter{}
+	rm := NewRollbackManager()
+	rm.SetSnapshotter(mock, "session-4")
+
+	dir := t.TempDir()
+
+	for range 3 {
+		fp := filepath.Join(dir, "file.txt")
+		require.NoError(t, os.WriteFile(fp, []byte("content"), 0o644))
+		_, err := rm.Capture([]string{fp})
+		require.NoError(t, err)
+	}
+
+	require.Len(t, mock.getCalls(), 3)
+	require.Len(t, rm.History(), 3)
+}
+
+func TestRollbackManager_Persistence_SetSnapshotterNil(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockSnapshotter{}
+	rm := NewRollbackManager()
+	rm.SetSnapshotter(mock, "session-5")
+
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "a.txt")
+	require.NoError(t, os.WriteFile(fp, []byte("x"), 0o644))
+
+	_, err := rm.Capture([]string{fp})
+	require.NoError(t, err)
+	require.Len(t, rm.History(), 1)
+
+	// Setting to nil disables persistence.
+	rm.SetSnapshotter(nil, "")
+	_, err = rm.Capture([]string{fp})
+	require.NoError(t, err)
+	require.Len(t, mock.getCalls(), 1) // No additional call.
+	require.Len(t, rm.History(), 1)    // No additional entry.
+}
+
+func TestRollbackManager_Persistence_RollbackStillWorks(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockSnapshotter{}
+	rm := NewRollbackManager()
+	rm.SetSnapshotter(mock, "session-6")
+
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.txt")
+	require.NoError(t, os.WriteFile(fileA, []byte("original"), 0o644))
+
+	snap, err := rm.Capture([]string{fileA})
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(fileA, []byte("modified"), 0o644))
+
+	// Restore still works with persistence enabled.
+	require.NoError(t, rm.Restore(snap))
+
+	content, err := os.ReadFile(fileA)
+	require.NoError(t, err)
+	require.Equal(t, "original", string(content))
+}
+
+func TestRollbackManager_Persistence_HistoryIsCopy(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockSnapshotter{}
+	rm := NewRollbackManager()
+	rm.SetSnapshotter(mock, "session-7")
+
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "a.txt")
+	require.NoError(t, os.WriteFile(fp, []byte("x"), 0o644))
+
+	_, err := rm.Capture([]string{fp})
+	require.NoError(t, err)
+
+	h1 := rm.History()
+	h2 := rm.History()
+	// Two calls return distinct slices.
+	require.Equal(t, h1, h2)
+	require.NotSame(t, &h1[0], &h2[0])
 }

@@ -472,3 +472,160 @@ func TestXrushParallel_MultipleTasksAggregate(t *testing.T) {
 
 	require.Equal(t, int32(3), pc.Usage().StepsTaken.Load())
 }
+
+func TestErrgroupFirstErrorCancelsRemaining(t *testing.T) {
+	t.Parallel()
+	pc := NewParallelController(ParallelControllerConfig{MaxConcurrent: 5})
+	defer pc.Shutdown()
+
+	var started sync.WaitGroup
+	var cancelled atomic.Int32
+
+	started.Add(3)
+
+	fastErr := func(ctx context.Context) (any, error) {
+		started.Done()
+		time.Sleep(10 * time.Millisecond)
+		return nil, errors.New("fast error")
+	}
+
+	slow := func(ctx context.Context) (any, error) {
+		started.Done()
+		<-ctx.Done()
+		cancelled.Add(1)
+		return nil, ctx.Err()
+	}
+
+	_, err := pc.Submit(context.Background(), slow, "")
+	_, err2 := pc.Submit(context.Background(), fastErr, "")
+	_, err3 := pc.Submit(context.Background(), slow, "")
+	require.NoError(t, err)
+	require.NoError(t, err2)
+	require.NoError(t, err3)
+
+	started.Wait()
+
+	_, waitErr := pc.WaitAll(context.Background())
+	require.Error(t, waitErr)
+	require.Equal(t, "fast error", waitErr.Error())
+	require.True(t, cancelled.Load() >= 1, "expected at least one slow task to be cancelled")
+}
+
+func TestErrgroupWaitAllReturnsFirstError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		taskErr string
+		wantErr string
+	}{
+		{name: "single error", taskErr: "task failed", wantErr: "task failed"},
+		{name: "empty message", taskErr: "", wantErr: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pc := NewParallelController(ParallelControllerConfig{MaxConcurrent: 3})
+			defer pc.Shutdown()
+
+			_, err := pc.Submit(context.Background(), func(ctx context.Context) (any, error) {
+				return nil, errors.New(tt.taskErr)
+			}, "")
+			require.NoError(t, err)
+
+			_, waitErr := pc.WaitAll(context.Background())
+			require.Error(t, waitErr)
+			require.Equal(t, tt.wantErr, waitErr.Error())
+		})
+	}
+}
+
+func TestErrgroupCancellationPreservesConcurrency(t *testing.T) {
+	t.Parallel()
+	max := 3
+	pc := NewParallelController(ParallelControllerConfig{MaxConcurrent: max})
+	defer pc.Shutdown()
+
+	var running atomic.Int32
+	var peak atomic.Int32
+
+	futures := make([]*Future, 10)
+	for i := range 10 {
+		taskErr := ""
+		if i == 3 {
+			taskErr = "early error"
+		}
+		fut, err := pc.Submit(context.Background(), func(ctx context.Context) (any, error) {
+			cur := running.Add(1)
+			for {
+				old := peak.Load()
+				if cur <= old || peak.CompareAndSwap(old, cur) {
+					break
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+			running.Add(-1)
+			if taskErr != "" {
+				return nil, errors.New(taskErr)
+			}
+			return i, nil
+		}, "")
+		require.NoError(t, err)
+		futures[i] = fut
+	}
+
+	for _, f := range futures {
+		r, err := f.Await(context.Background())
+		require.NoError(t, err)
+		if r.Err != nil {
+			require.Contains(t, []string{"early error", "context canceled"}, r.Err.Error())
+		}
+	}
+
+	require.LessOrEqual(t, int(peak.Load()), max)
+}
+
+func TestErrgroupSuccessfulExecutionStillWorks(t *testing.T) {
+	t.Parallel()
+	pc := NewParallelController(ParallelControllerConfig{MaxConcurrent: 3})
+	defer pc.Shutdown()
+
+	futures := make([]*Future, 5)
+	for i := range 5 {
+		fut, err := pc.Submit(context.Background(), func(ctx context.Context) (any, error) {
+			return i * 10, nil
+		}, "")
+		require.NoError(t, err)
+		futures[i] = fut
+	}
+
+	_, waitErr := pc.WaitAll(context.Background())
+	require.NoError(t, waitErr)
+
+	for i, f := range futures {
+		r, err := f.Await(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, r.Err)
+		require.Equal(t, i*10, r.Value)
+	}
+}
+
+func TestErrgroupSubmitBlockedAfterError(t *testing.T) {
+	t.Parallel()
+	pc := NewParallelController(ParallelControllerConfig{MaxConcurrent: 3})
+	defer pc.Shutdown()
+
+	_, err := pc.Submit(context.Background(), func(ctx context.Context) (any, error) {
+		return nil, errors.New("fail")
+	}, "")
+	require.NoError(t, err)
+
+	_, waitErr := pc.WaitAll(context.Background())
+	require.Error(t, waitErr)
+
+	_, submitErr := pc.Submit(context.Background(), func(ctx context.Context) (any, error) {
+		return "ok", nil
+	}, "")
+	require.Error(t, submitErr)
+}

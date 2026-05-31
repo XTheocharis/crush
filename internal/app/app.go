@@ -20,6 +20,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/agent/notify"
+	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
@@ -63,7 +64,8 @@ type App struct {
 
 	AgentCoordinator agent.Coordinator
 
-	LSPManager *lsp.Manager
+	LSPManager  *lsp.Manager
+	DiagWatcher *tools.DiagnosticWatcher
 
 	Skills *skills.Manager
 
@@ -156,6 +158,19 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		updateLSPState(name, client.GetServerState(), nil, client, 0)
 	})
 	go app.LSPManager.TrackConfigured()
+
+	// Initialize the diagnostic watcher for background file monitoring.
+	dw, err := tools.NewDiagnosticWatcher(app.LSPManager, store.WorkingDir())
+	if err != nil {
+		slog.Warn("Failed to create diagnostic watcher", "error", err)
+	} else {
+		app.DiagWatcher = dw
+		app.DiagWatcher.Start(ctx)
+		app.cleanupFuncs = append(app.cleanupFuncs, func(context.Context) error {
+			app.DiagWatcher.Stop()
+			return nil
+		})
+	}
 
 	return app, nil
 }

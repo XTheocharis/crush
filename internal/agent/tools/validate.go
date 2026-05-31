@@ -780,6 +780,73 @@ func (s *FormatStage) Execute(ctx context.Context, input *ValidationInput) (*Sta
 }
 
 // ---------------------------------------------------------------------------
+// Stage 10b: FormatAutoFix
+// ---------------------------------------------------------------------------
+
+// FormatStageAutoFix extends FormatStage with optional auto-fix capability.
+// When AutoFix is true and formatting issues are detected, the stage applies
+// gofmt to the content and updates the edited content in the validation input.
+// When AutoFix is false (default), it behaves identically to FormatStage
+// (read-only check).
+type FormatStageAutoFix struct {
+	FormatStage
+	AutoFix bool
+}
+
+func (s *FormatStageAutoFix) Name() string  { return "Format" }
+func (s *FormatStageAutoFix) CanSkip() bool { return true }
+
+func (s *FormatStageAutoFix) Execute(ctx context.Context, input *ValidationInput) (*StageResult, error) {
+	result, err := s.FormatStage.Execute(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	if !s.AutoFix || result.Status != StatusFail {
+		return result, nil
+	}
+
+	ext := strings.ToLower(filepath.Ext(input.FilePath))
+	if ext != ".go" {
+		return result, nil
+	}
+
+	lookPath := exec.LookPath
+	if s.FormatStage.lookPath != nil {
+		lookPath = s.FormatStage.lookPath
+	}
+	formatter := "gofmt"
+	if _, lerr := lookPath(formatter); lerr != nil {
+		return result, nil
+	}
+
+	content := input.editedContent
+	if content == "" {
+		content = input.Content
+	}
+
+	cmd := exec.CommandContext(ctx, formatter)
+	cmd.Stdin = strings.NewReader(content)
+	output, cmdErr := cmd.Output()
+	if cmdErr != nil {
+		return &StageResult{
+			StageName: s.Name(),
+			Status:    StatusFail,
+			Message:   "auto-fix failed: formatter error: " + cmdErr.Error(),
+		}, nil
+	}
+
+	formatted := string(output)
+	input.editedContent = formatted
+
+	return &StageResult{
+		StageName: s.Name(),
+		Status:    StatusPass,
+		Message:   "auto-fix applied: file formatted successfully",
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
 // Stage 11: Save
 // ---------------------------------------------------------------------------
 

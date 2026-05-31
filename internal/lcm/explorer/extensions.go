@@ -87,11 +87,15 @@ var TEXT_EXTENSIONS = map[string]string{
 	"tf": "terraform", "tfvars": "terraform",
 	// Dockerfile
 	"dockerfile": "dockerfile",
+	// Diagram formats
+	"drawio": "drawio", "dio": "drawio",
+	"mermaid": "mermaid", "mmd": "mermaid",
+	"d2":         "d2",
+	"excalidraw": "excalidraw",
+	"plantuml":   "plantuml", "puml": "plantuml",
 }
 
 // BINARY_EXTENSIONS is the set of file extensions always treated as binary.
-// Extensions claimed by specific explorers (Archive, PDF, Image, Executable)
-// are handled there and omitted here. Only audio/video formats remain.
-var BINARY_EXTENSIONS = map[string]struct{}{
-	"mp3": {}, "mp4": {}, "avi": {}, "mov": {}, "mkv": {}, "wav": {}, "flac": {},
-}
+// Extensions claimed by specific explorers (Archive, PDF, Image, Executable,
+// Office, Font, Audio, Video) are handled there and omitted here.
+var BINARY_EXTENSIONS = map[string]struct{}{}

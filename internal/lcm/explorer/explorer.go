@@ -127,6 +127,8 @@ func NewRegistry(opts ...RegistryOption) *Registry {
 	// Register in priority order.
 	// Archive -> Binary -> Data formats -> Code -> Shell -> Text -> Fallback.
 	r.explorers = []Explorer{
+		// Phase 0a: Office documents (OOXML/ODF are ZIP-based, must be before ArchiveExplorer)
+		&OfficeExplorer{},
 		// Phase 0: Archive formats (before generic binary)
 		&ArchiveExplorer{},
 		// Phase 0b: PDF documents (before generic binary)
@@ -135,6 +137,14 @@ func NewRegistry(opts ...RegistryOption) *Registry {
 		&ImageExplorer{},
 		// Phase 0d: Executable/binary subtypes (before generic binary)
 		&ExecutableExplorer{},
+		// Phase 0f: Font files (before generic binary for SFNT metadata)
+		&FontExplorer{},
+		// Phase 0g: Audio files (before generic binary for header metadata)
+		&AudioExplorer{},
+		// Phase 0h: Video files (before generic binary for container metadata)
+		&VideoExplorer{},
+		// Phase 0i: Diagram files (text-based formats)
+		&DiagramExplorer{},
 		// Phase 1: Generic binary catch-all
 		&BinaryExplorer{},
 		// Phase 2: Data/document explorers (checked before code)

@@ -18,6 +18,16 @@ import (
 // triggers an observation cycle. 30 000 tokens matches the design spec.
 const DefaultObservationTokenThreshold = 30_000
 
+// Observation priority thresholds. These define the numeric boundaries for each
+// priority level: critical is the highest, info is the lowest.
+const (
+	PriorityCritical float64 = 0.9
+	PriorityHigh     float64 = 0.7
+	PriorityMedium   float64 = 0.4
+	PriorityLow      float64 = 0.15
+	PriorityInfo     float64 = 0.0
+)
+
 // Observation is a single (event, context, implication) tuple extracted by the
 // observer agent from the conversation history.
 type Observation struct {
@@ -349,11 +359,12 @@ func (oc *ObservationCoordinator) ListObservations(ctx context.Context, sessionI
 		`SELECT content, token_count FROM lcm_observation_buffer
 		 WHERE session_id = ? AND buffer_type = 'observation'
 		 ORDER BY CASE priority
-		     WHEN 'high' THEN 0
-		     WHEN 'medium' THEN 1
-		     WHEN 'low' THEN 2
-		     WHEN 'info' THEN 3
-		     ELSE 1
+		     WHEN 'critical' THEN 0
+		     WHEN 'high' THEN 1
+		     WHEN 'medium' THEN 2
+		     WHEN 'low' THEN 3
+		     WHEN 'info' THEN 4
+		     ELSE 2
 		 END ASC, created_at ASC`,
 		sessionID,
 	)

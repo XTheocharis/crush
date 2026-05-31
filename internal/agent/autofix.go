@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -392,6 +394,95 @@ func ParseGoTestOutput(output string) []TestFailure {
 	}
 
 	return failures
+}
+
+// GoTestJSONResult holds the parsed result of a single test from go test -json
+// output.
+type GoTestJSONResult struct {
+	Package string
+	Test    string
+	Action  string // "pass", "fail", or "skip".
+	Output  string
+	Elapsed float64 // Duration in seconds.
+}
+
+// goTestJSONEvent represents a single JSON line from go test -json output.
+type goTestJSONEvent struct {
+	Time    string  `json:"Time"`
+	Action  string  `json:"Action"`
+	Package string  `json:"Package"`
+	Test    string  `json:"Test"`
+	Output  string  `json:"Output"`
+	Elapsed float64 `json:"Elapsed"`
+}
+
+// ParseGoTestJSON parses go test -json output (one JSON object per line) and
+// returns structured test results. Each "output" event is accumulated under
+// the correct test. Only tests with a terminal action (pass/fail/skip) are
+// returned. Malformed lines are skipped with a warning.
+func ParseGoTestJSON(input string) []GoTestJSONResult {
+	type pending struct {
+		outputs []string
+		action  string
+		elapsed float64
+	}
+
+	pendingMap := make(map[string]*pending)
+	var order []string
+
+	scanner := bufio.NewScanner(strings.NewReader(input))
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var evt goTestJSONEvent
+		if err := json.Unmarshal(line, &evt); err != nil {
+			slog.Warn("Skipping malformed go test JSON line", "line", string(line), "error", err)
+			continue
+		}
+
+		if evt.Test == "" {
+			continue
+		}
+
+		key := evt.Package + "\x00" + evt.Test
+		p, ok := pendingMap[key]
+		if !ok {
+			p = &pending{}
+			pendingMap[key] = p
+			order = append(order, key)
+		}
+
+		switch evt.Action {
+		case "output":
+			p.outputs = append(p.outputs, strings.TrimRight(evt.Output, "\n"))
+		case "pass", "fail", "skip":
+			p.action = evt.Action
+			p.elapsed = evt.Elapsed
+		}
+	}
+
+	results := make([]GoTestJSONResult, 0, len(order))
+	for _, key := range order {
+		p := pendingMap[key]
+		idx := strings.IndexByte(key, 0)
+
+		if p.action == "" {
+			continue
+		}
+
+		results = append(results, GoTestJSONResult{
+			Package: key[:idx],
+			Test:    key[idx+1:],
+			Action:  p.action,
+			Output:  strings.Join(p.outputs, "\n"),
+			Elapsed: p.elapsed,
+		})
+	}
+
+	return results
 }
 
 // ReflectionStrategy generates a fix prompt from a test failure and the
