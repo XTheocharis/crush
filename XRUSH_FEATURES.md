@@ -80,9 +80,18 @@ functional groups:
 
 ### Observation System
 
-Observations carry priority tags (`high`, `medium`, `low`) and are bridged
-into agent prompts with a dedicated token budget. High-priority observations
-persist across compaction cycles.
+Observations carry priority tags and are bridged into agent prompts with a
+dedicated token budget. High-priority observations persist across compaction
+cycles. Five priority levels with float64 thresholds (defined in
+`observation.go`):
+
+| Priority | Constant | Threshold |
+|----------|----------|-----------|
+| `critical` | `PriorityCritical` | ≥ 0.9 |
+| `high` | `PriorityHigh` | ≥ 0.7 |
+| `medium` | `PriorityMedium` | ≥ 0.4 |
+| `low` | `PriorityLow` | ≥ 0.15 |
+| `info` | *(default)* | < 0.15 |
 
 ### Memory System
 
@@ -90,7 +99,16 @@ persist across compaction cycles.
 
 - `AutoMemoryExtractor` fires every 5 turns
 - Extracts 4 memory types: **fact**, **decision**, **preference**, **lesson**
-- TF-IDF ranking for relevance scoring
+- TF-IDF ranking for relevance scoring with four priority buckets (defined in
+  `memory.go`):
+
+| Priority | Constant | Threshold |
+|----------|----------|-----------|
+| `critical` | `MemoryPriorityCritical` | ≥ 0.9 |
+| `high` | `MemoryPriorityHigh` | ≥ 0.7 |
+| `medium` | `MemoryPriorityMedium` | ≥ 0.3 |
+| `low` | *(default)* | < 0.3 |
+
 - ~60 KB per-session memory budget (`MemorySessionMaxChars=60000`;
   `MemoryFileConfig.SessionBudget=61440` default exists but is unenforced)
 - Persists across sessions to `CRUSH.memory.md`
@@ -128,7 +146,7 @@ Twelve additional LCM files supporting the core modules:
 - **File**: `summarizer.go` (~243 lines) — LLM-powered conversation summarization
 - **File**: `types.go` (~171 lines) — Shared LCM type definitions
 
-### LCM Agent Tools (14)
+### LCM Agent Tools (15)
 
 5 tools via toolFactory (registered in standard tool surface):
 
@@ -140,7 +158,7 @@ Twelve additional LCM files supporting the core modules:
 | `llm_map` | Apply LLM transformation per JSONL item (read-only) |
 | `agentic_map` | Run sub-agent on each JSONL item, write results |
 
-14 tools via `ExtraAgentTools()` (5 via toolFactory + 9 retrieval; injected directly into the coder agent):
+15 tools via `ExtraAgentTools()` (5 via toolFactory + 9 retrieval + 1 manual; injected directly into the coder agent):
 
 | Tool | Description |
 |------|-------------|
@@ -153,6 +171,7 @@ Twelve additional LCM files supporting the core modules:
 | `lcm_file_search` | Search files referenced in conversation history |
 | `lcm_active_context` | Show currently active LCM context window |
 | `lcm_lineage` | Trace compaction lineage for a content block |
+| `lcm_compact` | Trigger manual compaction with `pressure` (low/medium/high) and `target_tokens` parameters |
 
 ### Reflector
 
@@ -291,13 +310,18 @@ clear for prompt assembly to read on the next cycle.
 
 ### Reversible Compaction
 
-**Location**: `internal/lcm/reversible.go` (345 lines)
+**Location**: `internal/lcm/reversible.go` (403 lines)
 
 Saves original messages alongside compressed summaries so selected "anchor"
 summaries can be decompressed on demand. Three detail levels:
 
 - **full**: complete original messages.
-- **partial**: first 200 characters of each message.
+- **partial**: LLM-generated summary capped at 200 characters
+  (`partialContentLimit`). When the `Summarizer` is set, `applyDetailLevel`
+  calls `summarizePartialContent` which uses the LLM with a 5-second timeout
+  to produce a technical summary preserving function signatures, decisions,
+  data flows, and error handling patterns. Falls back to simple truncation
+  when the LLM is unavailable or the call fails/times out.
 - **metadata**: only role, sequence number, and ID (no content).
 
 Supports nested placeholder resolution: `(bN)` placeholders in compressed
@@ -535,7 +559,7 @@ No configuration is required for LCM to function.
 **Location**: `internal/lcm/explorer/`
 
 A dispatch-based file analysis system that provides intelligent content
-extraction for 20+ file types.
+extraction for 25+ file types.
 
 ### Architecture
 
@@ -552,6 +576,11 @@ file type processes it:
 
 | Handler | File Types | Lines |
 |---------|-----------|-------|
+| `Audio` | mp3, wav, ogg, flac, aac, wma, m4a, opus | 554 |
+| `Video` | mp4, mkv, avi, mov, webm, flv, wmv, m4v | 593 |
+| `Diagram` | drawio, vsdx, vsd, lucid | 342 |
+| `Font` | ttf, otf, woff, woff2, eot | 304 |
+| `Office` | docx, xlsx, pptx, doc, xls, ppt, odt, ods, odp | 439 |
 | `Archive` | zip, tar, gz, bz2, xz, 7z, rar, jar, war, ear, apk, tgz, lz, lz4, zst, cab, ar, deb, rpm, cpio, iso, dmg, wim, nupkg, crx, xpi, vsix | 955 |
 | `PDF` | .pdf | 160 |
 | `Image` | png, jpg, gif, webp, bmp, ico, jpeg, tiff, tif, raw, cr2, nef, arw, dng, psd, heic, heif, avif | 441 |
@@ -605,7 +634,7 @@ Scala, Swift (plus `common.go` for shared logic).
 
 ### User-Facing Description
 
-The Explorer transparently analyzes files viewed by the agent across 20+ file
+The Explorer transparently analyzes files viewed by the agent across 25+ file
 types. It uses a three-tier dispatch system: static structured extraction
 (always), LLM-powered analysis (for content exceeding ~10K tokens), and
 agent-based deep exploration (for complex code). Python files skip the LLM
@@ -1039,25 +1068,30 @@ parallel execution, and team-based workflows.
 
 ### Operator
 
-**File**: `operator.go` (510 lines)
+**File**: `operator.go` (654 lines)
 
 Decomposes tasks via recursive decomposition with cycle detection.
 
-- **4 strategies**: `LLMMap`, `AgenticMap`, `Batch`, `Sequential`
+- **5 strategies**: `LLMMap`, `AgenticMap`, `Batch`, `Sequential`, `Conditional`
 - Auto-selects strategy based on task characteristics
 - Maximum decomposition depth: 3
 - Maximum concurrent workers: 16
 - Cycle detection via SHA-256 hashing of task descriptors
+- `Subtask.DependsOn` for DAG-based dependency ordering via Kahn's algorithm (T22)
+- `isComplexTask()` heuristic for conditional decomposition (T23)
 
 ### Parallel Controller
 
-**File**: `parallel.go` (211 lines)
+**File**: `parallel.go` (312 lines)
 
 Bounded fan-out concurrent execution.
 
 - Semaphore-based concurrency control (default: 5 concurrent)
 - Focus-area serialization (same-area tasks run sequentially)
 - Future-based result collection
+- `errgroup.Group` for structured error propagation with fail-fast cancellation (T25)
+- Per-branch loop detection via `BranchTracker` integration (T26)
+- Sibling error propagation via `Mailbox.Broadcast` (T27)
 
 ### Swarm Pattern
 
@@ -1080,18 +1114,105 @@ Persistent role-based agents that maintain state across tasks.
 
 ### Forked Agent
 
-**File**: `forked.go` (~523 lines)
+**File**: `forked.go` (~543 lines)
 
 Deep-copied parent context for parallel branching.
 
 - Deep-copies parent session context
 - Mailbox messaging (buffered channel, capacity 64)
+- `Broadcast(msg, exclude)` for sibling error propagation (T27)
 - Turn-limited execution (max 10 turns)
 - Tool filtering (subset of parent tools)
 
+### Subtask Dependencies (T22)
+
+**File**: `internal/agent/operator.go` (654 lines)
+
+The `Subtask` struct includes a `DependsOn []string` field that declares
+explicit dependencies between subtasks by referencing other subtask IDs. The
+operator's `topologicalSort()` function uses **Kahn's algorithm** to compute a
+valid execution order from the dependency graph. Subtasks with unsatisfied
+dependencies are held until all their predecessors complete successfully, at
+which point they are released for execution. This enables DAG-based task
+scheduling where downstream work waits on upstream results without manual
+sequencing.
+
+### Conditional Decomposition (T23)
+
+**File**: `internal/agent/operator.go` (654 lines)
+
+`StrategyConditional` is a fifth strategy that auto-detects simple tasks and
+skips decomposition entirely. The `isComplexTask()` heuristic examines the
+task description for indicators of complexity: token count above a threshold,
+presence of multi-step keywords ("then", "after", "next"), and directive
+density (ratio of imperative verbs to total tokens). When the heuristic
+classifies a task as simple, the operator falls back to sequential single-agent
+execution, avoiding the overhead of spawning sub-agents, serializing inputs,
+and merging outputs. Complex tasks proceed through the standard strategy
+selection pipeline as before.
+
+### Error Propagation via errgroup (T25)
+
+**File**: `internal/agent/parallel.go` (312 lines)
+
+The `ParallelController` replaces its internal `sync.WaitGroup` with an
+`errgroup.Group` for structured error propagation. Each `Submit()` call
+delegates work to `eg.Go()`, so the first error from any concurrent task is
+captured and returned by `WaitAll()` via `eg.Wait()`. A `mergeContexts`
+helper merges the errgroup's cancellation context with the caller's context,
+ensuring that an error in one task cancels all remaining in-flight tasks
+through the shared context. This provides fail-fast semantics: when any branch
+fails, sibling branches receive a cancelled context and terminate promptly.
+
+### Per-Branch Loop Detection (T26)
+
+**File**: `internal/agent/branch_loop_detection.go` (285 lines, new file)
+
+A dedicated loop detector that tracks tool-interaction repetition independently
+per parallel branch. Two primary types:
+
+- **`BranchLoopDetector`**: Per-branch instance with `RecordStep()`,
+  `Check()`, and `Reset()` methods. Reuses the global
+  `getToolInteractionSignature()` and `firstToolName()` functions from
+  `loop_detection.go` for consistent signature generation.
+- **`BranchTracker`**: Manages a map of branch name → `BranchLoopDetector`
+  instances and routes events through an `OnEvent` callback. Integrates with
+  the `ParallelController` via `SetBranchTracker()`.
+
+Thresholds are hardcoded (not user-configurable):
+
+| Level | Repeats | Action |
+|-------|---------|--------|
+| Soft warning | 3 | Log warning, continue execution |
+| Hard stop | 5 | Cancel the offending branch |
+
+Context helpers `ContextWithBranchDetector()` and
+`BranchDetectorFromContext()` propagate the per-branch detector through the
+context chain. Each parallel branch is tracked independently — a loop in one
+branch does not affect sibling branches.
+
+### Sibling Error Propagation (T27)
+
+**Files**: `internal/agent/tools/orchestration_types.go` (51 lines),
+`internal/agent/forked.go` (543 lines)
+
+The `Mailbox` interface in `orchestration_types.go` gains a
+`Broadcast(msg Message, exclude string)` method that sends a message to all
+registered branches except the excluded one. The implementation on the
+`Mailbox` struct in `forked.go` iterates over known branch mailboxes and
+dispatches the message asynchronously.
+
+The `notifySiblingErrors` function is called by the `ParallelController` when
+a branch fails: it broadcasts an error notification to all other named branches
+via `Broadcast`, passing the failed branch name as the `exclude` parameter.
+Sibling branches receive the notification through their mailbox channel and
+decide independently whether to abort — the propagation is **cooperative**, not
+mandatory. The `ParallelController` tracks the mailbox and branch names via a
+`sync.Map` keyed by branch name.
+
 ### Additional Agent Files
 
-Eight additional agent files not listed in the primary subsections above:
+Nine additional agent files not listed in the primary subsections above:
 
 - **File**: `coordinator_xrush_recovery.go` (~72 lines) — Coordinator recovery: post-compaction config restore and interrupted session recovery. `RestoreAgentConfig()` restores checkpointed agent configuration (skills, tools, agents) after LCM compaction events. `RecoverSession()` finishes interrupted thinking blocks or tool calls after mid-stream disruptions (network error, crash). These are recovery hooks ensuring the multi-agent system resumes cleanly after disruptions.
 - **File**: `usage_fallback.go` (~176 lines) — Token usage fallback heuristics when primary tracking is unavailable
@@ -1099,7 +1220,8 @@ Eight additional agent files not listed in the primary subsections above:
 - **File**: `agentconfig.go` (~108 lines) — Per-subagent configuration struct
 - **File**: `agent_tool.go` (~68 lines) — "agent" tool for spawning sub-agents (see §14)
 - **File**: `event.go` (~51 lines) — Telemetry event helpers
-- **File**: `tools/orchestration_types.go` (~40 lines) — Shared types for Operator, Parallel, and Swarm orchestration patterns
+- **File**: `branch_loop_detection.go` (285 lines) — Per-branch loop detection for parallel execution (T26)
+- **File**: `tools/orchestration_types.go` (~51 lines) — Shared types for Operator, Parallel, and Swarm orchestration patterns, including `Mailbox.Broadcast` (T27)
 - **File**: `errors.go` (~10 lines) — Sentinel error definitions
 
 ### Structured Subagent
@@ -1149,6 +1271,8 @@ hardcoded:
 | Mailbox channel capacity | 64 messages |
 | Forked agent turn limit | 10 turns |
 | Structured subagent nesting depth | 3 levels |
+| Branch loop soft warning threshold | 3 repeats |
+| Branch loop hard stop threshold | 5 repeats |
 
 ### Usage
 
@@ -1278,6 +1402,58 @@ observations for the session and formats them within the token budget:
   are truncated first.
 - **Default budget**: `defaultObservationTokenBudget = 2000` tokens.
 - **Zero observations**: returns empty string (no XML block appended).
+
+### Severity Filter (T3)
+
+**File**: `internal/agent/tools/diag_gate.go` (~328 lines),
+`internal/config/xrush.go` (~67 lines)
+
+The `DiagnosticGate` supports configurable severity filtering so that only
+diagnostics at or above a chosen severity pass the quality gate.
+
+**Severity levels** (`DiagnosticSeverity`, iota-based):
+
+| Value | Constant | LSP equivalent |
+|-------|----------|----------------|
+| 0 | `SeverityError` | Error |
+| 1 | `SeverityWarning` | Warning |
+| 2 | `SeverityInfo` | Information |
+| 3 | `SeverityHint` | Hint |
+
+**Configuration path**: `ValidationOptions.SeverityFilter` in
+`internal/config/xrush.go`.
+
+**Wiring**: config → extension reads → `ParseSeverityFilter()` →
+`WithSeverityFilter()` option → `DiagnosticGate.severityFilter` field.
+
+Because `SeverityError` is iota value 0, the implementation uses a separate
+`severitySet bool` field rather than a `== 0` zero-value check to distinguish
+"explicitly set to Error" from "not set".
+
+Two extension sites create a `DiagnosticGate`: `diag_gate_ext.go` and
+`treesitter_ext.go`.
+
+### MarkerBeta (T4)
+
+**File**: `internal/agent/tool_surface.go` (~421 lines),
+`internal/config/config.go` (~895 lines)
+
+`MarkerBeta` is a behavioral marker on the tool surface that marks tools as
+beta (opt-in required via config). Beta tools are hidden from the agent's tool
+list unless the user explicitly enables them.
+
+**Config**: `"beta_tools": true` in the `options` section of `crush.json`.
+
+**Visibility control**:
+
+- `SurfaceContext.BetaTools` field controls whether beta tools are visible.
+- `isVisible()` checks the beta marker — beta tools are hidden unless
+  `BetaTools` is `true`.
+
+**Implementation note**: `isVisible()` is called from `UpdateCapabilities()`
+which holds the write mutex. It must NOT call methods that acquire locks.
+
+`synthetic_output` is the first tool marked with `MarkerBeta`.
 
 ### Safety Features
 
@@ -1437,6 +1613,27 @@ dimensions.
 | **Metric** | 10 built-in metric types (build success, test pass rate, syntax validity, lint score, edit distance, coverage, typecheck, etc.) |
 | **Judge** | LLM-based quality assessment (193 lines) |
 | **Mastra** | Mastra framework integration for agent evaluation (236 lines) |
+
+### Scorer Pipeline (T24)
+
+**File**: `internal/eval/pipeline.go` (~87 lines),
+`internal/eval/scorers/metric/pipeline.go` (~45 lines)
+
+A 4-stage `ScorerPipeline` interface for structured scorer implementations:
+
+| Stage | Method | Description |
+|-------|--------|-------------|
+| 1 | `PreProcess` | Pre-process input data before scoring |
+| 2 | `Score` | Compute the actual score |
+| 3 | `PostProcess` | Post-process results after scoring |
+| 4 | `Aggregate` | Aggregate scores across multiple runs |
+
+Each stage is a separate method, enabling custom scorer implementations to
+override individual stages independently. The metric scorer pipeline
+(`internal/eval/scorers/metric/pipeline.go`) provides a concrete
+implementation.
+
+**Test**: `internal/eval/pipeline_test.go` (~215 lines).
 
 ### Technical Usage
 
@@ -1637,7 +1834,7 @@ soft warning at 80% usage and hard cancellation at 100% usage.
 
 ### AutoFix
 
-**File**: `internal/agent/autofix.go` (420 lines)
+**File**: `internal/agent/autofix.go` (511 lines)
 
 Iterative lint -> fix -> test -> reflect cycle:
 
@@ -1648,6 +1845,30 @@ Iterative lint -> fix -> test -> reflect cycle:
 5. **Max 3 retry cycles**
 6. Automatic rollback on persistent failure
 - Optional auto-commit after successful fixes
+
+### ParseGoTestJSON (T15)
+
+**File**: `internal/agent/autofix.go` (~511 lines)
+
+`ParseGoTestJSON` is a structured parser for Go test `-json` output. Go test
+JSON output is JSONL format: one JSON object per line, each with an `Action`
+field describing the event type.
+
+**Key design decisions**:
+
+- **NUL byte separator**: The map key for individual tests uses `\x00` (NUL
+  byte) as separator between package and test name, ensuring uniqueness even
+  when test names contain colons or slashes.
+- **Single-pass design**: Accumulates outputs in a single pass, recording the
+  terminal action (pass/fail/skip) for each test. Only tests with terminal
+  actions are returned; package-level events are ignored.
+- **Graceful error handling**: Malformed JSON lines are skipped with
+  `slog.Warn` rather than failing the entire parse.
+- **Stdlib only**: Uses `bufio.Scanner` + `encoding/json` with no external
+  dependencies.
+
+**Test coverage**: 9 table-driven test cases covering pass, fail, skip,
+malformed lines, mixed results, and empty input.
 
 ### Go Linter
 
@@ -1852,15 +2073,41 @@ Also adds `IsAlive()` (process liveness check via `healthCheck` or
 `client.IsRunning()`), helper types (`xrushClientFields`), and response
 parsing utilities (`remarshal`, `parseLocationArray`, `parseCompletionResult`).
 
+### TaskExecutor Routing (T5)
+
+The `Manager` methods route all LSP requests through a serialized
+`TaskExecutor` (`internal/lsp/executor.go`, 221L).  Each serverID gets its
+own goroutine reading from a buffered channel.  Tools call
+`Submit(ctx, serverID, fn)` to enqueue work; the executor guarantees that no
+two requests for the same server run concurrently, preventing race conditions
+in stateful LSP servers.
+
+Manager methods that use the executor:
+
+| Method | Purpose |
+|--------|---------|
+| `GetDiagnosticsForServer()` | Per-server diagnostics, serialised through the task executor |
+| `FindReferencesForServer()` | Per-server find-references, serialised through the task executor |
+| `RenameForServer()` | Per-server rename, serialised through the task executor |
+| `SafeDeleteForServer()` | Per-server safe-deletion with reference check, serialised through the task executor |
+
+Tools should always use Manager methods rather than calling Client methods
+directly to ensure serialization.  The executor is started in `Close()` and
+stopped during graceful shutdown.
+
+**Files**: `internal/lsp/manager_xrush_methods.go` (373L),
+`internal/lsp/executor.go` (221L).
+
 ### User-Facing Description
 
 The enhanced LSP integration provides robust language server connectivity with
 automatic crash recovery (always-on, exponential backoff from 1s to 60s, up to
-5 retries), on-demand server binary download with SHA256 verification, and
-health monitoring. 14 new agent tools expose LSP capabilities: go-to-definition,
-hover, rename, symbol replacement, insertion, deletion with reference checking,
-completion, formatting, signature help, code actions, document symbols (tree and
-flat list), workspace symbols, and server restart.
+5 retries), on-demand server binary download with SHA256 verification, health
+monitoring, and a serialized TaskExecutor that ensures all LSP requests per
+server are processed sequentially. 14 new agent tools expose LSP capabilities:
+go-to-definition, hover, rename, symbol replacement, insertion, deletion with
+reference checking, completion, formatting, signature help, code actions,
+document symbols (tree and flat list), workspace symbols, and server restart.
 
 ### Configuration
 
@@ -2016,6 +2263,9 @@ listing file paths, severities, and messages. The helper
 `cascadeDiagnosticsConcurrent()` runs diagnostics for multiple files in
 parallel using `sync.WaitGroup`. It has no `New*Tool` constructor and is
 called internally by edit/write tools via `runDiagnosticCascade()`.
+Complemented by `ForwardImportResolution` (T13, see Fork-New Edit Support
+table above) which resolves project-local imports to exported symbols
+for one level of forward analysis.
 
 `search` (219L) provides DuckDuckGo HTML scraping via
 `lite.duckduckgo.com` with randomized headers and rate limiting. It has
@@ -2033,20 +2283,30 @@ auto-approve safe commands.
 |-----------|-------|-------------|
 | `edit_anchors` | 193 + 116 | FNV-1a hash-based content-addressed anchors for drift-tolerant edits |
 | `anchor_state_manager` | 237 | Myers diff algorithm for tracking anchor hash map drift across file modifications; `CaptureState()` snapshots anchors per file, `DetectDrift()` compares current vs. captured state via Myers diff returning `AnchorDrift` entries, `Reconcile()` produces updated anchor map from drift; `AnchorDrift` struct with `DiffOp` enum (`Keep`/`Insert`/`Delete`) and line-number `Shift`; `//go:build treesitter` with stub fallback |
-| `edit_fuzzy` | 307 | Whitespace-normalized fuzzy string matching for approximate edit targets |
-| `rollback` | 220 | File snapshot and rollback on failure |
-| `validate` | 832 | Tree-sitter syntax validation after edits |
-| `validation_handler` | 228 | Post-edit validation pipeline (orchestrates validate + rollback) |
-| `view_xrush` | 176 | Enhanced batch file reading with LCM context awareness. Runs up to `batchMaxWorkers=8` concurrent goroutines via semaphore, tracks cumulative output with `atomic.Int64` against a `batchDefaultTokenBudget=200_000` (×4 chars/token = 800K char budget). Performs path deduplication (`dedupBatchPaths`) to avoid redundant reads. Graceful budget exhaustion: once the atomic counter reaches the budget, in-flight and pending reads are skipped without error, returning whatever content was collected so far. Supports offset/limit slicing and line numbering. |
+| `edit_fuzzy` | 475 | Whitespace-normalized fuzzy string matching for approximate edit targets |
+| `rollback` | 321 | File snapshot and rollback on failure |
+| `validate` | 899 | Tree-sitter syntax validation after edits. Includes `FormatStage` (checks Go formatting via `gofmt -l`, read-only) and `FormatStageAutoFix` (`AutoFix bool`; when true, runs `gofmt` via stdin/stdout to apply fixes). Stage replacement in `validation_handler.go` iterates pipeline stages, type-asserts, and swaps in-place. Build tag: `//go:build treesitter` (T6). |
+| `validation_handler` | 237 | Post-edit validation pipeline (orchestrates validate + rollback) |
+| `view_xrush` | 205 | Enhanced batch file reading with LCM context awareness. Runs up to `batchMaxWorkers=8` concurrent goroutines via semaphore, tracks cumulative output with `atomic.Int64` against a `batchDefaultTokenBudget=200_000` (×4 chars/token = 800K char budget). Performs path deduplication (`dedupBatchPaths`) to avoid redundant reads. Graceful budget exhaustion: once the atomic counter reaches the budget, in-flight and pending reads are skipped without error, returning whatever content was collected so far. Supports offset/limit slicing and line numbering. **Priority file ordering (T7)**: sorts files by priority instead of alphabetically — recently read files (`filetracker.Service.ListReadFiles()`, 1000 pts) > PageRank (100 + rank×10) > alphabetical tiebreaker. `repomap.Service.FileScores()` is available but not yet wired (parameter nil). |
+| `edit_batch` | 173 | Atomic multi-file batch edits with rollback. **Overlap detection (T11)**: `detectOverlaps()` pre-flight check rejects edits with overlapping ranges before any are applied. Uses sorted-interval overlap detection: sort ranges by start, check consecutive ranges. Error format: `"batch overlap: ops[i] [start:end) and ops[j] [start:end) overlap in file"`. |
+| `edit_fuzzy_symbol` | 43 | **Fuzzy symbol resolution (T12)**: tree-sitter-enhanced symbol resolution for edit targets. Build-tag conditional: `edit_fuzzy_symbol.go` (`treesitter`) / `edit_fuzzy_symbol_stub.go` (`!treesitter`). Local `symbolParser` interface adapted from `treesitter.Parser`. Fuzzy scoring: subsequence matching with bonuses (word boundary +3, consecutive +2, base +1), length normalization: `score × 10 / (len(target) + 1)`. Global parser injection via `SetSymbolParser(p)` — nil by default. |
+| `diag_cascade_forward` | 146 | **Forward import resolution (T13)**: `ForwardImportResolution(ctx, parser, filePath, projectRoot, modulePath)` extracts imports from a Go file via tree-sitter and resolves each project-local import to its exported symbols. Build-tagged: `diag_cascade_forward.go` (`treesitter`) / `diag_cascade_forward_stub.go` (`!treesitter`). Skips: stdlib, third-party, test files, hidden files. Returns `map[string][]string` (import path → exported symbol names). One level deep only — no recursion. |
+| `diag_watcher` | 248 | **Diagnostic watcher (T14)**: background `fsnotify`-based monitoring for file changes. Proactively runs LSP diagnostics on affected files. Debounce: pending map + timer-based flush at 500ms. Cache: TTL (30s) with `sync.RWMutex`. Added to `App.DiagWatcher` field in `app.go`, started/stopped via `cleanupFuncs`. No configuration — all parameters are hardcoded. |
+| `rollback` (enhanced) | 321 | **PersistentSnapshotter (T16)**: `RollbackManager` now integrates with the Rewind system for durable file snapshots. Uses a local `PersistentSnapshotter` interface (avoids import cycles). Injection via setter: `SetSnapshotter(s, sessionID)`. Persistence errors are logged but not propagated — the in-memory snapshot is always returned. `History()` returns a defensive copy of the internal slice. |
 
 ### User-Facing Description
 
 The fork provides 60 unique tools across all registration mechanisms: 56 via registerDefaults (23 inherited from upstream), plus 4 orchestration tools registered outside registerDefaults (`send_message`, `task_stop`, `team_create`, `team_delete`), and extension-provided tools (e.g., swarm_execute). Tools with overlapping names (e.g., lsp_restart) are counted once. The
 enhanced edit subsystem introduces anchor-based edits (content-addressed hashes
 that survive minor file changes), fuzzy string matching for approximate edit
-targets, atomic multi-file batch editing with rollback, and a 12-stage
-post-edit validation pipeline. Users benefit from more reliable edits, atomic
-multi-file changes, and automatic syntax validation after every edit.
+targets with tree-sitter symbol resolution (T12), atomic multi-file batch
+editing with overlap detection (T11) and rollback, a 12-stage post-edit
+validation pipeline with auto-formatting (T6), forward import resolution for
+one-level cascade analysis (T13), priority file ordering in view operations
+(T7), background diagnostic watching (T14), and persistent snapshot integration
+for durable rollback history (T16). Users benefit from more reliable edits,
+atomic multi-file changes, automatic syntax validation after every edit, and
+proactive diagnostic monitoring.
 
 ### Configuration
 
@@ -2082,8 +2342,12 @@ after changes.
 
 All tools are registered and available to the agent by default. Tree-sitter
 syntax validation requires `CGO_ENABLED=1`. Fuzzy string matching is always
-active for edit operations. The `disabled_tools` option can hide specific
-tools from the agent's surface.
+active for edit operations; tree-sitter symbol resolution (T12) requires the
+`treesitter` build tag. The diagnostic watcher (T14) starts automatically
+with the app and monitors file changes in the background with no configuration.
+Overlap detection (T11) runs as a pre-flight check on every batch edit.
+FormatStage auto-fix (T6) applies when `validation.auto_fix` is enabled.
+The `disabled_tools` option can hide specific tools from the agent's surface.
 
 ---
 
@@ -2116,8 +2380,27 @@ tools from the agent's surface.
 | Xrush Types | 61 | Fork-specific config types: `RoutingTier`, `ArchitectOptions`, `ValidationOptions`, `ProcessorsOptions`, `SnapshotConfig`, `AutoDownloadConfig` |
 | Xrush Tools Registry | 141 | Fork-only tool name registry (`xrushToolNames`, `xrushReadOnlyTools`) merged into sorted `allToolNames` alongside extension-contributed tools |
 | Migration | 44 | Config schema migration |
-| Walking | 134 | Walk config tree for validation |
 | YAML | 352 | YAML config file support |
+| Walking | 223 | Walk config tree for validation with bidirectional directory scanning (see Downward Walking below) |
+
+### Downward Walking (T9)
+
+**File**: `internal/config/walking.go` (223 lines)
+
+The walking module supports bidirectional directory scanning for config and
+context file discovery. The existing upward walk (from cwd toward root) is now
+complemented by a downward walk (from root toward cwd) with configurable depth
+limits.
+
+- **`walkDownward()`**: Manual recursion (not `filepath.WalkDir`) for precise
+  depth control. Default depth 2: finds files in immediate subdirectories and
+  their children.
+- **Priority**: Upward results are returned first (deepest to shallowest), then
+  downward results are appended.
+- **Deduplication**: Shares the `seen` map between upward and downward passes so
+  files discovered in one direction are not duplicated by the other.
+- **`readDirNames()`**: Helper that returns sorted directory-only entries, using
+  `skipDirs` map (`map[string]bool`) for O(1) lookup of directories to ignore.
 
 Note: `schema.json` exists at the project root (1,073 lines) as a general
 config schema, not within `internal/config/`.
@@ -2906,6 +3189,11 @@ side-by-side. Syntax highlighting in diffs and markdown is always active.
 | `skills/tracker_xrush.go` (~17L) | Skill discovery tracking for xrush extensions |
 | `workspace/app_workspace_xrush.go` (~7L) | App workspace LCM integration hooks |
 | `workspace/client_workspace_xrush.go` (~10L) | Client workspace LCM integration hooks |
+| `ClassifyComplexity` (177L) | Heuristic prompt classification (Simple/Medium/Complex/VeryComplex) based on token count, directive density, and multi-step indicators; used by `TierRouter` to boost model selection for complex tasks (`internal/agent/complexity.go`) |
+| `ResolveWithPhase` | Phase-aware routing in `TierRouter`: Planning gets 3x token boost (prefer architect/higher-tier), Editing gets 0.5x (prefer fast editor), Reviewing neutral; combined with complexity via `ResolveWithComplexityAndPhase()` (`internal/agent/router_tier.go`, 362L) |
+| `FallbackChain` | Model fallback with retryable error detection; `FallbackChainForTokenCount` and `FallbackChainForAgent` produce ordered model candidates (`internal/agent/router_tier.go`, 362L) |
+| `CostTracker` (142L) | Cost-aware routing integrating budget thresholds with model selection; `ResolveWithCost` method (`internal/agent/cost_tracker.go`) |
+| `ModelMetrics` (164L) | Per-model performance tracking for latency, token usage, and error rates (`internal/agent/model_metrics.go`) |
 
 ### User-Facing Description
 
