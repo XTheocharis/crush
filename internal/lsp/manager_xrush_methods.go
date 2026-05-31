@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"sort"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/lsp/catalog"
 	powernapconfig "github.com/charmbracelet/x/powernap/pkg/config"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 	"golang.org/x/sync/errgroup"
@@ -62,6 +64,19 @@ func (s *Manager) resolveAutoDownload(ctx context.Context, name string, server *
 		} else if resolved != server.Command {
 			server.Command = resolved
 		}
+		return
+	}
+
+	url, sha256, ok := catalog.ResolveDownloadURL(name, runtime.GOOS, runtime.GOARCH)
+	if !ok {
+		return
+	}
+	cfg := config.AutoDownloadConfig{URL: url, SHA256: sha256}
+	resolved, dlErr := ResolveDownloadPath(ctx, name, server.Command, cfg)
+	if dlErr != nil {
+		slog.Debug("Catalog auto-download failed for LSP server", "name", name, "error", dlErr)
+	} else if resolved != server.Command {
+		server.Command = resolved
 	}
 }
 
