@@ -2098,13 +2098,55 @@ stopped during graceful shutdown.
 **Files**: `internal/lsp/manager_xrush_methods.go` (373L),
 `internal/lsp/executor.go` (221L).
 
+### LSP Server Catalog
+
+**Location**: `internal/lsp/catalog/`
+
+An embedded catalog of downloadable LSP server binaries, shipped as
+`catalog.json` inside the binary via `go:embed`. Provides zero-config
+auto-download for supported servers when the user has not supplied their own
+`auto_download` configuration.
+
+**Key types**:
+
+| Type | Description |
+|------|-------------|
+| `ServerEntry` | Version string + per-platform binary map |
+| `PlatformEntry` | Download URL + SHA256 checksum for one `os/arch` pair |
+
+**API surface** (`catalog.go`, 95 lines):
+
+| Function | Description |
+|----------|-------------|
+| `Lookup(serverName)` | Returns `ServerEntry` and presence bool |
+| `ResolveDownloadURL(serverName, goos, goarch)` | Returns URL + SHA256 + presence bool for a specific platform |
+| `AllServers()` | Returns the full catalog map (read-only) |
+
+**Integration with `resolveAutoDownload()`**:
+`manager_xrush_methods.go` uses the catalog as a fallback. When the user
+has configured an explicit `auto_download.url` for a server, that takes
+precedence. When no user config exists, `resolveAutoDownload()` calls
+`catalog.ResolveDownloadURL()` with the current `runtime.GOOS`/`runtime.GOARCH`
+and, if a match is found, proceeds with the same download path as an explicit
+config.
+
+The catalog is parsed once via `sync.Once`. Keys starting with `_` are treated
+as metadata and silently discarded. Parse errors for individual entries log a
+warning and skip the entry without failing the entire catalog.
+
+**Coverage**: The catalog includes ~15 servers with per-platform URLs. Only
+single-binary servers are catalogued (servers requiring runtime installers,
+language plugins, or multi-file layouts are excluded).
+
 ### User-Facing Description
 
 The enhanced LSP integration provides robust language server connectivity with
 automatic crash recovery (always-on, exponential backoff from 1s to 60s, up to
 5 retries), on-demand server binary download with SHA256 verification, health
 monitoring, and a serialized TaskExecutor that ensures all LSP requests per
-server are processed sequentially. 14 new agent tools expose LSP capabilities:
+server are processed sequentially. An embedded server catalog (~15 servers)
+enables zero-config auto-download when the user has not configured their own
+binary path. 14 new agent tools expose LSP capabilities:
 go-to-definition, hover, rename, symbol replacement, insertion, deletion with
 reference checking, completion, formatting, signature help, code actions,
 document symbols (tree and flat list), workspace symbols, and server restart.
@@ -2243,6 +2285,62 @@ explicit `url` and `sha256` configuration per server.
 
 `lcm_bindle`, `lcm_ancestry`, `lcm_dolt`, `lcm_archive`, `lcm_sprig`,
 `lcm_time_query`, `lcm_file_search`, `lcm_active_context`, `lcm_lineage`
+
+#### Not Agent Tools (Internal Helpers)
+
+### Persistent Map State
+
+**Location**: `internal/agent/tools/agentic_map.go`, `internal/agent/tools/llm_map.go`,
+`internal/db/migrations/20260521000000_map_tool_type.sql`
+
+Persistent tracking of `agentic_map` and `llm_map` tool runs in SQLite. Each
+map invocation records its inputs, per-item results, and final status in the
+`lcm_map_runs` and `lcm_map_items` tables, enabling post-hoc analysis of map
+tool execution.
+
+**Migration**: `20260521000000_map_tool_type.sql`
+
+```sql
+ALTER TABLE lcm_map_runs ADD COLUMN tool_type TEXT NOT NULL DEFAULT 'agentic_map'
+    CHECK(tool_type IN ('agentic_map', 'llm_map'));
+CREATE INDEX idx_lcm_map_runs_tool_type ON lcm_map_runs(tool_type);
+```
+
+The `tool_type` column distinguishes between `agentic_map` runs (sub-agent per
+item) and `llm_map` runs (LLM transformation per item) in the shared
+`lcm_map_runs` table.
+
+**Configuration options** (functional options pattern):
+
+| Tool | Option | Description |
+|------|--------|-------------|
+| `agentic_map` | `WithDB(*sql.DB)` | Provide database connection for persistence |
+| `agentic_map` | `WithToolType(string)` | Set tool type identifier (e.g. `"agentic_map"`) |
+| `llm_map` | `WithLLMMapDB(*sql.DB)` | Provide database connection for persistence |
+| `llm_map` | `WithLLMMapToolType(string)` | Set tool type identifier (e.g. `"llm_map"`) |
+
+**Run lifecycle** (3 phases):
+
+1. **Run creation** (`InsertMapRun`): When the tool starts and both `db` and
+   `sessionID` are available, a new run row is created with a UUID, session ID,
+   input/output paths, schema JSON, and `tool_type`. If the insert fails, the
+   run ID is cleared to empty string and the tool continues without persistence.
+
+2. **Item tracking** (`InsertLcmMapItem` / `UpdateLcmMapItem`): For each JSONL
+   item processed, an item row is created before execution begins. After
+   execution completes, the item is updated with status (`COMPLETED` or
+   `FAILED`), output JSON, or error message. Items with `COMPLETED` status
+   carry their output in `output_json`; items with `FAILED` status carry their
+   error in `error_msg`.
+
+3. **Run finalization** (`UpdateMapRunStatus`): After all items are processed,
+   the run status is set to `DONE` (all succeeded), `FAILED` (all failed), or
+   `PARTIAL` (mixed results).
+
+**Best-effort design**: if `db` is nil, if the session ID is empty, or if any
+database operation fails, the tool continues operating normally. Errors are
+logged via `log.Printf` but never propagated to the caller. This ensures map
+tools work identically with or without persistence.
 
 #### Not Agent Tools (Internal Helpers)
 
@@ -2532,11 +2630,73 @@ epoch seconds (seconds since 1970-01-01 00:00:00 UTC). They default to `0`
 (not yet recorded) and are populated as the message progresses through each
 lifecycle stage. No configuration or opt-in required.
 
+### Structured Message Parts
+
+**Location**: `internal/message/message.go`, `internal/db/migrations/20260522000000_message_parts.sql`
+
+A `message_parts` table that decomposes each message's JSON `parts` blob into
+individual rows, one per content part. This enables direct SQL queries against
+part types (text, tool calls, reasoning, etc.) without parsing the full JSON
+blob.
+
+**Migration**: `20260522000000_message_parts.sql`
+
+```sql
+CREATE TABLE message_parts (
+    part_id      TEXT NOT NULL PRIMARY KEY,
+    message_id   TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    part_type    TEXT NOT NULL CHECK(part_type IN (
+        'text', 'reasoning', 'tool_call', 'tool_result',
+        'finish', 'image_url', 'binary')),
+    part_index   INTEGER NOT NULL,
+    content_json TEXT NOT NULL,
+    created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+```
+
+Three indexes support common access patterns: `(message_id, part_index)` for
+reconstructing a message's parts in order, `(session_id, part_type)` for
+session-scoped type queries, and `(part_type)` for cross-session analysis.
+
+**7 part types** (defined as `partType` constants in `message.go`):
+
+| Constant | Value | ContentPart type |
+|----------|-------|-----------------|
+| `reasoningType` | `"reasoning"` | `ReasoningContent` |
+| `textType` | `"text"` | `TextContent` |
+| `imageURLType` | `"image_url"` | `ImageURLContent` |
+| `binaryType` | `"binary"` | `BinaryContent` |
+| `toolCallType` | `"tool_call"` | `ToolCall` |
+| `toolResultType` | `"tool_result"` | `ToolResult` |
+| `finishType` | `"finish"` | `Finish` |
+
+**Dual-write mechanism**: `writeMessageParts()` is called from both
+`Service.Create` and the internal `write` method (used by the debounce
+flush path). On each call, existing parts for the message are deleted, then
+each part is re-inserted with a new UUID. The `binary` type is skipped
+because binary content is not JSON-serializable in a useful way.
+
+**Best-effort persistence**: delete and insert errors are logged via
+`log.Printf` but never propagated to the caller. If the parts table is
+unavailable or a write fails, the tool still works. The canonical source of
+truth remains the `parts` JSON blob on the `messages` table.
+
+**Forward-only scope**: only messages created after the migration are
+decomposed into `message_parts`. Existing messages are not backfilled.
+
+**Key functions**:
+
+| Function | Description |
+|----------|-------------|
+| `writeMessageParts(ctx, messageID, sessionID, parts)` | Delete + re-insert all parts for a message |
+| `partTypeOf(part ContentPart) partType` | Map a `ContentPart` interface value to its `partType` constant |
+
 ---
 
 ## 17. Database Migrations
 
-19 new migrations added by the fork:
+21 new migrations added by the fork:
 
 | Migration | Description |
 |-----------|-------------|
@@ -2559,14 +2719,16 @@ lifecycle stage. No configuration or opt-in required.
 | `20260517000000_lcm_gaps.sql` | Content replacements + large files FTS |
 | `20260518000000_lcm_observation_priority.sql` | Observation priority support |
 | `20260519000000_lcm_observation_priority_info.sql` | Add 'info' priority level to observation buffer |
+| `20260521000000_map_tool_type.sql` | `tool_type` column on `lcm_map_runs` for distinguishing agentic_map vs llm_map runs |
+| `20260522000000_message_parts.sql` | `message_parts` table for structured per-part message decomposition |
 
 ### User-Facing Description
 
-25 SQLite migrations are applied automatically on startup using the Goose
+27 SQLite migrations are applied automatically on startup using the Goose
 format with Up and Down support. Each migration adds schema for a specific
 fork feature: LCM tables, repository map cache, LCM infrastructure (reversible state, observation buffer, auto-memory),
 session observations, eval scorer storage, turn snapshots, message timestamps,
-and more.
+message parts decomposition, map tool type tracking, and more.
 
 ### Configuration
 
