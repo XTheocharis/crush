@@ -39,6 +39,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.cloneSessionMessagesStmt, err = db.PrepareContext(ctx, cloneSessionMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query CloneSessionMessages: %w", err)
 	}
+	if q.countMessagePartsBySessionStmt, err = db.PrepareContext(ctx, countMessagePartsBySession); err != nil {
+		return nil, fmt.Errorf("error preparing query CountMessagePartsBySession: %w", err)
+	}
 	if q.countTurnSnapshotsStmt, err = db.PrepareContext(ctx, countTurnSnapshots); err != nil {
 		return nil, fmt.Errorf("error preparing query CountTurnSnapshots: %w", err)
 	}
@@ -71,6 +74,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteMessageStmt, err = db.PrepareContext(ctx, deleteMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteMessage: %w", err)
+	}
+	if q.deleteMessagePartsByMessageIDStmt, err = db.PrepareContext(ctx, deleteMessagePartsByMessageID); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteMessagePartsByMessageID: %w", err)
 	}
 	if q.deleteMessagesAfterSeqStmt, err = db.PrepareContext(ctx, deleteMessagesAfterSeq); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteMessagesAfterSeq: %w", err)
@@ -159,6 +165,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getLcmSummaryStmt, err = db.PrepareContext(ctx, getLcmSummary); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLcmSummary: %w", err)
 	}
+	if q.getMapRunStmt, err = db.PrepareContext(ctx, getMapRun); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMapRun: %w", err)
+	}
+	if q.getMapRunItemsStmt, err = db.PrepareContext(ctx, getMapRunItems); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMapRunItems: %w", err)
+	}
 	if q.getMessageStmt, err = db.PrepareContext(ctx, getMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMessage: %w", err)
 	}
@@ -167,6 +179,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getMessageCountByTimeRangeStmt, err = db.PrepareContext(ctx, getMessageCountByTimeRange); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMessageCountByTimeRange: %w", err)
+	}
+	if q.getMessagePartsByMessageIDStmt, err = db.PrepareContext(ctx, getMessagePartsByMessageID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMessagePartsByMessageID: %w", err)
+	}
+	if q.getMessagePartsBySessionAndTypeStmt, err = db.PrepareContext(ctx, getMessagePartsBySessionAndType); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMessagePartsBySessionAndType: %w", err)
 	}
 	if q.getMessagesByTimeRangeStmt, err = db.PrepareContext(ctx, getMessagesByTimeRange); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMessagesByTimeRange: %w", err)
@@ -230,6 +248,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.insertLcmSummaryParentStmt, err = db.PrepareContext(ctx, insertLcmSummaryParent); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertLcmSummaryParent: %w", err)
+	}
+	if q.insertMapRunStmt, err = db.PrepareContext(ctx, insertMapRun); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertMapRun: %w", err)
+	}
+	if q.insertMessagePartStmt, err = db.PrepareContext(ctx, insertMessagePart); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertMessagePart: %w", err)
 	}
 	if q.insertRepoMapTagStmt, err = db.PrepareContext(ctx, insertRepoMapTag); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertRepoMapTag: %w", err)
@@ -345,6 +369,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateLcmSessionConfigStmt, err = db.PrepareContext(ctx, updateLcmSessionConfig); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateLcmSessionConfig: %w", err)
 	}
+	if q.updateMapRunStatusStmt, err = db.PrepareContext(ctx, updateMapRunStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateMapRunStatus: %w", err)
+	}
 	if q.updateMessageStmt, err = db.PrepareContext(ctx, updateMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateMessage: %w", err)
 	}
@@ -397,6 +424,11 @@ func (q *Queries) Close() error {
 	if q.cloneSessionMessagesStmt != nil {
 		if cerr := q.cloneSessionMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing cloneSessionMessagesStmt: %w", cerr)
+		}
+	}
+	if q.countMessagePartsBySessionStmt != nil {
+		if cerr := q.countMessagePartsBySessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countMessagePartsBySessionStmt: %w", cerr)
 		}
 	}
 	if q.countTurnSnapshotsStmt != nil {
@@ -452,6 +484,11 @@ func (q *Queries) Close() error {
 	if q.deleteMessageStmt != nil {
 		if cerr := q.deleteMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteMessageStmt: %w", cerr)
+		}
+	}
+	if q.deleteMessagePartsByMessageIDStmt != nil {
+		if cerr := q.deleteMessagePartsByMessageIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteMessagePartsByMessageIDStmt: %w", cerr)
 		}
 	}
 	if q.deleteMessagesAfterSeqStmt != nil {
@@ -599,6 +636,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getLcmSummaryStmt: %w", cerr)
 		}
 	}
+	if q.getMapRunStmt != nil {
+		if cerr := q.getMapRunStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMapRunStmt: %w", cerr)
+		}
+	}
+	if q.getMapRunItemsStmt != nil {
+		if cerr := q.getMapRunItemsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMapRunItemsStmt: %w", cerr)
+		}
+	}
 	if q.getMessageStmt != nil {
 		if cerr := q.getMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getMessageStmt: %w", cerr)
@@ -612,6 +659,16 @@ func (q *Queries) Close() error {
 	if q.getMessageCountByTimeRangeStmt != nil {
 		if cerr := q.getMessageCountByTimeRangeStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getMessageCountByTimeRangeStmt: %w", cerr)
+		}
+	}
+	if q.getMessagePartsByMessageIDStmt != nil {
+		if cerr := q.getMessagePartsByMessageIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMessagePartsByMessageIDStmt: %w", cerr)
+		}
+	}
+	if q.getMessagePartsBySessionAndTypeStmt != nil {
+		if cerr := q.getMessagePartsBySessionAndTypeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMessagePartsBySessionAndTypeStmt: %w", cerr)
 		}
 	}
 	if q.getMessagesByTimeRangeStmt != nil {
@@ -717,6 +774,16 @@ func (q *Queries) Close() error {
 	if q.insertLcmSummaryParentStmt != nil {
 		if cerr := q.insertLcmSummaryParentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertLcmSummaryParentStmt: %w", cerr)
+		}
+	}
+	if q.insertMapRunStmt != nil {
+		if cerr := q.insertMapRunStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertMapRunStmt: %w", cerr)
+		}
+	}
+	if q.insertMessagePartStmt != nil {
+		if cerr := q.insertMessagePartStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertMessagePartStmt: %w", cerr)
 		}
 	}
 	if q.insertRepoMapTagStmt != nil {
@@ -909,6 +976,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateLcmSessionConfigStmt: %w", cerr)
 		}
 	}
+	if q.updateMapRunStatusStmt != nil {
+		if cerr := q.updateMapRunStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateMapRunStatusStmt: %w", cerr)
+		}
+	}
 	if q.updateMessageStmt != nil {
 		if cerr := q.updateMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateMessageStmt: %w", cerr)
@@ -993,6 +1065,7 @@ type Queries struct {
 	clearSessionSummaryMessageIDStmt            *sql.Stmt
 	cloneSessionFilesStmt                       *sql.Stmt
 	cloneSessionMessagesStmt                    *sql.Stmt
+	countMessagePartsBySessionStmt              *sql.Stmt
 	countTurnSnapshotsStmt                      *sql.Stmt
 	createFileStmt                              *sql.Stmt
 	createMessageStmt                           *sql.Stmt
@@ -1004,6 +1077,7 @@ type Queries struct {
 	deleteLcmSummaryMessagesStmt                *sql.Stmt
 	deleteLcmSummaryParentsStmt                 *sql.Stmt
 	deleteMessageStmt                           *sql.Stmt
+	deleteMessagePartsByMessageIDStmt           *sql.Stmt
 	deleteMessagesAfterSeqStmt                  *sql.Stmt
 	deleteOldTurnSnapshotsStmt                  *sql.Stmt
 	deleteRepoMapFileCacheStmt                  *sql.Stmt
@@ -1033,9 +1107,13 @@ type Queries struct {
 	getLcmLargeFileStmt                         *sql.Stmt
 	getLcmSessionConfigStmt                     *sql.Stmt
 	getLcmSummaryStmt                           *sql.Stmt
+	getMapRunStmt                               *sql.Stmt
+	getMapRunItemsStmt                          *sql.Stmt
 	getMessageStmt                              *sql.Stmt
 	getMessageBySessionAndSeqStmt               *sql.Stmt
 	getMessageCountByTimeRangeStmt              *sql.Stmt
+	getMessagePartsByMessageIDStmt              *sql.Stmt
+	getMessagePartsBySessionAndTypeStmt         *sql.Stmt
 	getMessagesByTimeRangeStmt                  *sql.Stmt
 	getRecentActivityStmt                       *sql.Stmt
 	getRepoMapFileCacheStmt                     *sql.Stmt
@@ -1057,6 +1135,8 @@ type Queries struct {
 	insertLcmSummaryStmt                        *sql.Stmt
 	insertLcmSummaryMessageStmt                 *sql.Stmt
 	insertLcmSummaryParentStmt                  *sql.Stmt
+	insertMapRunStmt                            *sql.Stmt
+	insertMessagePartStmt                       *sql.Stmt
 	insertRepoMapTagStmt                        *sql.Stmt
 	listAllUserMessagesStmt                     *sql.Stmt
 	listContentReplacementsByRoundStmt          *sql.Stmt
@@ -1095,6 +1175,7 @@ type Queries struct {
 	updateLcmMapItemStmt                        *sql.Stmt
 	updateLcmMapRunStatusStmt                   *sql.Stmt
 	updateLcmSessionConfigStmt                  *sql.Stmt
+	updateMapRunStatusStmt                      *sql.Stmt
 	updateMessageStmt                           *sql.Stmt
 	updateMessageTokenCountStmt                 *sql.Stmt
 	updateSessionStmt                           *sql.Stmt
@@ -1114,6 +1195,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		clearSessionSummaryMessageIDStmt:            q.clearSessionSummaryMessageIDStmt,
 		cloneSessionFilesStmt:                       q.cloneSessionFilesStmt,
 		cloneSessionMessagesStmt:                    q.cloneSessionMessagesStmt,
+		countMessagePartsBySessionStmt:              q.countMessagePartsBySessionStmt,
 		countTurnSnapshotsStmt:                      q.countTurnSnapshotsStmt,
 		createFileStmt:                              q.createFileStmt,
 		createMessageStmt:                           q.createMessageStmt,
@@ -1125,6 +1207,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteLcmSummaryMessagesStmt:                q.deleteLcmSummaryMessagesStmt,
 		deleteLcmSummaryParentsStmt:                 q.deleteLcmSummaryParentsStmt,
 		deleteMessageStmt:                           q.deleteMessageStmt,
+		deleteMessagePartsByMessageIDStmt:           q.deleteMessagePartsByMessageIDStmt,
 		deleteMessagesAfterSeqStmt:                  q.deleteMessagesAfterSeqStmt,
 		deleteOldTurnSnapshotsStmt:                  q.deleteOldTurnSnapshotsStmt,
 		deleteRepoMapFileCacheStmt:                  q.deleteRepoMapFileCacheStmt,
@@ -1154,9 +1237,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getLcmLargeFileStmt:                         q.getLcmLargeFileStmt,
 		getLcmSessionConfigStmt:                     q.getLcmSessionConfigStmt,
 		getLcmSummaryStmt:                           q.getLcmSummaryStmt,
+		getMapRunStmt:                               q.getMapRunStmt,
+		getMapRunItemsStmt:                          q.getMapRunItemsStmt,
 		getMessageStmt:                              q.getMessageStmt,
 		getMessageBySessionAndSeqStmt:               q.getMessageBySessionAndSeqStmt,
 		getMessageCountByTimeRangeStmt:              q.getMessageCountByTimeRangeStmt,
+		getMessagePartsByMessageIDStmt:              q.getMessagePartsByMessageIDStmt,
+		getMessagePartsBySessionAndTypeStmt:         q.getMessagePartsBySessionAndTypeStmt,
 		getMessagesByTimeRangeStmt:                  q.getMessagesByTimeRangeStmt,
 		getRecentActivityStmt:                       q.getRecentActivityStmt,
 		getRepoMapFileCacheStmt:                     q.getRepoMapFileCacheStmt,
@@ -1178,6 +1265,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		insertLcmSummaryStmt:                        q.insertLcmSummaryStmt,
 		insertLcmSummaryMessageStmt:                 q.insertLcmSummaryMessageStmt,
 		insertLcmSummaryParentStmt:                  q.insertLcmSummaryParentStmt,
+		insertMapRunStmt:                            q.insertMapRunStmt,
+		insertMessagePartStmt:                       q.insertMessagePartStmt,
 		insertRepoMapTagStmt:                        q.insertRepoMapTagStmt,
 		listAllUserMessagesStmt:                     q.listAllUserMessagesStmt,
 		listContentReplacementsByRoundStmt:          q.listContentReplacementsByRoundStmt,
@@ -1216,6 +1305,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateLcmMapItemStmt:                        q.updateLcmMapItemStmt,
 		updateLcmMapRunStatusStmt:                   q.updateLcmMapRunStatusStmt,
 		updateLcmSessionConfigStmt:                  q.updateLcmSessionConfigStmt,
+		updateMapRunStatusStmt:                      q.updateMapRunStatusStmt,
 		updateMessageStmt:                           q.updateMessageStmt,
 		updateMessageTokenCountStmt:                 q.updateMessageTokenCountStmt,
 		updateSessionStmt:                           q.updateSessionStmt,

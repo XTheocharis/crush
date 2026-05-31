@@ -98,6 +98,7 @@ type LcmMapRun struct {
 	SchemaJson string `json:"schema_json"`
 	CreatedAt  int64  `json:"created_at"`
 	UpdatedAt  int64  `json:"updated_at"`
+	ToolType   string `json:"tool_type"`
 }
 
 type LcmObservationBuffer struct {
@@ -106,6 +107,7 @@ type LcmObservationBuffer struct {
 	BufferType string `json:"buffer_type"`
 	Content    string `json:"content"`
 	TokenCount int64  `json:"token_count"`
+	Priority   string `json:"priority"`
 	CreatedAt  int64  `json:"created_at"`
 }
 
@@ -173,6 +175,16 @@ type Message struct {
 	SentToLlmAt      int64          `json:"sent_to_llm_at"`
 	FirstTokenAt     int64          `json:"first_token_at"`
 	CompletedAt      int64          `json:"completed_at"`
+}
+
+type MessagePart struct {
+	PartID      string `json:"part_id"`
+	MessageID   string `json:"message_id"`
+	SessionID   string `json:"session_id"`
+	PartType    string `json:"part_type"`
+	PartIndex   int64  `json:"part_index"`
+	ContentJson string `json:"content_json"`
+	CreatedAt   int64  `json:"created_at"`
 }
 
 type MessagesFt struct {

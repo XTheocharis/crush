@@ -16,6 +16,7 @@ type Querier interface {
 	CloneSessionFiles(ctx context.Context, arg CloneSessionFilesParams) error
 	// Fork operations
 	CloneSessionMessages(ctx context.Context, arg CloneSessionMessagesParams) error
+	CountMessagePartsBySession(ctx context.Context, sessionID string) (int64, error)
 	CountTurnSnapshots(ctx context.Context, sessionID string) (int64, error)
 	CreateFile(ctx context.Context, arg CreateFileParams) (File, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
@@ -28,6 +29,7 @@ type Querier interface {
 	DeleteLcmSummaryMessages(ctx context.Context, summaryID string) error
 	DeleteLcmSummaryParents(ctx context.Context, summaryID string) error
 	DeleteMessage(ctx context.Context, id string) error
+	DeleteMessagePartsByMessageID(ctx context.Context, messageID string) error
 	// Message operations for undo/rewind
 	DeleteMessagesAfterSeq(ctx context.Context, arg DeleteMessagesAfterSeqParams) error
 	DeleteOldTurnSnapshots(ctx context.Context, arg DeleteOldTurnSnapshotsParams) (int64, error)
@@ -58,9 +60,13 @@ type Querier interface {
 	GetLcmLargeFile(ctx context.Context, fileID string) (LcmLargeFile, error)
 	GetLcmSessionConfig(ctx context.Context, sessionID string) (LcmSessionConfig, error)
 	GetLcmSummary(ctx context.Context, summaryID string) (LcmSummary, error)
+	GetMapRun(ctx context.Context, runID string) (LcmMapRun, error)
+	GetMapRunItems(ctx context.Context, runID string) ([]LcmMapItem, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetMessageBySessionAndSeq(ctx context.Context, arg GetMessageBySessionAndSeqParams) (Message, error)
 	GetMessageCountByTimeRange(ctx context.Context, arg GetMessageCountByTimeRangeParams) (int64, error)
+	GetMessagePartsByMessageID(ctx context.Context, messageID string) ([]MessagePart, error)
+	GetMessagePartsBySessionAndType(ctx context.Context, arg GetMessagePartsBySessionAndTypeParams) ([]MessagePart, error)
 	GetMessagesByTimeRange(ctx context.Context, arg GetMessagesByTimeRangeParams) ([]Message, error)
 	GetRecentActivity(ctx context.Context) ([]GetRecentActivityRow, error)
 	GetRepoMapFileCache(ctx context.Context, repoKey string) ([]RepoMapFileCache, error)
@@ -89,6 +95,8 @@ type Querier interface {
 	InsertLcmSummaryMessage(ctx context.Context, arg InsertLcmSummaryMessageParams) error
 	// LCM Summary Parents
 	InsertLcmSummaryParent(ctx context.Context, arg InsertLcmSummaryParentParams) error
+	InsertMapRun(ctx context.Context, arg InsertMapRunParams) error
+	InsertMessagePart(ctx context.Context, arg InsertMessagePartParams) (MessagePart, error)
 	InsertRepoMapTag(ctx context.Context, arg InsertRepoMapTagParams) error
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
 	ListContentReplacementsByRound(ctx context.Context, arg ListContentReplacementsByRoundParams) ([]LcmContentReplacement, error)
@@ -128,6 +136,7 @@ type Querier interface {
 	UpdateLcmMapItem(ctx context.Context, arg UpdateLcmMapItemParams) error
 	UpdateLcmMapRunStatus(ctx context.Context, arg UpdateLcmMapRunStatusParams) error
 	UpdateLcmSessionConfig(ctx context.Context, arg UpdateLcmSessionConfigParams) error
+	UpdateMapRunStatus(ctx context.Context, arg UpdateMapRunStatusParams) error
 	UpdateMessage(ctx context.Context, arg UpdateMessageParams) error
 	UpdateMessageTokenCount(ctx context.Context, arg UpdateMessageTokenCountParams) error
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
