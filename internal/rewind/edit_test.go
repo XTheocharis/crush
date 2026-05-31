@@ -451,6 +451,42 @@ func (m *editMockQuerier) UpsertSessionReadOnlyPath(ctx context.Context, arg db.
 	return nil
 }
 
+func (m *editMockQuerier) CountMessagePartsBySession(ctx context.Context, sessionID string) (int64, error) {
+	return 0, nil
+}
+
+func (m *editMockQuerier) DeleteMessagePartsByMessageID(ctx context.Context, messageID string) error {
+	return nil
+}
+
+func (m *editMockQuerier) GetMapRun(ctx context.Context, runID string) (db.LcmMapRun, error) {
+	return db.LcmMapRun{}, nil
+}
+
+func (m *editMockQuerier) GetMapRunItems(ctx context.Context, runID string) ([]db.LcmMapItem, error) {
+	return nil, nil
+}
+
+func (m *editMockQuerier) GetMessagePartsByMessageID(ctx context.Context, messageID string) ([]db.MessagePart, error) {
+	return nil, nil
+}
+
+func (m *editMockQuerier) GetMessagePartsBySessionAndType(ctx context.Context, arg db.GetMessagePartsBySessionAndTypeParams) ([]db.MessagePart, error) {
+	return nil, nil
+}
+
+func (m *editMockQuerier) InsertMapRun(ctx context.Context, arg db.InsertMapRunParams) error {
+	return nil
+}
+
+func (m *editMockQuerier) InsertMessagePart(ctx context.Context, arg db.InsertMessagePartParams) (db.MessagePart, error) {
+	return db.MessagePart{}, nil
+}
+
+func (m *editMockQuerier) UpdateMapRunStatus(ctx context.Context, arg db.UpdateMapRunStatusParams) error {
+	return nil
+}
+
 // XRUSH: mock for ListRecentReadFiles
 func (m *editMockQuerier) ListRecentReadFiles(ctx context.Context, readAt int64) ([]db.ReadFile, error) {
 	return nil, nil

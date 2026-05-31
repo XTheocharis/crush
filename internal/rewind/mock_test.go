@@ -853,6 +853,75 @@ func (m *mockQuerier) UpsertSessionReadOnlyPath(ctx context.Context, arg db.Upse
 	return args.Error(0)
 }
 
+func (m *mockQuerier) CountMessagePartsBySession(ctx context.Context, sessionID string) (int64, error) {
+	args := m.Called(ctx, sessionID)
+	var zero int64
+	if v := args.Get(0); v != nil {
+		return v.(int64), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) DeleteMessagePartsByMessageID(ctx context.Context, messageID string) error {
+	args := m.Called(ctx, messageID)
+	return args.Error(0)
+}
+
+func (m *mockQuerier) GetMapRun(ctx context.Context, runID string) (db.LcmMapRun, error) {
+	args := m.Called(ctx, runID)
+	var zero db.LcmMapRun
+	if v := args.Get(0); v != nil {
+		return v.(db.LcmMapRun), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) GetMapRunItems(ctx context.Context, runID string) ([]db.LcmMapItem, error) {
+	args := m.Called(ctx, runID)
+	var zero []db.LcmMapItem
+	if v := args.Get(0); v != nil {
+		return v.([]db.LcmMapItem), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) GetMessagePartsByMessageID(ctx context.Context, messageID string) ([]db.MessagePart, error) {
+	args := m.Called(ctx, messageID)
+	var zero []db.MessagePart
+	if v := args.Get(0); v != nil {
+		return v.([]db.MessagePart), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) GetMessagePartsBySessionAndType(ctx context.Context, arg db.GetMessagePartsBySessionAndTypeParams) ([]db.MessagePart, error) {
+	args := m.Called(ctx, arg)
+	var zero []db.MessagePart
+	if v := args.Get(0); v != nil {
+		return v.([]db.MessagePart), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) InsertMapRun(ctx context.Context, arg db.InsertMapRunParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
+}
+
+func (m *mockQuerier) InsertMessagePart(ctx context.Context, arg db.InsertMessagePartParams) (db.MessagePart, error) {
+	args := m.Called(ctx, arg)
+	var zero db.MessagePart
+	if v := args.Get(0); v != nil {
+		return v.(db.MessagePart), args.Error(1)
+	}
+	return zero, args.Error(1)
+}
+
+func (m *mockQuerier) UpdateMapRunStatus(ctx context.Context, arg db.UpdateMapRunStatusParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
+}
+
 // XRUSH: mock for ListRecentReadFiles
 func (m *mockQuerier) ListRecentReadFiles(ctx context.Context, readAt int64) ([]db.ReadFile, error) {
 	args := m.Called(ctx, readAt)

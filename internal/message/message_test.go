@@ -693,3 +693,121 @@ func TestUpdate_StructuralFlushUsesMustDeliver(t *testing.T) {
 		})
 	}
 }
+
+func newTestServiceWithQuerier(t *testing.T, opts ...ServiceOption) (Service, db.Querier, string) {
+	t.Helper()
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	q := db.New(conn)
+	sessions := session.NewService(q, conn)
+	sess, err := sessions.Create(t.Context(), "test")
+	require.NoError(t, err)
+
+	svc := NewService(q, opts...)
+	return svc, q, sess.ID
+}
+
+func TestMessagePartsDualWrite(t *testing.T) {
+	t.Parallel()
+
+	svc, q, sessionID := newTestServiceWithQuerier(t, WithDebounce(0))
+
+	msg, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role: User,
+		Parts: []ContentPart{
+			TextContent{Text: "hello"},
+			ImageURLContent{URL: "https://example.com/img.png"},
+		},
+	})
+	require.NoError(t, err)
+
+	parts, err := q.GetMessagePartsByMessageID(t.Context(), msg.ID)
+	require.NoError(t, err)
+	require.Len(t, parts, 3, "text + image_url + auto-added finish")
+
+	require.Equal(t, "text", parts[0].PartType)
+	require.Equal(t, int64(0), parts[0].PartIndex)
+	require.Contains(t, parts[0].ContentJson, "hello")
+
+	require.Equal(t, "image_url", parts[1].PartType)
+	require.Equal(t, int64(1), parts[1].PartIndex)
+	require.Contains(t, parts[1].ContentJson, "example.com")
+
+	require.Equal(t, "finish", parts[2].PartType)
+	require.Equal(t, int64(2), parts[2].PartIndex)
+
+	got, err := svc.Get(t.Context(), msg.ID)
+	require.NoError(t, err)
+	require.Len(t, got.Parts, 3, "parts blob must also be intact")
+}
+
+func TestMessagePartsUpdate(t *testing.T) {
+	t.Parallel()
+
+	svc, q, sessionID := newTestServiceWithQuerier(t, WithDebounce(0))
+
+	msg, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role: Assistant,
+	})
+	require.NoError(t, err)
+
+	parts, err := q.GetMessagePartsByMessageID(t.Context(), msg.ID)
+	require.NoError(t, err)
+	require.Empty(t, parts, "assistant message with no parts has no message_parts rows")
+
+	msg.AppendContent("hello")
+	msg.AddToolCall(ToolCall{ID: "tc1", Name: "view", Input: `{}`, Finished: true})
+	msg.AddFinish(FinishReasonEndTurn, "", "")
+	require.NoError(t, svc.Update(t.Context(), msg))
+
+	parts, err = q.GetMessagePartsByMessageID(t.Context(), msg.ID)
+	require.NoError(t, err)
+	require.Len(t, parts, 3, "text + tool_call + finish")
+
+	require.Equal(t, "text", parts[0].PartType)
+	require.Equal(t, "tool_call", parts[1].PartType)
+	require.Contains(t, parts[1].ContentJson, "tc1")
+	require.Equal(t, "finish", parts[2].PartType)
+}
+
+func TestMessagePartsSkipsBinary(t *testing.T) {
+	t.Parallel()
+
+	svc, q, sessionID := newTestServiceWithQuerier(t, WithDebounce(0))
+
+	msg, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role: User,
+		Parts: []ContentPart{
+			TextContent{Text: "see attached"},
+			BinaryContent{Path: "file.png", MIMEType: "image/png", Data: []byte("fake")},
+		},
+	})
+	require.NoError(t, err)
+
+	parts, err := q.GetMessagePartsByMessageID(t.Context(), msg.ID)
+	require.NoError(t, err)
+
+	for _, p := range parts {
+		require.NotEqual(t, "binary", p.PartType, "binary parts must be skipped")
+	}
+}
+
+func TestMessagePartsBestEffort(t *testing.T) {
+	t.Parallel()
+
+	svc, _, sessionID := newTestServiceWithQuerier(t, WithDebounce(0))
+
+	msg, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role: User,
+		Parts: []ContentPart{
+			TextContent{Text: "hello"},
+		},
+	})
+	require.NoError(t, err, "Create must succeed even if parts write is best-effort")
+
+	got, err := svc.Get(t.Context(), msg.ID)
+	require.NoError(t, err)
+	require.Equal(t, "hello", got.Content().Text)
+}

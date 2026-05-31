@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -192,6 +193,7 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 	if err != nil {
 		return Message{}, err
 	}
+	s.writeMessageParts(ctx, message.ID, sessionID, message.Parts)
 	// Clone the message before publishing to avoid race conditions with
 	// concurrent modifications to the Parts slice.
 	s.Publish(pubsub.CreatedEvent, message.Clone())
@@ -413,7 +415,58 @@ func (s *service) write(ctx context.Context, msg Message) error {
 	}); err != nil {
 		return err
 	}
+	s.writeMessageParts(ctx, msg.ID, msg.SessionID, msg.Parts)
 	return nil
+}
+
+func (s *service) writeMessageParts(ctx context.Context, messageID, sessionID string, parts []ContentPart) {
+	if err := s.q.DeleteMessagePartsByMessageID(ctx, messageID); err != nil {
+		log.Printf("message_parts: delete existing parts for message %s: %v", messageID, err)
+	}
+
+	for i, part := range parts {
+		pt := partTypeOf(part)
+		if pt == binaryType {
+			continue
+		}
+		data, err := json.Marshal(part)
+		if err != nil {
+			log.Printf("message_parts: marshal part %d for message %s: %v", i, messageID, err)
+			continue
+		}
+		_, err = s.q.InsertMessagePart(ctx, db.InsertMessagePartParams{
+			PartID:      uuid.New().String(),
+			MessageID:   messageID,
+			SessionID:   sessionID,
+			PartType:    string(pt),
+			PartIndex:   int64(i),
+			ContentJson: string(data),
+		})
+		if err != nil {
+			log.Printf("message_parts: insert part %d for message %s: %v", i, messageID, err)
+		}
+	}
+}
+
+func partTypeOf(part ContentPart) partType {
+	switch part.(type) {
+	case ReasoningContent:
+		return reasoningType
+	case TextContent:
+		return textType
+	case ImageURLContent:
+		return imageURLType
+	case BinaryContent:
+		return binaryType
+	case ToolCall:
+		return toolCallType
+	case ToolResult:
+		return toolResultType
+	case Finish:
+		return finishType
+	default:
+		return "unknown"
+	}
 }
 
 // shouldFlushNow returns true when next represents a structural
