@@ -95,7 +95,7 @@ cycles. Five priority levels with float64 thresholds (defined in
 
 ### Memory System
 
-**Location**: `internal/lcm/memory.go` (~812 lines)
+**Location**: `internal/lcm/memory.go` (~824 lines)
 
 - `AutoMemoryExtractor` fires every 5 turns
 - Extracts 4 memory types: **fact**, **decision**, **preference**, **lesson**
@@ -175,7 +175,7 @@ Twelve additional LCM files supporting the core modules:
 
 ### Reflector
 
-**Location**: `internal/lcm/reflector.go` (601 lines)
+**Location**: `internal/lcm/reflector.go` (605 lines)
 
 The **ReflectorAgent** triggers asynchronous reflection when a session's token
 count crosses the configured threshold (default 40K tokens). It loads
@@ -617,13 +617,14 @@ file type processes it:
 
 ### Additional Explorer Files
 
-Five additional files supporting the explorer subsystem:
+Six additional files supporting the explorer subsystem:
 
 - **File**: `protocol_artifacts.go` (~399 lines) — Parity/conformance testing types for cross-platform consistency
-- **File**: `extensions.go` (~97 lines) — File type classification maps and extension-to-handler dispatch
+- **File**: `extensions.go` (~101 lines) — File type classification maps and extension-to-handler dispatch
 - **File**: `explorer_prompts.go` (~124 lines) — Agent exploration prompt templates for deep analysis tier
 - **File**: `runtime.go` (~104 lines) — Runtime dependency detection helpers
 - **File**: `tempfile.go` (~23 lines) — Temporary file management for explorer processing
+- **File**: `data.go` (~483 lines) — Data format handlers: JSON, CSV, YAML, TOML, INI, XML, HTML explorers
 
 ### Language Stdlib Mappings
 
@@ -1601,7 +1602,7 @@ dimensions.
 
 | Component | Lines | Description |
 |-----------|-------|-------------|
-| Harness | 296 | Parallel scorer registration and execution |
+| Harness | 312 | Parallel scorer registration and execution |
 | Runner | 200 | Loads JSON datasets, runs through harness |
 | Report | 222 | Evaluation report generation |
 | Storage | 321 | Persistent storage for evaluation results |
@@ -1623,10 +1624,10 @@ A 4-stage `ScorerPipeline` interface for structured scorer implementations:
 
 | Stage | Method | Description |
 |-------|--------|-------------|
-| 1 | `PreProcess` | Pre-process input data before scoring |
-| 2 | `Score` | Compute the actual score |
-| 3 | `PostProcess` | Post-process results after scoring |
-| 4 | `Aggregate` | Aggregate scores across multiple runs |
+| 1 | `Preprocess` | Pre-process input data before scoring |
+| 2 | `Analyze` | Analyze input and prepare scoring context |
+| 3 | `GenerateScore` | Compute the actual score |
+| 4 | `GenerateReason` | Generate reasoning and aggregate results |
 
 Each stage is a separate method, enabling custom scorer implementations to
 override individual stages independently. The metric scorer pipeline
@@ -1999,7 +2000,7 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | Backoff | 70 | Exponential backoff for failed requests |
 | NamePath | 117 | Language name to server path resolution |
 
-### New LSP Agent Tools (14 fork-new; 15 total built by extension)
+### New LSP Agent Tools (16 fork-new; 17 total built by extension)
 
 | Tool | LSP Method |
 |------|-----------|
@@ -2019,7 +2020,7 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | `lsp_workspace_symbols` | `workspace/symbol` |
 | `lsp_restart` | Restart LSP server (also registered upstream) |
 
-> **Note**: `LSPToolsExtension.buildLSPTools()` creates 15 tools total. `lsp_restart` is also registered as an upstream tool (in `coordinator.go`), so only 14 are fork-new additions.
+> **Note**: `LSPToolsExtension.buildLSPTools()` creates 17 tools total. `lsp_restart` is also registered as an upstream tool (in `coordinator.go`), so only 16 are fork-new additions.
 
 Supporting files: `lsp_symbolic.go` (shared symbol operations), `lsp_helpers.go`
 (shared utilities). These are not standalone tools but are used by the tools above.
@@ -2095,7 +2096,7 @@ Tools should always use Manager methods rather than calling Client methods
 directly to ensure serialization.  The executor is started in `Close()` and
 stopped during graceful shutdown.
 
-**Files**: `internal/lsp/manager_xrush_methods.go` (373L),
+**Files**: `internal/lsp/manager_xrush_methods.go` (388L),
 `internal/lsp/executor.go` (221L).
 
 ### LSP Server Catalog
@@ -2242,7 +2243,7 @@ explicit `url` and `sha256` configuration per server.
 
 ### Fork-New Tools
 
-> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built; 14 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (14: 5 via toolFactory + 9 retrieval). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
+> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (17 built; 16 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (15: 5 via toolFactory + 10 including Compact). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
 
 #### Registered Agent Tools (32)
 
@@ -2386,7 +2387,7 @@ auto-approve safe commands.
 | `validate` | 899 | Tree-sitter syntax validation after edits. Includes `FormatStage` (checks Go formatting via `gofmt -l`, read-only) and `FormatStageAutoFix` (`AutoFix bool`; when true, runs `gofmt` via stdin/stdout to apply fixes). Stage replacement in `validation_handler.go` iterates pipeline stages, type-asserts, and swaps in-place. Build tag: `//go:build treesitter` (T6). |
 | `validation_handler` | 237 | Post-edit validation pipeline (orchestrates validate + rollback) |
 | `view_xrush` | 205 | Enhanced batch file reading with LCM context awareness. Runs up to `batchMaxWorkers=8` concurrent goroutines via semaphore, tracks cumulative output with `atomic.Int64` against a `batchDefaultTokenBudget=200_000` (×4 chars/token = 800K char budget). Performs path deduplication (`dedupBatchPaths`) to avoid redundant reads. Graceful budget exhaustion: once the atomic counter reaches the budget, in-flight and pending reads are skipped without error, returning whatever content was collected so far. Supports offset/limit slicing and line numbering. **Priority file ordering (T7)**: sorts files by priority instead of alphabetically — recently read files (`filetracker.Service.ListReadFiles()`, 1000 pts) > PageRank (100 + rank×10) > alphabetical tiebreaker. `repomap.Service.FileScores()` is available but not yet wired (parameter nil). |
-| `edit_batch` | 173 | Atomic multi-file batch edits with rollback. **Overlap detection (T11)**: `detectOverlaps()` pre-flight check rejects edits with overlapping ranges before any are applied. Uses sorted-interval overlap detection: sort ranges by start, check consecutive ranges. Error format: `"batch overlap: ops[i] [start:end) and ops[j] [start:end) overlap in file"`. |
+| `edit_batch_tool` + `edit_batch` | 173 + 438 | Atomic multi-file batch edits with rollback. **Overlap detection (T11)** lives in `edit_batch.go` (438L): `detectOverlaps()` pre-flight check rejects edits with overlapping ranges before any are applied. Uses sorted-interval overlap detection: sort ranges by start, check consecutive ranges. Error format: `"batch overlap: ops[i] [start:end) and ops[j] [start:end) overlap in file"`. The tool registration and request handling is in `edit_batch_tool.go` (173L). |
 | `edit_fuzzy_symbol` | 43 | **Fuzzy symbol resolution (T12)**: tree-sitter-enhanced symbol resolution for edit targets. Build-tag conditional: `edit_fuzzy_symbol.go` (`treesitter`) / `edit_fuzzy_symbol_stub.go` (`!treesitter`). Local `symbolParser` interface adapted from `treesitter.Parser`. Fuzzy scoring: subsequence matching with bonuses (word boundary +3, consecutive +2, base +1), length normalization: `score × 10 / (len(target) + 1)`. Global parser injection via `SetSymbolParser(p)` — nil by default. |
 | `diag_cascade_forward` | 146 | **Forward import resolution (T13)**: `ForwardImportResolution(ctx, parser, filePath, projectRoot, modulePath)` extracts imports from a Go file via tree-sitter and resolves each project-local import to its exported symbols. Build-tagged: `diag_cascade_forward.go` (`treesitter`) / `diag_cascade_forward_stub.go` (`!treesitter`). Skips: stdlib, third-party, test files, hidden files. Returns `map[string][]string` (import path → exported symbol names). One level deep only — no recursion. |
 | `diag_watcher` | 248 | **Diagnostic watcher (T14)**: background `fsnotify`-based monitoring for file changes. Proactively runs LSP diagnostics on affected files. Debounce: pending map + timer-based flush at 500ms. Cache: TTL (30s) with `sync.RWMutex`. Added to `App.DiagWatcher` field in `app.go`, started/stopped via `cleanupFuncs`. No configuration — all parameters are hardcoded. |
@@ -2475,7 +2476,7 @@ The `disabled_tools` option can hide specific tools from the agent's surface.
 | Docker MCP | 134 | Auto-detect Docker MCP gateway (`docker mcp version`), 10 s TTL cache, enable/disable methods on `ConfigStore` that persist to global config |
 | Hyper Provider | 124 | Charm Hyper provider auto-configuration: fetches provider metadata from `/api/v1/provider`, ETag-based caching, embedded fallback, `sync.Once` init |
 | Atomic Writes | 38 | Safe config file writes via temp-file + rename, preventing concurrent readers from seeing partial writes |
-| Xrush Types | 61 | Fork-specific config types: `RoutingTier`, `ArchitectOptions`, `ValidationOptions`, `ProcessorsOptions`, `SnapshotConfig`, `AutoDownloadConfig` |
+| Xrush Types | 67 | Fork-specific config types: `RoutingTier`, `ArchitectOptions`, `ValidationOptions`, `ProcessorsOptions`, `SnapshotConfig`, `AutoDownloadConfig` |
 | Xrush Tools Registry | 141 | Fork-only tool name registry (`xrushToolNames`, `xrushReadOnlyTools`) merged into sorted `allToolNames` alongside extension-contributed tools |
 | Migration | 44 | Config schema migration |
 | YAML | 352 | YAML config file support |
@@ -2696,7 +2697,7 @@ decomposed into `message_parts`. Existing messages are not backfilled.
 
 ## 17. Database Migrations
 
-21 new migrations added by the fork:
+22 new migrations added by the fork:
 
 | Migration | Description |
 |-----------|-------------|
@@ -2719,12 +2720,13 @@ decomposed into `message_parts`. Existing messages are not backfilled.
 | `20260517000000_lcm_gaps.sql` | Content replacements + large files FTS |
 | `20260518000000_lcm_observation_priority.sql` | Observation priority support |
 | `20260519000000_lcm_observation_priority_info.sql` | Add 'info' priority level to observation buffer |
+| `20260520000000_lcm_observation_priority_critical.sql` | Add 'critical' priority level to observation buffer |
 | `20260521000000_map_tool_type.sql` | `tool_type` column on `lcm_map_runs` for distinguishing agentic_map vs llm_map runs |
 | `20260522000000_message_parts.sql` | `message_parts` table for structured per-part message decomposition |
 
 ### User-Facing Description
 
-27 SQLite migrations are applied automatically on startup using the Goose
+28 SQLite migrations are applied automatically on startup using the Goose
 format with Up and Down support. Each migration adds schema for a specific
 fork feature: LCM tables, repository map cache, LCM infrastructure (reversible state, observation buffer, auto-memory),
 session observations, eval scorer storage, turn snapshots, message timestamps,
@@ -3340,7 +3342,7 @@ side-by-side. Syntax highlighting in diffs and markdown is always active.
 | `RateLimiting` (180L) | Reactive 429-backoff rate limit coordination |
 | `ModelRouter` + `TierRouter` | Model routing with tier-based selection; `ModelRouter` deprecated, `TierRouter` active |
 | `ConfigLoader` (253L) | Dynamic agent configuration from `crush.json` |
-| `ToolSurface` (414L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; 56 tools registered |
+| `ToolSurface` (421L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; 56 tools registered |
 | `Session` (349L) | Session management (`session/session.go`) |
 | `Completer` (88L) | Shell command completion |
 | `WrittenFiles` (79L) | Track files written during a session |
