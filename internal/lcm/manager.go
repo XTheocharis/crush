@@ -1198,8 +1198,8 @@ func (m *compactionManager) ExtraAgentTools() []fantasy.AgentTool {
 			m.toolFactory.NewLcmGrepTool(m.sqlDB),
 			m.toolFactory.NewLcmDescribeTool(m.sqlDB),
 			m.toolFactory.NewLcmExpandTool(m.sqlDB),
-			m.toolFactory.NewLlmMapTool(),
-			m.toolFactory.NewAgenticMapTool(),
+			m.toolFactory.NewLlmMapTool(m.sqlDB),
+			m.toolFactory.NewAgenticMapTool(m.sqlDB),
 		}
 	}
 	base = append(base,

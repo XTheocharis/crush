@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -13,6 +15,8 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/db"
+	"github.com/google/uuid"
 )
 
 const LlmMapToolName = "llm_map"
@@ -23,22 +27,31 @@ const (
 	llmMapMaxRetries         = 3
 )
 
-// LLMCallFunc is the function signature for making LLM calls from the map
-// tool. Implementations take a rendered prompt and return the raw LLM
-// response text.
 type LLMCallFunc func(ctx context.Context, prompt string) (string, error)
 
-// LlmMapOption configures an LLM map tool.
 type LlmMapOption func(*llmMapConfig)
 
 type llmMapConfig struct {
-	llmCall LLMCallFunc
+	llmCall  LLMCallFunc
+	db       *sql.DB
+	toolType string
 }
 
-// WithLLMCall sets the LLM call function for the map tool.
 func WithLLMCall(fn LLMCallFunc) LlmMapOption {
 	return func(c *llmMapConfig) {
 		c.llmCall = fn
+	}
+}
+
+func WithLLMMapDB(sqlDB *sql.DB) LlmMapOption {
+	return func(c *llmMapConfig) {
+		c.db = sqlDB
+	}
+}
+
+func WithLLMMapToolType(toolType string) LlmMapOption {
+	return func(c *llmMapConfig) {
+		c.toolType = toolType
 	}
 }
 
@@ -88,7 +101,6 @@ The prompt template can use {{.Input}} to reference the input item.`,
 				return fantasy.NewTextErrorResponse("prompt is required"), nil
 			}
 
-			// Apply defaults.
 			if params.Concurrency <= 0 {
 				params.Concurrency = llmMapDefaultConcurrency
 			}
@@ -103,7 +115,24 @@ The prompt template can use {{.Input}} to reference the input item.`,
 				return fantasy.NewTextErrorResponse("llm_map tool: no LLM caller configured"), nil
 			}
 
-			// Read input JSONL.
+			sessionID := GetSessionFromContext(ctx)
+
+			var runID string
+			if cfg.db != nil && sessionID != "" {
+				runID = uuid.New().String()
+				if err := db.New(cfg.db).InsertMapRun(ctx, db.InsertMapRunParams{
+					RunID:      runID,
+					SessionID:  sessionID,
+					InputPath:  params.InputPath,
+					OutputPath: params.OutputPath,
+					SchemaJson: params.Schema,
+					ToolType:   cfg.toolType,
+				}); err != nil {
+					log.Printf("map persistence: InsertMapRun: %v", err)
+					runID = ""
+				}
+			}
+
 			items, err := readJSONL(params.InputPath)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to read input file: %v", err)), nil
@@ -113,13 +142,11 @@ The prompt template can use {{.Input}} to reference the input item.`,
 				return fantasy.NewTextErrorResponse("Input file is empty"), nil
 			}
 
-			// Parse prompt template.
 			tmpl, err := template.New("prompt").Parse(params.Prompt)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Invalid prompt template: %v", err)), nil
 			}
 
-			// Validate JSON Schema format if provided.
 			if params.Schema != "" {
 				var schemaObj any
 				if err := json.Unmarshal([]byte(params.Schema), &schemaObj); err != nil {
@@ -127,15 +154,12 @@ The prompt template can use {{.Input}} to reference the input item.`,
 				}
 			}
 
-			// Open output file.
 			outFile, err := os.Create(params.OutputPath)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to create output file: %v", err)), nil
 			}
 			defer outFile.Close()
 
-			// Process items with worker pool — order-preserving fan-in via
-			// indexed slice.
 			results := make([]jsonlResult, len(items))
 			var wg sync.WaitGroup
 			semaphore := make(chan struct{}, params.Concurrency)
@@ -147,16 +171,49 @@ The prompt template can use {{.Input}} to reference the input item.`,
 					semaphore <- struct{}{}
 					defer func() { <-semaphore }()
 
+					var itemID string
+					if cfg.db != nil && runID != "" {
+						itemID = uuid.New().String()
+						if err := db.New(cfg.db).InsertLcmMapItem(ctx, db.InsertLcmMapItemParams{
+							ItemID:    itemID,
+							RunID:     runID,
+							InputJson: string(inputItem),
+						}); err != nil {
+							log.Printf("map persistence: InsertLcmMapItem: %v", err)
+							itemID = ""
+						}
+					}
+
 					itemCtx, cancel := context.WithTimeout(ctx, time.Duration(params.Timeout)*time.Second)
 					defer cancel()
 
 					results[idx] = processLlmMapItem(itemCtx, inputItem, tmpl, params.Schema, cfg.llmCall)
+
+					if cfg.db != nil && itemID != "" {
+						r := results[idx]
+						status := "COMPLETED"
+						var outputJSON sql.NullString
+						var errMsg sql.NullString
+						if r.Error != nil {
+							status = "FAILED"
+							errMsg = sql.NullString{String: *r.Error, Valid: true}
+						} else if r.Output != nil {
+							outputJSON = sql.NullString{String: string(r.Output), Valid: true}
+						}
+						if err := db.New(cfg.db).UpdateLcmMapItem(ctx, db.UpdateLcmMapItemParams{
+							Status:     status,
+							OutputJson: outputJSON,
+							ErrorMsg:   errMsg,
+							ItemID:     itemID,
+						}); err != nil {
+							log.Printf("map persistence: UpdateLcmMapItem: %v", err)
+						}
+					}
 				}(i, item)
 			}
 
 			wg.Wait()
 
-			// Write results to output file — preserves input order.
 			encoder := json.NewEncoder(outFile)
 			for _, result := range results {
 				if err := encoder.Encode(result); err != nil {
@@ -171,6 +228,21 @@ The prompt template can use {{.Input}} to reference the input item.`,
 					successCount++
 				} else {
 					errorCount++
+				}
+			}
+
+			if cfg.db != nil && runID != "" {
+				runStatus := "DONE"
+				if errorCount > 0 && successCount > 0 {
+					runStatus = "PARTIAL"
+				} else if errorCount > 0 {
+					runStatus = "FAILED"
+				}
+				if err := db.New(cfg.db).UpdateMapRunStatus(ctx, db.UpdateMapRunStatusParams{
+					Status: runStatus,
+					RunID:  runID,
+				}); err != nil {
+					log.Printf("map persistence: UpdateMapRunStatus: %v", err)
 				}
 			}
 

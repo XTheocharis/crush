@@ -2,13 +2,17 @@ package tools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/db"
+	"github.com/google/uuid"
 )
 
 const AgenticMapToolName = "agentic_map"
@@ -29,12 +33,28 @@ type AgenticMapOption func(*agenticMapConfig)
 
 type agenticMapConfig struct {
 	subAgentRun SubAgentRunFunc
+	db         *sql.DB
+	toolType   string
 }
 
 // WithSubAgentRun sets the sub-agent runner function for the agentic map tool.
 func WithSubAgentRun(fn SubAgentRunFunc) AgenticMapOption {
 	return func(c *agenticMapConfig) {
 		c.subAgentRun = fn
+	}
+}
+
+// WithDB sets the database connection for persisting map run/item state.
+func WithDB(sqlDB *sql.DB) AgenticMapOption {
+	return func(c *agenticMapConfig) {
+		c.db = sqlDB
+	}
+}
+
+// WithToolType sets the tool type identifier for persistence records.
+func WithToolType(toolType string) AgenticMapOption {
+	return func(c *agenticMapConfig) {
+		c.toolType = toolType
 	}
 }
 
@@ -87,7 +107,24 @@ If read_only is true, the sub-agent will not have access to write, edit, or bash
 				return fantasy.NewTextErrorResponse("agentic_map tool: no sub-agent runner configured"), nil
 			}
 
-			// Read input JSONL.
+			sessionID := GetSessionFromContext(ctx)
+
+			var runID string
+			if cfg.db != nil && sessionID != "" {
+				runID = uuid.New().String()
+				if err := db.New(cfg.db).InsertMapRun(ctx, db.InsertMapRunParams{
+					RunID:      runID,
+					SessionID:  sessionID,
+					InputPath:  params.InputPath,
+					OutputPath: params.OutputPath,
+					SchemaJson: params.Schema,
+					ToolType:   cfg.toolType,
+				}); err != nil {
+					log.Printf("map persistence: InsertMapRun: %v", err)
+					runID = ""
+				}
+			}
+
 			items, err := readJSONL(params.InputPath)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to read input file: %v", err)), nil
@@ -97,7 +134,6 @@ If read_only is true, the sub-agent will not have access to write, edit, or bash
 				return fantasy.NewTextErrorResponse("Input file is empty"), nil
 			}
 
-			// Validate JSON Schema format if provided.
 			if params.Schema != "" {
 				var schemaObj any
 				if err := json.Unmarshal([]byte(params.Schema), &schemaObj); err != nil {
@@ -105,15 +141,12 @@ If read_only is true, the sub-agent will not have access to write, edit, or bash
 				}
 			}
 
-			// Open output file.
 			outFile, err := os.Create(params.OutputPath)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to create output file: %v", err)), nil
 			}
 			defer outFile.Close()
 
-			// Process items with worker pool — order-preserving fan-in via
-			// indexed slice.
 			results := make([]jsonlResult, len(items))
 			var wg sync.WaitGroup
 			semaphore := make(chan struct{}, agenticMapDefaultConcurrency)
@@ -125,16 +158,49 @@ If read_only is true, the sub-agent will not have access to write, edit, or bash
 					semaphore <- struct{}{}
 					defer func() { <-semaphore }()
 
+					var itemID string
+					if cfg.db != nil && runID != "" {
+						itemID = uuid.New().String()
+						if err := db.New(cfg.db).InsertLcmMapItem(ctx, db.InsertLcmMapItemParams{
+							ItemID:    itemID,
+							RunID:     runID,
+							InputJson: string(inputItem),
+						}); err != nil {
+							log.Printf("map persistence: InsertLcmMapItem: %v", err)
+							itemID = ""
+						}
+					}
+
 					itemCtx, cancel := context.WithTimeout(ctx, agenticMapDefaultTimeout*time.Second)
 					defer cancel()
 
 					results[idx] = processAgenticMapItem(itemCtx, inputItem, params.Prompt, params.Schema, params.ReadOnly, params.MaxAttempts, cfg.subAgentRun)
+
+					if cfg.db != nil && itemID != "" {
+						r := results[idx]
+						status := "COMPLETED"
+						var outputJSON sql.NullString
+						var errMsg sql.NullString
+						if r.Error != nil {
+							status = "FAILED"
+							errMsg = sql.NullString{String: *r.Error, Valid: true}
+						} else if r.Output != nil {
+							outputJSON = sql.NullString{String: string(r.Output), Valid: true}
+						}
+						if err := db.New(cfg.db).UpdateLcmMapItem(ctx, db.UpdateLcmMapItemParams{
+							Status:     status,
+							OutputJson: outputJSON,
+							ErrorMsg:   errMsg,
+							ItemID:     itemID,
+						}); err != nil {
+							log.Printf("map persistence: UpdateLcmMapItem: %v", err)
+						}
+					}
 				}(i, item)
 			}
 
 			wg.Wait()
 
-			// Write results to output file — preserves input order.
 			encoder := json.NewEncoder(outFile)
 			for _, result := range results {
 				if err := encoder.Encode(result); err != nil {
@@ -149,6 +215,21 @@ If read_only is true, the sub-agent will not have access to write, edit, or bash
 					successCount++
 				} else {
 					errorCount++
+				}
+			}
+
+			if cfg.db != nil && runID != "" {
+				runStatus := "DONE"
+				if errorCount > 0 && successCount > 0 {
+					runStatus = "PARTIAL"
+				} else if errorCount > 0 {
+					runStatus = "FAILED"
+				}
+				if err := db.New(cfg.db).UpdateMapRunStatus(ctx, db.UpdateMapRunStatusParams{
+					Status: runStatus,
+					RunID:  runID,
+				}); err != nil {
+					log.Printf("map persistence: UpdateMapRunStatus: %v", err)
 				}
 			}
 

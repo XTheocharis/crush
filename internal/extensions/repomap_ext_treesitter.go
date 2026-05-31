@@ -20,13 +20,13 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 	rawDB := host.DB()
 	if rawDB == nil {
 		slog.Warn("RepomapExtension: no DB available, using nil refresh functions")
-		return baseRepomapTools(nil, nil)
+		return baseRepomapTools(nil, nil, nil)
 	}
 
 	cfg := host.Config()
 	if cfg == nil || cfg.Options == nil || cfg.Options.RepoMap == nil || cfg.Options.RepoMap.Disabled {
 		slog.Debug("RepomapExtension: repo map disabled in config")
-		return baseRepomapTools(nil, nil)
+		return baseRepomapTools(nil, nil, nil)
 	}
 
 	q := db.New(rawDB)
@@ -71,7 +71,7 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 	}
 	e.mu.Unlock()
 
-	return baseRepomapTools(refreshSync, refreshAsync)
+	return baseRepomapTools(refreshSync, refreshAsync, rawDB)
 }
 
 // triggerRefresh fires an asynchronous repo-map refresh using the service
@@ -83,10 +83,10 @@ func (e *RepomapExtension) triggerRefresh(ctx context.Context, sessionID string)
 	return e.asyncRefresh(ctx, sessionID)
 }
 
-func baseRepomapTools(syncFn, asyncFn tools.MapRefreshFn) []fantasy.AgentTool {
+func baseRepomapTools(syncFn, asyncFn tools.MapRefreshFn, sqlDB *sql.DB) []fantasy.AgentTool {
 	return []fantasy.AgentTool{
-		tools.NewAgenticMapTool(),
-		tools.NewLlmMapTool(),
+		tools.NewAgenticMapTool(tools.WithDB(sqlDB), tools.WithToolType("agentic_map")),
+		tools.NewLlmMapTool(tools.WithLLMMapDB(sqlDB), tools.WithLLMMapToolType("llm_map")),
 		tools.NewMapRefreshTool(syncFn, asyncFn),
 	}
 }

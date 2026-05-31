@@ -11,9 +11,6 @@ import (
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
-// buildRepomapTools creates tools with nil refresh functions when tree-sitter
-// is not available. The MapRefreshTool will return a "not available" error,
-// which is graceful degradation.
 func (e *RepomapExtension) buildRepomapTools(_ context.Context, _ ext.HostContext) []fantasy.AgentTool {
 	return []fantasy.AgentTool{
 		tools.NewAgenticMapTool(),

@@ -44,9 +44,9 @@ type LCMToolFactory interface {
 
 	// NewLlmMapTool creates a tool that applies an LLM transformation to
 	// each item in a JSONL file.
-	NewLlmMapTool() fantasy.AgentTool
+	NewLlmMapTool(sqlDB *sql.DB) fantasy.AgentTool
 
 	// NewAgenticMapTool creates a tool that runs a sub-agent on each item
 	// in a JSONL file.
-	NewAgenticMapTool() fantasy.AgentTool
+	NewAgenticMapTool(sqlDB *sql.DB) fantasy.AgentTool
 }
