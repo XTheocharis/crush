@@ -169,3 +169,21 @@ func TestShouldInjectReturnsFalseWithoutKey(t *testing.T) {
 	// Empty sessionID should return false.
 	require.False(t, svc.ShouldInject("", RunInjectionKey{RootUserMessageID: "msg-1"}), "empty sessionID should return false")
 }
+
+func TestClearInjectionAllowsReinject(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil, nil, ".", context.Background())
+	sessionID := "session-1"
+	runKey := RunInjectionKey{RootUserMessageID: "msg-1"}
+
+	// First call returns true (initial inject).
+	require.True(t, svc.ShouldInject(sessionID, runKey), "first inject should return true")
+
+	// Second call returns false (dedup).
+	require.False(t, svc.ShouldInject(sessionID, runKey), "dedup should return false")
+
+	// After clearing, ShouldInject returns true again.
+	svc.ClearInjection(sessionID, runKey)
+	require.True(t, svc.ShouldInject(sessionID, runKey), "after clear, should re-inject")
+}

@@ -44,10 +44,16 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 		if _, _, err := svc.Refresh(ctx, sessionID, opts); err != nil {
 			return err
 		}
+		if runKey, ok := repomap.RunInjectionKeyFromContext(ctx); ok {
+			svc.ClearInjection(sessionID, runKey)
+		}
 		return nil
 	}
 
-	refreshAsync := func(_ context.Context, sessionID string) error {
+	refreshAsync := func(ctx context.Context, sessionID string) error {
+		if runKey, ok := repomap.RunInjectionKeyFromContext(ctx); ok {
+			svc.ClearInjection(sessionID, runKey)
+		}
 		opts := repomap.GenerateOpts{
 			SessionID:    sessionID,
 			ForceRefresh: true,
