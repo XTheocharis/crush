@@ -135,3 +135,37 @@ func TestClearInjectionNoopOnEmptyInputs(t *testing.T) {
 
 	require.False(t, svc.ShouldInject("session-1", runKey))
 }
+
+func TestInjectionFlowWithDedup(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil, nil, ".", context.Background())
+
+	// First injection with msg-1 should succeed.
+	key1 := RunInjectionKey{RootUserMessageID: "msg-1"}
+	require.True(t, svc.ShouldInject("session-1", key1), "first inject should return true")
+
+	// Same key again should be deduped.
+	require.False(t, svc.ShouldInject("session-1", key1), "dedup: same key should return false")
+
+	// New message ID (simulating a new run) should inject again.
+	key2 := RunInjectionKey{RootUserMessageID: "msg-2"}
+	require.True(t, svc.ShouldInject("session-1", key2), "new run key should return true")
+
+	// ClearInjection allows re-injection for that key.
+	svc.ClearInjection("session-1", key2)
+	require.True(t, svc.ShouldInject("session-1", key2), "after clear, should re-inject")
+	require.False(t, svc.ShouldInject("session-1", key2), "dedup after re-inject")
+}
+
+func TestShouldInjectReturnsFalseWithoutKey(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil, nil, ".", context.Background())
+
+	// Empty RootUserMessageID should return false.
+	require.False(t, svc.ShouldInject("session-1", RunInjectionKey{}), "empty RootUserMessageID should return false")
+
+	// Empty sessionID should return false.
+	require.False(t, svc.ShouldInject("", RunInjectionKey{RootUserMessageID: "msg-1"}), "empty sessionID should return false")
+}
