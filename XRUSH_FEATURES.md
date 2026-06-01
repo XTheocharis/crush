@@ -2,9 +2,9 @@
 
 > **Fork**: `XTheocharis/crush` (parent: `charmbracelet/crush`)
 > **Divergence**: `d14f3b1b` ("feat(tools): add diff view for denied tools", May 13, 2026)
-> **Fork activity**: 41 commits, May 26–28, 2026 (~50.5 hours)
-> **Scale**: 742 files changed, 244,900 insertions, 386 deletions
-> **Commit types**: feat: 20, fix: 11, refactor: 2, build: 2, chore: 2, docs: 2, style: 1, test: 1
+> **Fork activity**: 97 commits, May 26–31, 2026 (as of 627315c9)
+> **Scale**: 817 files changed, 273,166 insertions, 388 deletions
+> **Commit types**: feat: 39, fix: 29, docs: 20, style: 2, refactor: 2, chore: 2, build: 2, test: 1
 
 ---
 
@@ -188,8 +188,7 @@ The **BufferingCoordinator** collects observations at 20% intervals of the
 reflection threshold (i.e. at 20%, 40%, 60%, 80%, 100%) and triggers the
 reflector at 50% intervals (giving it two chances to produce insights before
 the session hits the full token budget). A `Flush` method forces immediate
-reflection for end-of-session cleanup. Controlled by the `reflector_enabled`
-config key.
+reflection for end-of-session cleanup. Always active when LCM is initialized; no configuration toggle exists.
 
 ### Nudge System
 
@@ -208,9 +207,9 @@ nudge types fire under different conditions:
 Force levels: **soft** (advisory, default) or **hard** (directive). Configured
 via the `nudge` block in LCM options.
 
-#### Context-Limit Double-Gate
+#### Context-Limit Triple-Gate
 
-The context-limit nudge has an undocumented double-gate at
+The context-limit nudge has an undocumented triple-condition guard at
 `nudge.go:141-146` that requires **all three** conditions to be true
 simultaneously:
 
@@ -687,7 +686,7 @@ compiled grammar imports).
 |-----------|------|-------|-------------|
 | ParserPool | `parser.go` | 634 | Channel-based pool, sized to `runtime.NumCPU()` |
 | QueryLoader | `query.go` | 579 | Compiles and caches `.scm` query files |
-| Language Map | `languages.go` | 177 | File extension → language mapping (38 language entries) |
+| Language Map | `languages.json` | 204 | File extension → language mapping (38 language entries) |
 | Import Resolution | `imports.go` | 965 | Per-language import path extraction |
 | Cache | `cache.go` | 180 | LRU cache (5,000 entries, 256 MB max) |
 
@@ -819,7 +818,7 @@ budget. Only the most relevant lines are included based on PageRank scores.
 | DiffWatch | 202 | Watch file diffs for incremental updates |
 | Mentions | 260 | Extract file/identifier mentions from conversation |
 | Caching | 225 | Persistent cache for computed map data |
-| Tokenizer | 367 | Embedded `cl100k_base` BPE tokenizer (1.7 MiB) |
+| Tokenizer | 367 | Embedded `cl100k_base` BPE tokenizer (~1.6 MiB, 1,681,126 bytes) |
 
 ### User-Facing Description
 
@@ -1327,7 +1326,7 @@ Runtime extension system with plugin-like capabilities.
 | `xrush-sessions` | Extended session management |
 | `prompt-assembly` | System prompt assembly (see details below) |
 | `lsp-tools` | LSP-powered code intelligence tools |
-| `step-adapter` | Step-level adapter for agent coordination *(Infrastructure Adapter — bridges `PrepareStepHook` message mutation with extension host lifecycle, not a feature extension)* |
+| `step-adapter` | Step-level adapter for agent coordination *(Step-level adapter — bridges `PrepareStepHook` message mutation with extension host lifecycle, not a feature extension)* |
 
 ### Prompt Assembly (`prompt-assembly`) — Implementation Details
 
@@ -1406,8 +1405,7 @@ observations for the session and formats them within the token budget:
 
 ### Severity Filter (T3)
 
-**File**: `internal/agent/tools/diag_gate.go` (~328 lines),
-`internal/config/xrush.go` (~67 lines)
+**File**: `internal/agent/tools/diag_gate.go` (~328 lines)
 
 The `DiagnosticGate` supports configurable severity filtering so that only
 diagnostics at or above a chosen severity pass the quality gate.
@@ -1612,8 +1610,8 @@ dimensions.
 | Type | Description |
 |------|-------------|
 | **Metric** | 10 built-in metric types (build success, test pass rate, syntax validity, lint score, edit distance, coverage, typecheck, etc.) |
-| **Judge** | LLM-based quality assessment (193 lines) |
-| **Mastra** | Mastra framework integration for agent evaluation (236 lines) |
+| **Judge** | LLM-based quality assessment (236 lines) |
+| **Mastra** | Mastra framework integration for agent evaluation (279 lines) |
 
 ### Scorer Pipeline (T24)
 
@@ -1941,7 +1939,7 @@ Structured planning before code changes:
 
 - JSON-structured steps with dependency ordering
 - Heuristic prompt classification (bug fix, feature, refactor)
-- Step-level validation criteria
+- Step-level dependency ordering and status tracking
 - Dependency graph for execution ordering
 
 ### User-Facing Description
@@ -2000,7 +1998,7 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | Backoff | 70 | Exponential backoff for failed requests |
 | NamePath | 117 | Language name to server path resolution |
 
-### New LSP Agent Tools (16 fork-new; 17 total built by extension)
+### New LSP Agent Tools (15 built by extension + 2 from coordinator; 17 total registered)
 
 | Tool | LSP Method |
 |------|-----------|
@@ -2020,7 +2018,7 @@ Enhanced LSP client with crash recovery, auto-download, and health monitoring.
 | `lsp_workspace_symbols` | `workspace/symbol` |
 | `lsp_restart` | Restart LSP server (also registered upstream) |
 
-> **Note**: `LSPToolsExtension.buildLSPTools()` creates 17 tools total. `lsp_restart` is also registered as an upstream tool (in `coordinator.go`), so only 16 are fork-new additions.
+> **Note**: `LSPToolsExtension.buildLSPTools()` creates 15 tools. Two additional LSP tools (`lsp_diagnostics` and `lsp_references`) are built separately in coordinator/app wiring. `lsp_restart` is also registered as an upstream tool. In total, 17 LSP tools are registered in `tool_surface.go`.
 
 Supporting files: `lsp_symbolic.go` (shared symbol operations), `lsp_helpers.go`
 (shared utilities). These are not standalone tools but are used by the tools above.
@@ -2041,14 +2039,17 @@ fork-specific functionality.
 | `Close()` | Graceful shutdown: stops health checker, task executor, and all clients |
 | `GetDiagnosticsForServer()` | Per-server diagnostics, serialised through the task executor |
 | `FindReferencesForServer()` | Per-server find-references, serialised through the task executor |
+| `FindClientForFile()` | Returns the first running LSP client matching a file URI |
 | `StartAll()` | Concurrent startup of all configured servers via errgroup, sorted by priority |
 | `SaveAllCaches()` | Persists document symbol caches from all running clients |
 | `RestartLanguageServer()` | Restarts a specific server by name |
+| `RenameForServer()` | Per-server rename, serialised through the task executor |
+| `SafeDeleteForServer()` | Per-server safe-deletion with reference check, serialised through the task executor |
 | `RequestFullSymbolTree()` | Returns recursive document symbols for a URI from the first matching client |
 | `startCrashRecovery()` | Background goroutine that monitors for crashes and auto-recreates the client |
 | `handleServerReadyFailure()` / `handleServerReadySuccess()` | Post-readiness hooks for cleanup or crash recovery activation |
 
-**`manager_handles_xrush.go`** — File-matching with user patterns:
+**`namepath.go`** — File-matching with user patterns:
 
 Extends upstream `handles()` logic with support for user-configured
 `match_patterns`. `handlesWithPatterns()` and `handleFiletypeWithPatterns()`
@@ -2147,7 +2148,7 @@ automatic crash recovery (always-on, exponential backoff from 1s to 60s, up to
 monitoring, and a serialized TaskExecutor that ensures all LSP requests per
 server are processed sequentially. An embedded server catalog (~15 servers)
 enables zero-config auto-download when the user has not configured their own
-binary path. 14 new agent tools expose LSP capabilities:
+binary path. 15 new agent tools expose LSP capabilities:
 go-to-definition, hover, rename, symbol replacement, insertion, deletion with
 reference checking, completion, formatting, signature help, code actions,
 document symbols (tree and flat list), workspace symbols, and server restart.
@@ -2243,7 +2244,7 @@ explicit `url` and `sha256` configuration per server.
 
 ### Fork-New Tools
 
-> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (17 built; 16 fork-new as `lsp_restart` is also upstream), and `ExtraAgentTools()` (15: 5 via toolFactory + 10 including Compact). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
+> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built by extension; 2 additional from coordinator = 17 total registered; `lsp_restart` also upstream), and `ExtraAgentTools()` (15: 5 via toolFactory + 10 including Compact). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
 
 #### Registered Agent Tools (32)
 
@@ -2282,7 +2283,7 @@ explicit `url` and `sha256` configuration per server.
 | `sourcegraph` | Search | Sourcegraph code search integration |
 | `list_mcp_resources` | MCP | List available MCP server resources |
 
-#### LCM Retrieval Tools (14 tools via `ExtraAgentTools()`: 5 via toolFactory + 9 retrieval)
+#### LCM Retrieval Tools (15 tools via `ExtraAgentTools()`: 5 via toolFactory + 10 retrieval)
 
 `lcm_bindle`, `lcm_ancestry`, `lcm_dolt`, `lcm_archive`, `lcm_sprig`,
 `lcm_time_query`, `lcm_file_search`, `lcm_active_context`, `lcm_lineage`
@@ -2828,7 +2829,7 @@ The `Runner` executes hook commands and aggregates results:
 Two independent code paths create `hooks.Runner` instances for different hook
 scopes:
 
-1. **Tool hooks** (`internal/agent/coordinator.go:759,763`): The coordinator
+1. **Tool hooks** (`internal/agent/coordinator.go:778,782`): The coordinator
    creates `preToolRunner` and `postToolRunner` from PreToolUse and PostToolUse
    hook configs. These runners fire on every tool call within the agent loop.
 

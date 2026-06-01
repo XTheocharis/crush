@@ -84,7 +84,7 @@ internal/
       validate_stub.go             No-op validation fallback
       validation_handler.go        Post-edit validation pipeline
   lcm/                             Lossless Context Management (see internal/lcm/AGENTS.md)
-    manager.go                     Manager: LCM lifecycle, 37 methods
+    manager.go                     Manager: LCM lifecycle, 48 methods
     compactor.go                   Core compaction logic
     store.go                       LCM persistent storage (SQLite-backed)
     compaction_layers.go           9-layer compaction pipeline
