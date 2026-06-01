@@ -20,7 +20,7 @@ or global `~/.config/crush/crush.json`).
 
 ## Lossless Context Management (LCM)
 
-LCM keeps conversations within token budgets through an 8-layer compaction
+LCM keeps conversations within token budgets through a 9-layer compaction
 pipeline. When enabled, it automatically summarizes old messages, stores
 large tool outputs out-of-line, and injects context-limit nudges.
 

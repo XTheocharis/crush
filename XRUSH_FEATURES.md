@@ -1,9 +1,9 @@
 # XRush Fork Feature Documentation
 
 > **Fork**: `XTheocharis/crush` (parent: `charmbracelet/crush`)
-> **Divergence**: `d14f3b1b` ("feat(tools): add diff view for denied tools", May 13, 2026)
+> **Divergence**: `be541bd1` ("feat: xrush fork — LCM, repo-map, tree-sitter, orchestration, feature parity", May 13, 2026)
 > **Fork activity**: 97 commits, May 26–31, 2026 (as of 627315c9)
-> **Scale**: 817 files changed, 273,166 insertions, 388 deletions
+> **Scale**: 324 files changed (from fork base `be541bd1`), 273,166 insertions, 388 deletions
 > **Commit types**: feat: 39, fix: 29, docs: 20, style: 2, refactor: 2, chore: 2, build: 2, test: 1
 
 ---
@@ -44,7 +44,7 @@ critical information.
 
 ### Manager
 
-The `Manager` (`manager.go`, ~1,718 lines) exposes 48 interface methods and 5 standalone functions (53 total) organized into
+The `Manager` (`manager.go`, ~1,718 lines) exposes 48 interface methods, 5 additional exported methods, and 2 constructors (55 exported + 12 unexported = 67 total) organized into
 functional groups:
 
 - **Compaction**: trigger compaction, query compaction state
@@ -1221,7 +1221,7 @@ Nine additional agent files not listed in the primary subsections above:
 - **File**: `agent_tool.go` (~68 lines) — "agent" tool for spawning sub-agents (see §14)
 - **File**: `event.go` (~51 lines) — Telemetry event helpers
 - **File**: `branch_loop_detection.go` (285 lines) — Per-branch loop detection for parallel execution (T26)
-- **File**: `tools/orchestration_types.go` (~51 lines) — Shared types for Operator, Parallel, and Swarm orchestration patterns, including `Mailbox.Broadcast` (T27)
+- **File**: `tools/orchestration_types.go` (~51 lines) — Shared types for Operator, Parallel, and Swarm orchestration patterns, including the `Mailbox.Broadcast` interface declaration (implementation in `forked.go`) (T27)
 - **File**: `errors.go` (~10 lines) — Sentinel error definitions
 
 ### Structured Subagent
@@ -2058,7 +2058,7 @@ check both traditional file-type suffixes and glob-based patterns via
 
 **`client_xrush_methods.go`** — Client-level LSP protocol methods:
 
-Adds direct LSP protocol call support (`callLSP` field) and seven standard
+Adds direct LSP protocol call support (`callLSP` field) and eight standard
 LSP methods on the `Client` struct:
 
 | Method | LSP Request |
@@ -2070,6 +2070,7 @@ LSP methods on the `Client` struct:
 | `DocumentSymbols()` | `textDocument/documentSymbol` |
 | `Completion()` | `textDocument/completion` |
 | `Formatting()` | `textDocument/formatting` |
+| `IsAlive()` | Process liveness check (`healthCheck` or `client.IsRunning()`) |
 
 Also adds `IsAlive()` (process liveness check via `healthCheck` or
 `client.IsRunning()`), helper types (`xrushClientFields`), and response
@@ -2389,7 +2390,7 @@ auto-approve safe commands.
 | `validation_handler` | 237 | Post-edit validation pipeline (orchestrates validate + rollback) |
 | `view_xrush` | 205 | Enhanced batch file reading with LCM context awareness. Runs up to `batchMaxWorkers=8` concurrent goroutines via semaphore, tracks cumulative output with `atomic.Int64` against a `batchDefaultTokenBudget=200_000` (×4 chars/token = 800K char budget). Performs path deduplication (`dedupBatchPaths`) to avoid redundant reads. Graceful budget exhaustion: once the atomic counter reaches the budget, in-flight and pending reads are skipped without error, returning whatever content was collected so far. Supports offset/limit slicing and line numbering. **Priority file ordering (T7)**: sorts files by priority instead of alphabetically — recently read files (`filetracker.Service.ListReadFiles()`, 1000 pts) > PageRank (100 + rank×10) > alphabetical tiebreaker. `repomap.Service.FileScores()` is available but not yet wired (parameter nil). |
 | `edit_batch_tool` + `edit_batch` | 173 + 438 | Atomic multi-file batch edits with rollback. **Overlap detection (T11)** lives in `edit_batch.go` (438L): `detectOverlaps()` pre-flight check rejects edits with overlapping ranges before any are applied. Uses sorted-interval overlap detection: sort ranges by start, check consecutive ranges. Error format: `"batch overlap: ops[i] [start:end) and ops[j] [start:end) overlap in file"`. The tool registration and request handling is in `edit_batch_tool.go` (173L). |
-| `edit_fuzzy_symbol` | 43 | **Fuzzy symbol resolution (T12)**: tree-sitter-enhanced symbol resolution for edit targets. Build-tag conditional: `edit_fuzzy_symbol.go` (`treesitter`) / `edit_fuzzy_symbol_stub.go` (`!treesitter`). Local `symbolParser` interface adapted from `treesitter.Parser`. Fuzzy scoring: subsequence matching with bonuses (word boundary +3, consecutive +2, base +1), length normalization: `score × 10 / (len(target) + 1)`. Global parser injection via `SetSymbolParser(p)` — nil by default. |
+| `edit_fuzzy_symbol` | 43 | **Fuzzy symbol resolution (T12)**: tree-sitter parser adapter for edit targets. Wraps `treesitter.Parser` as a local `symbolParser` interface for symbol resolution; actual fuzzy scoring algorithm lives in `edit_fuzzy.go` (475 lines). Build-tag conditional: `edit_fuzzy_symbol.go` (`treesitter`) / `edit_fuzzy_symbol_stub.go` (`!treesitter`). Global parser injection via `SetSymbolParser(p)` — nil by default. |
 | `diag_cascade_forward` | 146 | **Forward import resolution (T13)**: `ForwardImportResolution(ctx, parser, filePath, projectRoot, modulePath)` extracts imports from a Go file via tree-sitter and resolves each project-local import to its exported symbols. Build-tagged: `diag_cascade_forward.go` (`treesitter`) / `diag_cascade_forward_stub.go` (`!treesitter`). Skips: stdlib, third-party, test files, hidden files. Returns `map[string][]string` (import path → exported symbol names). One level deep only — no recursion. |
 | `diag_watcher` | 248 | **Diagnostic watcher (T14)**: background `fsnotify`-based monitoring for file changes. Proactively runs LSP diagnostics on affected files. Debounce: pending map + timer-based flush at 500ms. Cache: TTL (30s) with `sync.RWMutex`. Added to `App.DiagWatcher` field in `app.go`, started/stopped via `cleanupFuncs`. No configuration — all parameters are hardcoded. |
 | `rollback` (enhanced) | 321 | **PersistentSnapshotter (T16)**: `RollbackManager` now integrates with the Rewind system for durable file snapshots. Uses a local `PersistentSnapshotter` interface (avoids import cycles). Injection via setter: `SetSnapshotter(s, sessionID)`. Persistence errors are logged but not propagated — the in-memory snapshot is always returned. `History()` returns a defensive copy of the internal slice. |

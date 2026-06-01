@@ -183,7 +183,7 @@ func (c MicroCompactorConfig) previewLimit() int {
 	return previewChars
 }
 
-// MicroCompactor is Layer 1 of the 8-layer compaction framework. It scans
+// MicroCompactor is Layer 1 of the 9-layer compaction framework. It scans
 // context entries for messages whose estimated token count exceeds a
 // threshold, stores their content in the LCM large-files table, and replaces
 // the inline text with a compact reference + preview.

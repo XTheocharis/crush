@@ -24,7 +24,7 @@ reference insertion, restore, and cross-round tracking.
 
 ### MicroCompactor (Layer 1)
 
-MicroCompactor is the first layer in the 8-layer compaction pipeline. It lives
+MicroCompactor is the first layer in the 9-layer compaction pipeline. It lives
 in `compaction_layers.go` (lines 120-280) and does the following:
 
 1. Scans context entries for messages whose token count exceeds a threshold

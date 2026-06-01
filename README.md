@@ -27,7 +27,7 @@ In addition to upstream Crush, this fork adds:
 
 ### Context & Intelligence
 
-- **Lossless Context Management (LCM)**: automatically summarizes and compacts conversation history through an 8-layer pipeline without losing information, keeping context within token budgets
+- **Lossless Context Management (LCM)**: automatically summarizes and compacts conversation history through a 9-layer pipeline without losing information, keeping context within token budgets
 - **Repository Map**: generates scope-aware code outlines ranked by PageRank, giving the LLM project-wide understanding without reading every file
 - **Tree-sitter Integration**: fast, accurate code parsing across 28 languages for structural analysis, symbol extraction, and query-based code intelligence
 
