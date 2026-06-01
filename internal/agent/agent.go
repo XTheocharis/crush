@@ -41,6 +41,7 @@ import (
 	"github.com/charmbracelet/crush/internal/ext" // XRUSH: extension host import
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/repomap"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/stringext"
 	"github.com/charmbracelet/crush/internal/version"
@@ -240,13 +241,14 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	defer wg.Wait()
 
 	// Add the user message to the session.
-	_, err = a.createUserMessage(ctx, call)
+	userMsg, err := a.createUserMessage(ctx, call)
 	if err != nil {
 		return nil, err
 	}
 
 	// Add the session to the context.
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, call.SessionID)
+	ctx = repomap.WithRunInjectionKey(ctx, repomap.RunInjectionKey{RootUserMessageID: userMsg.ID})
 
 	genCtx, cancel := context.WithCancel(ctx)
 	a.activeRequests.Set(call.SessionID, cancel)

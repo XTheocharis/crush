@@ -3,6 +3,7 @@
 package repomap
 
 import (
+	"context"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -57,4 +58,35 @@ func normalizeUniqueGraphPaths(paths []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// RunInjectionKey identifies one logical Run() for injection gating.
+type RunInjectionKey struct {
+	RootUserMessageID string
+	QueueGeneration   int64
+}
+
+type runInjectionKeyContextKey string
+
+const runInjectionKeyCtxKey runInjectionKeyContextKey = "run_injection_key"
+
+// WithRunInjectionKey stores the run injection key in context.
+func WithRunInjectionKey(ctx context.Context, key RunInjectionKey) context.Context {
+	return context.WithValue(ctx, runInjectionKeyCtxKey, key)
+}
+
+// RunInjectionKeyFromContext retrieves the run injection key from context.
+func RunInjectionKeyFromContext(ctx context.Context) (RunInjectionKey, bool) {
+	v := ctx.Value(runInjectionKeyCtxKey)
+	if v == nil {
+		return RunInjectionKey{}, false
+	}
+	key, ok := v.(RunInjectionKey)
+	if !ok {
+		return RunInjectionKey{}, false
+	}
+	if key.RootUserMessageID == "" {
+		return RunInjectionKey{}, false
+	}
+	return key, true
 }
