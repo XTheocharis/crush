@@ -182,8 +182,10 @@ internal/
   AST scope walking. Requires `CGO_ENABLED=1`.
   See `internal/treesitter/AGENTS.md`.
 - **Processor Pipeline**: message intercept pipeline with four sequential
-  phases (input, output stream, output result, API error). 16 processor
-  implementations; 3 active by default (TokenLimiter, SystemPromptScrubber, PIIDetector), with 10 activatable via config and 6 never-wirable.
+  phases (input, output stream, output result, API error). 15 processors
+  total; 1 excluded (structured_output), 14 configurable via
+  options.processors.list, 3 active by default
+  (TokenLimiter, SystemPromptScrubber, PIIDetector).
   See `internal/processor/AGENTS.md`.
 - **Eval**: agent evaluation harness. Scorers assess output quality across
   metric, LLM-judge, and Mastra dimensions. Invoked via

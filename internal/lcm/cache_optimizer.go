@@ -273,6 +273,8 @@ func NewCacheOptimizer(cfg CacheOptimizerConfig) *CacheOptimizer {
 // ---------------------------------------------------------------------------
 
 // compactPromptLayer wraps CacheOptimizer to expose Layer 6 independently.
+// Layer 6 (compact-prompt-structure) is provider-agnostic — it restructures
+// the prompt for better token efficiency regardless of the LLM provider.
 type compactPromptLayer struct {
 	optimizer *CacheOptimizer
 }
@@ -300,6 +302,8 @@ func (l *compactPromptLayer) Compact(ctx context.Context, budget Budget) (*Compa
 // ---------------------------------------------------------------------------
 
 // anthropicCacheLayer wraps CacheOptimizer to expose Layer 7 independently.
+// Layer 7 (anthropic-cache-management) is Anthropic-specific — it manages
+// Anthropic cache control points. Only active when the provider is Anthropic.
 type anthropicCacheLayer struct {
 	optimizer *CacheOptimizer
 }

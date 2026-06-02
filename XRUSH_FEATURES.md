@@ -190,6 +190,9 @@ reflector at 50% intervals (giving it two chances to produce insights before
 the session hits the full token budget). A `Flush` method forces immediate
 reflection for end-of-session cleanup. Always active when LCM is initialized; no configuration toggle exists.
 
+> **Note**: The Reflector only triggers **post-compaction**. Reflection runs
+> after LCM compacts the conversation, not during normal conversation flow.
+
 ### Nudge System
 
 **Location**: `internal/lcm/nudge/nudge.go` (196 lines)
@@ -223,15 +226,12 @@ effectively redundant with the current defaults. However, if
 `MinContextLimit` is raised above `MaxContextLimit`, it would block all
 context-limit nudges.
 
-#### Production Caller Uses `Inject`, Not `InjectFull`
+#### Production Caller Uses `InjectFull`
 
-`CacheOptimizer` (`cache_optimizer.go:596`) calls `Inject`, which
-delegates to `InjectFull` with **zero** `TurnCount` and
-`IterationCount`. This means the turn and iteration nudge branches can
-never fire from the production code path — only the context-limit nudge
-is active in practice. For turn/iteration nudges to work, the caller
-would need to invoke `InjectFull` directly with populated `TurnCount`
-and `IterationCount` fields.
+`CacheOptimizer` (`cache_optimizer.go:596`) calls `InjectFull`
+directly with `TurnCount` and `IterationCount` populated. All three
+nudge types (context-limit, turn, iteration) can fire from the
+production code path.
 
 ### Ghost Cues
 
@@ -267,7 +267,8 @@ Key operations: `Set`, `Get`, `Delete`, `List`, `ListByPriority`,
 and relevance percentages. Controlled by the `operational_memory_enabled`
 config key.
 
-### Message Decorator
+> **Note**: Operational Memory requires `operational_memory_enabled: true` in
+> `options.lcm.operational_memory_enabled`. It is **disabled by default**.
 
 **Location**: `internal/lcm/message_decorator.go` (559 lines)
 
@@ -740,7 +741,10 @@ maps, better code exploration, and reliable post-edit validation.
 
 Tree-sitter requires `CGO_ENABLED=1` and the `treesitter` build tag at compile
 time. There is no runtime toggle to enable or disable it -- the binary either
-includes compiled grammars or it does not.
+includes compiled grammars or it does not. **Many features (anchor-based edits,
+symbol resolution, post-edit validation, import resolution) require the
+`-tags treesitter` build flag.** Build with `go build -tags treesitter .` to
+enable all tree-sitter functionality.
 
 ### Usage
 
@@ -902,17 +906,17 @@ files in this package (entire package added by the fork).
 | `OutputResultPhase` | After the complete response is received |
 | `APIErrorPhase` | When an API error occurs |
 
-### Processor Implementations (16 total)
+### Processor Implementations (15 total)
 
 #### Pipeline Configuration
 
 The pipeline is **active by default** with 3 processors
 (`TokenLimiter`, `SystemPromptScrubber`, `PIIDetector` — marked with \* below)
 when `ProcessorsOptions` is nil. Explicit `processors` configuration in
-`crush.json` can override defaults and activate the remaining 7 configurable
+`crush.json` can override defaults and activate the remaining 11 configurable
 processors.
 
-#### Configurable Processors (10)
+#### Configurable Processors (14)
 
 | Processor | Phase | Default | Description |
 |-----------|-------|---------|-------------|
@@ -926,13 +930,19 @@ processors.
 | `ToolSearch` | Input | — | BM25 search over tool registry |
 | `Skills` | Input | — | Load skill definitions into pipeline State |
 | `SkillSearch` | Input | — | BM25 search over available skills |
+| `ModerationProcessor` | Input | — | Content moderation checks |
+| `PromptInjectionDetector` | Input | — | Prompt injection detection |
+| `LanguageDetector` | Input | — | Language identification |
+| `WorkspaceInstructions` | Input | — | Workspace-level instruction injection |
+| `MessageHistory` | Input | — | Message history management |
 
-#### Never-Wirable (6)
+#### Excluded (1)
 
-Implemented but not available for configuration.
+`StructuredOutput` is excluded from configuration.
 
 `ModerationProcessor`, `PromptInjectionDetector`, `LanguageDetector`,
-`StructuredOutput`, `WorkspaceInstructions`, `MessageHistory`
+`WorkspaceInstructions`, and `MessageHistory` are configurable via
+`options.processors.list`.
 
 ### User-Facing Description
 
@@ -1216,7 +1226,7 @@ Nine additional agent files not listed in the primary subsections above:
 
 - **File**: `coordinator_xrush_recovery.go` (~72 lines) — Coordinator recovery: post-compaction config restore and interrupted session recovery. `RestoreAgentConfig()` restores checkpointed agent configuration (skills, tools, agents) after LCM compaction events. `RecoverSession()` finishes interrupted thinking blocks or tool calls after mid-stream disruptions (network error, crash). These are recovery hooks ensuring the multi-agent system resumes cleanly after disruptions.
 - **File**: `usage_fallback.go` (~176 lines) — Token usage fallback heuristics when primary tracking is unavailable
-- **File**: `agentic_fetch_tool.go` (~206 lines) — Unregistered tool for LLM-powered URL content analysis (see §14)
+- **File**: `agentic_fetch_tool.go` (~206 lines) — Registered tool for LLM-powered URL content analysis (see §14)
 - **File**: `agentconfig.go` (~108 lines) — Per-subagent configuration struct
 - **File**: `agent_tool.go` (~68 lines) — "agent" tool for spawning sub-agents (see §14)
 - **File**: `event.go` (~51 lines) — Telemetry event helpers
@@ -1326,7 +1336,7 @@ Runtime extension system with plugin-like capabilities.
 | `xrush-sessions` | Extended session management |
 | `prompt-assembly` | System prompt assembly (see details below) |
 | `lsp-tools` | LSP-powered code intelligence tools |
-| `step-adapter` | Step-level adapter for agent coordination *(Step-level adapter — bridges `PrepareStepHook` message mutation with extension host lifecycle, not a feature extension)* |
+| `productive` | Productive mode agent coordination *(Constrained high-output agent loop — runs the agent in a focused, productive mode with tool call budgeting)* |
 
 ### Prompt Assembly (`prompt-assembly`) — Implementation Details
 
@@ -1586,6 +1596,10 @@ The rewind system is **disabled** unless `options.snapshot` is present in
 `crush.json`. When enabled with an empty object `{}`, the default is 50
 snapshots per session. Setting the key to `null` or omitting it disables
 snapshots entirely.
+
+> **Note**: Rewind requires explicit configuration to enable. You must add
+> `"snapshot": {}` (or with custom settings) to `crush.json` under `options`.
+> It is completely inactive when the key is absent.
 
 ---
 
@@ -1913,6 +1927,10 @@ falls back to `go vet` for basic analysis.
 All three settings default to `false`. The autofix loop requires both
 `enabled: true` and `auto_fix: true` before it will activate.
 
+> **Note**: All three AutoFix flags (`validation.enabled`,
+> `validation.auto_fix`, `validation.autofix_loop_enabled`) default to
+> `false`. AutoFix does nothing unless you explicitly enable it.
+
 ### Usage
 
 AutoFix is entirely config-driven. There are no CLI commands or keybindings.
@@ -1978,6 +1996,10 @@ for user review before execution begins.
 The architect is disabled by default. It activates only when the agent's
 heuristic classifier determines a prompt warrants planning. No configuration
 is required for the agent to begin using it when needed.
+
+> **Note**: Architect Planning requires the `architect_model` config key to be
+> set (specifying which model to use for planning). Without it, the architect
+> does not activate.
 
 ---
 
@@ -2382,7 +2404,7 @@ auto-approve safe commands.
 
 | Component | Lines | Description |
 |-----------|-------|-------------|
-| `edit_anchors` | 193 + 116 | FNV-1a hash-based content-addressed anchors for drift-tolerant edits |
+| `edit_anchors` | 193 + 116 | FNV-1a hash-based content-addressed anchors for drift-tolerant edits. `tryAnchorReplace` is wired as a fallback in the standard edit tool, `edit_batch_tool`, and the post-edit validation pipeline. When a plain string edit fails to match, the tool attempts anchor-based resolution before returning an error. |
 | `anchor_state_manager` | 237 | Myers diff algorithm for tracking anchor hash map drift across file modifications; `CaptureState()` snapshots anchors per file, `DetectDrift()` compares current vs. captured state via Myers diff returning `AnchorDrift` entries, `Reconcile()` produces updated anchor map from drift; `AnchorDrift` struct with `DiffOp` enum (`Keep`/`Insert`/`Delete`) and line-number `Shift`; `//go:build treesitter` with stub fallback |
 | `edit_fuzzy` | 475 | Whitespace-normalized fuzzy string matching for approximate edit targets |
 | `rollback` | 321 | File snapshot and rollback on failure |
