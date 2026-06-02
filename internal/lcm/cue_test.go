@@ -32,8 +32,9 @@ func TestRender_SummaryID(t *testing.T) {
 	ci := NewCueInjector()
 	result := ci.Render(CueTypeSummaryID, map[string]string{
 		"SummaryID": "sum_a1b2c3d4e5f6a7b8",
+		"Snippet":   "discussion about caching",
 	})
-	require.Equal(t, "[Summary ID: sum_a1b2c3d4e5f6a7b8]", result)
+	require.Equal(t, "[sum_a1b2c3d4e5f6a7b8] discussion about caching", result)
 }
 
 func TestRender_LineagePointer(t *testing.T) {
@@ -50,10 +51,10 @@ func TestRender_ArchiveStub(t *testing.T) {
 	t.Parallel()
 	ci := NewCueInjector()
 	result := ci.Render(CueTypeArchiveStub, map[string]string{
-		"FileID":     "file_f1e2d3c4b5a69788",
+		"SummaryID":  "sum_f1e2d3c4b5a69788",
 		"TokenCount": "4096",
 	})
-	require.Equal(t, "[Archived: file_f1e2d3c4b5a69788, tokens=4096]", result)
+	require.Equal(t, "[Archived: sum_f1e2d3c4b5a69788, tokens=4096]", result)
 }
 
 func TestRender_UnknownType_Fallback(t *testing.T) {
@@ -95,6 +96,7 @@ func TestNewCue_IDPrefix(t *testing.T) {
 	ci := NewCueInjector()
 	cue := ci.NewCue(CueTypeSummaryID, 5, map[string]string{
 		"SummaryID": "sum_abc123",
+		"Snippet":   "test snippet",
 	})
 	require.True(t, strings.HasPrefix(cue.ID, "cue_"), "cue ID should have cue_ prefix")
 	require.Len(t, cue.ID, 20, "cue_ prefix + 16 hex chars = 20 chars")
@@ -105,17 +107,18 @@ func TestNewCue_Fields(t *testing.T) {
 	ci := NewCueInjector()
 	cue := ci.NewCue(CueTypeSummaryID, 10, map[string]string{
 		"SummaryID": "sum_deadbeef",
+		"Snippet":   "some content here",
 	})
 	require.Equal(t, CueTypeSummaryID, cue.Type)
 	require.Equal(t, 10, cue.Priority)
-	require.Equal(t, "[Summary ID: sum_deadbeef]", cue.Content)
+	require.Equal(t, "[sum_deadbeef] some content here", cue.Content)
 }
 
 func TestNewCue_UniqueIDs(t *testing.T) {
 	t.Parallel()
 	ci := NewCueInjector()
-	cue1 := ci.NewCue(CueTypeSummaryID, 1, map[string]string{"SummaryID": "a"})
-	cue2 := ci.NewCue(CueTypeSummaryID, 1, map[string]string{"SummaryID": "a"})
+	cue1 := ci.NewCue(CueTypeSummaryID, 1, map[string]string{"SummaryID": "a", "Snippet": "s1"})
+	cue2 := ci.NewCue(CueTypeSummaryID, 1, map[string]string{"SummaryID": "a", "Snippet": "s1"})
 	require.NotEqual(t, cue1.ID, cue2.ID, "each cue should get a unique ID")
 }
 
@@ -132,11 +135,11 @@ func TestInjectIntoPrompt_SingleCue(t *testing.T) {
 	ci := NewCueInjector()
 	prompt := "<system>base prompt</system>"
 	cues := []GhostCue{
-		{ID: "cue_aaa", Type: CueTypeSummaryID, Priority: 5, Content: "[Summary ID: sum_abc]"},
+		{ID: "cue_aaa", Type: CueTypeSummaryID, Priority: 5, Content: "[sum_abc] snippet text"},
 	}
 	result := ci.InjectIntoPrompt(prompt, cues, 1000)
 	require.Contains(t, result, "<system>base prompt</system>")
-	require.Contains(t, result, "[Summary ID: sum_abc]")
+	require.Contains(t, result, "[sum_abc] snippet text")
 }
 
 func TestInjectIntoPrompt_PriorityOrdering(t *testing.T) {
@@ -217,11 +220,11 @@ func TestInjectIntoToolResult_SingleCue(t *testing.T) {
 	t.Parallel()
 	ci := NewCueInjector()
 	cues := []GhostCue{
-		{ID: "cue_a", Type: CueTypeArchiveStub, Priority: 3, Content: "[Archived: file_abc, tokens=500]"},
+		{ID: "cue_a", Type: CueTypeArchiveStub, Priority: 3, Content: "[Archived: sum_abc, tokens=500]"},
 	}
 	result := ci.InjectIntoToolResult("tool output", cues, 1000)
 	require.Contains(t, result, "tool output")
-	require.Contains(t, result, "[Archived: file_abc, tokens=500]")
+	require.Contains(t, result, "[Archived: sum_abc, tokens=500]")
 }
 
 func TestInjectIntoToolResult_BudgetConstraint(t *testing.T) {
@@ -257,6 +260,7 @@ func TestGhostCue_AllTypes(t *testing.T) {
 
 	summaryCue := ci.NewCue(CueTypeSummaryID, 10, map[string]string{
 		"SummaryID": "sum_1111222233334444",
+		"Snippet":   "a condensed summary",
 	})
 	require.Equal(t, CueTypeSummaryID, summaryCue.Type)
 	require.Contains(t, summaryCue.Content, "sum_1111222233334444")
@@ -270,11 +274,11 @@ func TestGhostCue_AllTypes(t *testing.T) {
 	require.Contains(t, lineageCue.Content, "2")
 
 	archiveCue := ci.NewCue(CueTypeArchiveStub, 3, map[string]string{
-		"FileID":     "file_9999",
+		"SummaryID":  "sum_9999",
 		"TokenCount": "2048",
 	})
 	require.Equal(t, CueTypeArchiveStub, archiveCue.Type)
-	require.Contains(t, archiveCue.Content, "file_9999")
+	require.Contains(t, archiveCue.Content, "sum_9999")
 	require.Contains(t, archiveCue.Content, "2048")
 }
 
@@ -283,12 +287,12 @@ func TestInjectIntoPrompt_CuesAfterPrompt(t *testing.T) {
 	ci := NewCueInjector()
 	prompt := "<system>instructions</system>"
 	cues := []GhostCue{
-		{ID: "cue_a", Type: CueTypeSummaryID, Priority: 5, Content: "[Summary ID: sum_xyz]"},
+		{ID: "cue_a", Type: CueTypeSummaryID, Priority: 5, Content: "[sum_xyz] snippet"},
 	}
 	result := ci.InjectIntoPrompt(prompt, cues, 100)
 
 	promptEnd := strings.LastIndex(result, "</system>")
-	cueStart := strings.Index(result, "[Summary ID:")
+	cueStart := strings.Index(result, "[sum_xyz]")
 	require.True(t, cueStart > promptEnd, "cue should be injected after the prompt boundary")
 }
 

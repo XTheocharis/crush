@@ -242,6 +242,10 @@ type CacheOptimizerConfig struct {
 	// ContextWindowFunc returns the current context window for the active
 	// model. When nil, the default context window of 200000 tokens is used.
 	ContextWindowFunc func() int64
+
+	// CueInjector renders ghost cues using template-based formatting.
+	// When nil, a default CueInjector is created in NewCacheOptimizer.
+	CueInjector *CueInjector
 }
 
 // CacheOptimizer implements Layers 6 and 7 of the compaction framework.
@@ -258,6 +262,9 @@ type CacheOptimizer struct {
 
 // NewCacheOptimizer creates a CacheOptimizer with the given configuration.
 func NewCacheOptimizer(cfg CacheOptimizerConfig) *CacheOptimizer {
+	if cfg.CueInjector == nil {
+		cfg.CueInjector = NewCueInjector()
+	}
 	return &CacheOptimizer{cfg: cfg}
 }
 
@@ -564,37 +571,42 @@ func (o *CacheOptimizer) assembleSections(builder *CompactPromptBuilder, entries
 
 	// Ghost Cues: condensed summary references act as cues about previously
 	// discussed topics that have been compacted away.
-	var ghostCueParts []string
+	var ghostCues []GhostCue
 	for _, s := range summaries {
-		// SummaryID cue: condensed summaries with content.
 		if len(s.ParentIDs) > 0 && s.SummaryContent != "" {
 			snippet := s.SummaryContent
 			if len(snippet) > 200 {
 				snippet = snippet[:200] + "..."
 			}
-			ghostCueParts = append(ghostCueParts,
-				fmt.Sprintf("[%s] %s", s.SummaryID, snippet))
+			ghostCues = append(ghostCues,
+				o.cfg.CueInjector.NewCue(CueTypeSummaryID, 10, map[string]string{
+					"SummaryID": s.SummaryID,
+					"Snippet":   snippet,
+				}))
 		}
 
-		// LineagePointer cue: entries with parent IDs carry lineage
-		// information for retrieval chaining.
 		if len(s.ParentIDs) > 0 {
-			ghostCueParts = append(ghostCueParts,
-				fmt.Sprintf("[Lineage: %s, depth=%d]",
-					strings.Join(s.ParentIDs, ","),
-					len(s.ParentIDs)))
+			ghostCues = append(ghostCues,
+				o.cfg.CueInjector.NewCue(CueTypeLineagePointer, 5, map[string]string{
+					"ParentIDs": strings.Join(s.ParentIDs, ","),
+					"Depth":     fmt.Sprintf("%d", len(s.ParentIDs)),
+				}))
 		}
 
-		// ArchiveStub cue: archived summaries preserve a lightweight
-		// reference with token metadata.
 		if s.SummaryKind == KindArchiveStub {
-			ghostCueParts = append(ghostCueParts,
-				fmt.Sprintf("[Archived: %s, tokens=%d]",
-					s.SummaryID, s.TokenCount))
+			ghostCues = append(ghostCues,
+				o.cfg.CueInjector.NewCue(CueTypeArchiveStub, 3, map[string]string{
+					"SummaryID":  s.SummaryID,
+					"TokenCount": fmt.Sprintf("%d", s.TokenCount),
+				}))
 		}
 	}
-	if len(ghostCueParts) > 0 {
-		builder.SetSection(SectionGhostCues, strings.Join(ghostCueParts, "\n"))
+	if len(ghostCues) > 0 {
+		var parts []string
+		for _, c := range ghostCues {
+			parts = append(parts, c.Content)
+		}
+		builder.SetSection(SectionGhostCues, strings.Join(parts, "\n"))
 	}
 
 	// Nudge: inject context-limit nudge when pressure is high and token count

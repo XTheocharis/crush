@@ -55,6 +55,7 @@ func TestIntegration_LayeredCompaction(t *testing.T) {
 		cues := []GhostCue{
 			cueInjector.NewCue(CueTypeSummaryID, 10, map[string]string{
 				"SummaryID": "sum_test123",
+				"Snippet":   "test snippet",
 			}),
 			cueInjector.NewCue(CueTypeLineagePointer, 5, map[string]string{
 				"ParentIDs": "sum_parent1,sum_parent2",
@@ -187,9 +188,10 @@ func TestIntegration_LayeredCompaction_GhostCueInjection(t *testing.T) {
 	cues := []GhostCue{
 		cueInjector.NewCue(CueTypeSummaryID, 10, map[string]string{
 			"SummaryID": "sum_abc123",
+			"Snippet":   "some summary snippet",
 		}),
 		cueInjector.NewCue(CueTypeArchiveStub, 5, map[string]string{
-			"FileID":     "file_def456",
+			"SummaryID":  "sum_def456",
 			"TokenCount": "5000",
 		}),
 	}
@@ -198,7 +200,7 @@ func TestIntegration_LayeredCompaction_GhostCueInjection(t *testing.T) {
 	prompt := mgr.InjectCuesIntoPrompt("system instructions here", cues, 500)
 	require.Contains(t, prompt, "system instructions here")
 	require.Contains(t, prompt, "sum_abc123")
-	require.Contains(t, prompt, "file_def456")
+	require.Contains(t, prompt, "sum_def456")
 
 	// Budget-constrained injection should drop lower-priority cues.
 	smallBudget := mgr.InjectCuesIntoPrompt("base", cues, 5)

@@ -1398,3 +1398,66 @@ func TestNudgeContextWindow_ZeroWindow(t *testing.T) {
 		o.assembleSections(builder, entries)
 	}, "zero context window must not panic")
 }
+
+func TestGhostCues_CueInjectorFormat(t *testing.T) {
+	t.Parallel()
+	ci := NewCueInjector()
+
+	cue := ci.NewCue(CueTypeSummaryID, 10, map[string]string{
+		"SummaryID": "sum_abc123",
+		"Snippet":   "Discussion about the API design",
+	})
+	require.Equal(t, "[sum_abc123] Discussion about the API design", cue.Content)
+
+	lineage := ci.NewCue(CueTypeLineagePointer, 5, map[string]string{
+		"ParentIDs": "msg_x,msg_y",
+		"Depth":     "2",
+	})
+	require.Equal(t, "[Lineage: msg_x,msg_y, depth=2]", lineage.Content)
+
+	archive := ci.NewCue(CueTypeArchiveStub, 3, map[string]string{
+		"SummaryID":  "sum_arch1",
+		"TokenCount": "1024",
+	})
+	require.Equal(t, "[Archived: sum_arch1, tokens=1024]", archive.Content)
+}
+
+func TestGhostCues_CueInjectorIntegration(t *testing.T) {
+	t.Parallel()
+	ci := NewCueInjector()
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		CueInjector: ci,
+	})
+	builder := NewCompactPromptBuilder()
+
+	entries := []ContextEntry{
+		{
+			ItemType:       "summary",
+			SummaryID:      "sum_integ",
+			SummaryContent: "Integrated test content",
+			SummaryKind:    "condensed",
+			ParentIDs:      []string{"msg_p1", "msg_p2"},
+			TokenCount:     500,
+		},
+	}
+
+	o.assembleSections(builder, entries)
+
+	sections := builder.Sections()
+	var ghostSection *PromptSection
+	for i := range sections {
+		if sections[i].Name == SectionGhostCues {
+			ghostSection = &sections[i]
+			break
+		}
+	}
+	require.NotNil(t, ghostSection, "ghost-cues section should be present")
+	require.Contains(t, ghostSection.Content, "[sum_integ] Integrated test content")
+	require.Contains(t, ghostSection.Content, "[Lineage: msg_p1,msg_p2, depth=2]")
+}
+
+func TestGhostCues_DefaultCueInjector(t *testing.T) {
+	t.Parallel()
+	o := NewCacheOptimizer(CacheOptimizerConfig{})
+	require.NotNil(t, o.cfg.CueInjector, "default CueInjector should be initialized")
+}

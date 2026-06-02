@@ -48,7 +48,7 @@ func NewCueInjector() *CueInjector {
 	ci := &CueInjector{
 		templates: map[string]CueTemplate{
 			CueTypeSummaryID: {
-				Template: "[Summary ID: {{.SummaryID}}]",
+				Template: "[{{.SummaryID}}] {{.Snippet}}",
 				Vars:     nil,
 			},
 			CueTypeLineagePointer: {
@@ -56,7 +56,7 @@ func NewCueInjector() *CueInjector {
 				Vars:     nil,
 			},
 			CueTypeArchiveStub: {
-				Template: "[Archived: {{.FileID}}, tokens={{.TokenCount}}]",
+				Template: "[Archived: {{.SummaryID}}, tokens={{.TokenCount}}]",
 				Vars:     nil,
 			},
 		},
