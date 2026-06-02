@@ -67,11 +67,11 @@ func (s *Manager) resolveAutoDownload(ctx context.Context, name string, server *
 		return
 	}
 
-	url, sha256, ok := catalog.ResolveDownloadURL(name, runtime.GOOS, runtime.GOARCH)
+	url, sha256, downloadType, ok := catalog.ResolveDownloadURL(name, runtime.GOOS, runtime.GOARCH)
 	if !ok {
 		return
 	}
-	cfg := config.AutoDownloadConfig{URL: url, SHA256: sha256}
+	cfg := config.AutoDownloadConfig{URL: url, SHA256: sha256, DownloadType: downloadType}
 	resolved, dlErr := ResolveDownloadPath(ctx, name, server.Command, cfg)
 	if dlErr != nil {
 		slog.Debug("Catalog auto-download failed for LSP server", "name", name, "error", dlErr)

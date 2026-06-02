@@ -63,6 +63,7 @@ type ProcessorsOptions struct {
 // AutoDownloadConfig specifies where to download an LSP server binary from
 // and how to verify its integrity.
 type AutoDownloadConfig struct {
-	URL    string `json:"url,omitempty" jsonschema:"description=Download URL for the LSP server binary"`
-	SHA256 string `json:"sha256,omitempty" jsonschema:"description=Expected SHA256 hash of the downloaded binary"`
+	URL          string `json:"url,omitempty" jsonschema:"description=Download URL for the LSP server binary"`
+	SHA256       string `json:"sha256,omitempty" jsonschema:"description=Expected SHA256 hash of the downloaded binary"`
+	DownloadType string `json:"download_type,omitempty" jsonschema:"description=Download format: binary (default), gzip, zip, or tar.gz"`
 }

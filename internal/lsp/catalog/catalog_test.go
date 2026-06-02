@@ -20,7 +20,7 @@ func TestLookupNotFound(t *testing.T) {
 }
 
 func TestResolveDownloadURL(t *testing.T) {
-	url, sha, ok := ResolveDownloadURL("marksman", "linux", "amd64")
+	url, sha, _, ok := ResolveDownloadURL("marksman", "linux", "amd64")
 	require.True(t, ok, "marksman linux/amd64 should resolve")
 	require.NotEmpty(t, url, "URL should be non-empty")
 	require.NotEmpty(t, sha, "SHA256 should be non-empty")
@@ -28,12 +28,12 @@ func TestResolveDownloadURL(t *testing.T) {
 }
 
 func TestResolveDownloadURLNotFound(t *testing.T) {
-	_, _, ok := ResolveDownloadURL("nonexistent-server-xyz", "linux", "amd64")
+	_, _, _, ok := ResolveDownloadURL("nonexistent-server-xyz", "linux", "amd64")
 	require.False(t, ok, "unknown server should not resolve")
 }
 
 func TestResolveDownloadURLPlatformNotFound(t *testing.T) {
-	_, _, ok := ResolveDownloadURL("marksman", "freebsd", "riscv64")
+	_, _, _, ok := ResolveDownloadURL("marksman", "freebsd", "riscv64")
 	require.False(t, ok, "unsupported platform should not resolve")
 }
 
@@ -51,7 +51,7 @@ func TestIgnoreMetaKeys(t *testing.T) {
 }
 
 func TestCurrentPlatform(t *testing.T) {
-	url, _, ok := ResolveDownloadURL("marksman", runtime.GOOS, runtime.GOARCH)
+	url, _, _, ok := ResolveDownloadURL("marksman", runtime.GOOS, runtime.GOARCH)
 	if !ok {
 		t.Logf("marksman not available for %s/%s (expected on some platforms)", runtime.GOOS, runtime.GOARCH)
 		return

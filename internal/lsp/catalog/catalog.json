@@ -1,15 +1,12 @@
 {
-  "_comment": "LSP server auto-download catalog. Each entry maps a server name to per-platform binary download URLs and SHA256 hashes. Only servers with direct bare-binary downloads (no archive extraction needed) are included.",
+  "_comment": "LSP server auto-download catalog. Each entry maps a server name to per-platform binary download URLs and SHA256 hashes. Supports bare binaries, gzip-compressed binaries, zip archives, and tar.gz archives via the download_type field.",
   "_skipped_servers": {
-    "_comment": "The following servers from the required list were skipped because they only distribute via npm/pip/archives with no standalone bare binary available.",
+    "_comment": "The following servers from the required list were skipped because they require npm, pip, a runtime, or have no standalone binary.",
     "gopls": "go install only (go install golang.org/x/tools/gopls@latest)",
     "typescript-language-server": "npm only (npm i -g typescript-language-server)",
-    "rust-analyzer": "gzipped binaries only (.gz), not bare binaries",
-    "clangd": "zip archives only (clangd/clangd releases)",
     "lua-language-server": "tar.gz/zip archives with 1314+ files (binary + Lua runtime)",
     "bash-language-server": "npm only",
     "yaml-language-server": "npm only",
-    "taplo": "gzipped binaries only (.gz), not bare binaries",
     "dockerfile-language-server": "npm only",
     "graphql-language-service-server": "npm only",
     "svelte-language-server": "npm only",
@@ -20,10 +17,7 @@
     "kotlin-language-server": "zip archives containing JAR files (requires JVM)",
     "dart-analysis-server": "Part of Dart SDK, no standalone binary",
     "cmake-language-server": "pip only (Python package)",
-    "sqls": "zip archives only",
-    "clojure-lsp": "zip archives only (native GraalVM binaries inside zip)",
     "solidity-ls": "npm only",
-    "omnisharp": "tar.gz/zip archives only",
     "vscode-json-language-server": "npm only (vscode-langservers-extracted)",
     "html-language-server": "npm only (vscode-langservers-extracted)",
     "css-language-server": "npm only (vscode-langservers-extracted)"
@@ -407,6 +401,130 @@
       "windows/amd64": {
         "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_windows_amd64.exe",
         "sha256": "PLACEHOLDER"
+      }
+    }
+  },
+  "rust-analyzer": {
+    "version": "2025-06-02",
+    "description": "Rust LSP server",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-x86_64-unknown-linux-gnu.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-aarch64-unknown-linux-gnu.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-x86_64-apple-darwin.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-aarch64-apple-darwin.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-x86_64-pc-windows-msvc.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      }
+    }
+  },
+  "taplo": {
+    "version": "0.9.3",
+    "description": "TOML LSP server",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-linux-x86_64.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-linux-aarch64.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-darwin-x86_64.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-darwin-aarch64.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-windows-x86_64.exe.gz",
+        "sha256": "PLACEHOLDER",
+        "download_type": "gzip"
+      }
+    }
+  },
+  "sqls": {
+    "version": "v0.2.22",
+    "description": "SQL LSP server",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_linux_amd64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_linux_arm64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_darwin_amd64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_darwin_arm64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_windows_amd64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      }
+    }
+  },
+  "clojure-lsp": {
+    "version": "2025.06.02-16.43.00",
+    "description": "Clojure LSP server (native GraalVM binary)",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-linux-amd64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-linux-aarch64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-macos-amd64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-macos-aarch64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-windows-amd64.zip",
+        "sha256": "PLACEHOLDER",
+        "download_type": "zip"
       }
     }
   }

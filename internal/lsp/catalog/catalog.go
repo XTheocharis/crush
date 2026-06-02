@@ -17,21 +17,22 @@ var catalogJSON []byte
 // PlatformEntry holds the download URL and SHA256 hash for a single
 // os/arch combination.
 type PlatformEntry struct {
-	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
+	URL          string `json:"url"`
+	SHA256       string `json:"sha256"`
+	DownloadType string `json:"download_type,omitempty"` // "binary" (default), "gzip", "zip", "tar.gz"
 }
 
 // ServerEntry describes a downloadable LSP server, including its version
 // and per-platform binary details.
 type ServerEntry struct {
-	Version   string                    `json:"version"`
-	Platforms map[string]PlatformEntry  `json:"platforms"` // key: "os/arch"
+	Version   string                   `json:"version"`
+	Platforms map[string]PlatformEntry `json:"platforms"` // key: "os/arch"
 }
 
 var (
-	once     sync.Once
-	servers  map[string]ServerEntry
-	loadErr  error
+	once    sync.Once
+	servers map[string]ServerEntry
+	loadErr error
 )
 
 // load parses the embedded catalog JSON exactly once. Meta keys starting
@@ -69,22 +70,22 @@ func Lookup(serverName string) (ServerEntry, bool) {
 	return entry, ok
 }
 
-// ResolveDownloadURL returns the platform-specific download URL and SHA256
-// for the given server, OS, and architecture. The platform key format is
-// "os/arch" (e.g. "linux/amd64", "darwin/arm64").
-// Returns ("", "", false) when the server or platform is not found.
-func ResolveDownloadURL(serverName, goos, goarch string) (url, sha256 string, ok bool) {
+// ResolveDownloadURL returns the platform-specific download URL, SHA256, and
+// download type for the given server, OS, and architecture. The platform key
+// format is "os/arch" (e.g. "linux/amd64", "darwin/arm64").
+// Returns ("", "", "", false) when the server or platform is not found.
+func ResolveDownloadURL(serverName, goos, goarch string) (url, sha256, downloadType string, ok bool) {
 	load()
 	entry, found := servers[serverName]
 	if !found {
-		return "", "", false
+		return "", "", "", false
 	}
 	platformKey := goos + "/" + goarch
 	pe, found := entry.Platforms[platformKey]
 	if !found {
-		return "", "", false
+		return "", "", "", false
 	}
-	return pe.URL, pe.SHA256, true
+	return pe.URL, pe.SHA256, pe.DownloadType, true
 }
 
 // AllServers returns the full catalog map. The returned map must not be
