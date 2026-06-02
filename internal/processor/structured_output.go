@@ -1,3 +1,15 @@
+// StructuredOutput is a processor that rewrites ALL assistant messages to JSON
+// format by calling an LLM on every output. It is deliberately excluded from
+// safeProcessorNames (see internal/extensions/processor_ext.go) because:
+//
+//   - It doubles cost and latency by invoking an LLM on every assistant turn.
+//   - It rewrites messages unconditionally, which can break tool-call
+//     sequences and other structured content.
+//
+// The exclusion is confirmed by the DestructiveNotWhitelisted test. To
+// activate this processor, add it to safeProcessorNames in processor_ext.go
+// AFTER implementing safety guards: output format preservation, opt-in per
+// message type, and cost/latency controls.
 package processor
 
 import (
