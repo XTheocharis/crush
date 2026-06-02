@@ -7,6 +7,7 @@ import (
 
 	"charm.land/fantasy"
 
+	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/lsp"
@@ -141,4 +142,123 @@ func TestResourceLimitsExtension_OnStepFinishAfterShutdown(t *testing.T) {
 	}
 	err = onFinish(context.Background(), "s1", step)
 	require.NoError(t, err)
+}
+
+func TestResourceLimitsEnforcementHalts(t *testing.T) {
+	t.Parallel()
+
+	profile := config.Config{}
+	e := &ResourceLimitsExtension{}
+	host := &resourceMockHost{cfg: &profile}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Shutdown(context.Background()) })
+
+	hooks := e.StepHooks()
+	require.Len(t, hooks, 1)
+	require.NotNil(t, hooks[0].StopCondition)
+
+	t.Run("hard_step_limit", func(t *testing.T) {
+		t.Parallel()
+
+		ext := &ResourceLimitsExtension{}
+		h := &resourceMockHost{cfg: &config.Config{}}
+		require.NoError(t, ext.Init(context.Background(), h))
+		t.Cleanup(func() { _ = ext.Shutdown(context.Background()) })
+
+		hk := ext.StepHooks()[0]
+
+		limits := ext.limits
+		for range int(limits.MaxSteps.Hard) + 1 {
+			require.NoError(t, hk.OnStepFinish(context.Background(), "s1", fantasy.StepResult{}))
+		}
+
+		require.True(t, hk.StopCondition(context.Background(), nil),
+			"should stop when hard step limit exceeded")
+	})
+
+	t.Run("hard_token_limit", func(t *testing.T) {
+		t.Parallel()
+
+		ext := &ResourceLimitsExtension{}
+		h := &resourceMockHost{cfg: &config.Config{}}
+		require.NoError(t, ext.Init(context.Background(), h))
+		t.Cleanup(func() { _ = ext.Shutdown(context.Background()) })
+
+		hk := ext.StepHooks()[0]
+
+		limits := ext.limits
+		bigText := makeTextExceedingTokens(int(limits.MaxTokens.Hard))
+		step := fantasy.StepResult{
+			Response: fantasy.Response{
+				Content: fantasy.ResponseContent{
+					fantasy.TextContent{Text: bigText},
+				},
+			},
+		}
+		require.NoError(t, hk.OnStepFinish(context.Background(), "s1", step))
+
+		require.True(t, hk.StopCondition(context.Background(), nil),
+			"should stop when hard token limit exceeded")
+	})
+}
+
+func TestResourceLimitsWarningWithinBounds(t *testing.T) {
+	t.Parallel()
+
+	e := &ResourceLimitsExtension{}
+	host := &resourceMockHost{cfg: &config.Config{}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Shutdown(context.Background()) })
+
+	hooks := e.StepHooks()
+	require.Len(t, hooks, 1)
+
+	hk := hooks[0]
+
+	step := fantasy.StepResult{
+		Response: fantasy.Response{
+			Content: fantasy.ResponseContent{
+				fantasy.TextContent{Text: "small step content"},
+			},
+		},
+	}
+
+	require.NoError(t, hk.OnStepFinish(context.Background(), "s1", step))
+
+	require.False(t, hk.StopCondition(context.Background(), nil),
+		"should not stop when within all limits")
+}
+
+func TestResourceLimitsSoftLimitWarnOnly(t *testing.T) {
+	t.Parallel()
+
+	e := &ResourceLimitsExtension{}
+	host := &resourceMockHost{cfg: &config.Config{}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Shutdown(context.Background()) })
+
+	hooks := e.StepHooks()
+	hk := hooks[0]
+
+	limits := e.limits
+	for range int(limits.MaxSteps.Soft) + 1 {
+		require.NoError(t, hk.OnStepFinish(context.Background(), "s1", fantasy.StepResult{}))
+	}
+
+	require.False(t, hk.StopCondition(context.Background(), nil),
+		"soft limit should warn only, not stop")
+}
+
+// makeTextExceedingTokens generates a string long enough to exceed the given
+// token count using the default chars-per-token ratio.
+func makeTextExceedingTokens(tokens int) string {
+	chars := tokens * agent.DefaultCharsPerToken
+	result := make([]byte, chars)
+	for i := range result {
+		result[i] = 'a'
+	}
+	return string(result)
 }

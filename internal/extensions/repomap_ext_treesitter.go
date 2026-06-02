@@ -4,6 +4,7 @@ package extensions
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 
 	"charm.land/fantasy"

@@ -14,6 +14,22 @@ import (
 // ToolSurfaceExtension wraps the dynamic tool surface as a RunHookProvider.
 // It updates tool visibility based on runtime context (LSP presence, MCP
 // availability, etc.) at the start and end of each agent run.
+//
+// TECH DEBT: The write path (UpdateCapabilities via OnRunStart) is active and
+// computes tool visibility metadata on every agent run. However, the read path
+// on the underlying ToolSurface — GetVisibleTools(), GetHiddenTools(),
+// IsVisible(), and PhaseFilteredTools() — is NOT consumed by any production
+// code. These methods compute phase-based tool visibility (e.g., hiding edit
+// tools during Planning phase) that no caller currently acts upon. The
+// infrastructure was designed for future phase-based tool routing where the
+// coordinator would filter its tool surface based on conversation phase and
+// complexity tiers. Until that routing is wired in, the computed visibility
+// data is discarded after each UpdateCapabilities call.
+//
+// TODO(sisyphus): Wire ToolSurface read path into coordinator.buildTools() or
+// the prompt assembly pipeline so that phase-based tool filtering takes effect.
+// See internal/agent/tool_surface.go:PhaseFilteredTools and the
+// AgentPhase/phaseHiddenTools definitions.
 type ToolSurfaceExtension struct {
 	mu      sync.RWMutex
 	host    ext.HostContext

@@ -2,6 +2,7 @@ package extensions
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"charm.land/fantasy"
@@ -18,6 +19,7 @@ type ResourceLimitsExtension struct {
 	host   ext.HostContext
 	usage  *agent.ResourceUsage
 	active bool
+	limits agent.SubagentLimits
 }
 
 func (e *ResourceLimitsExtension) Name() string { return "resource-limits" }
@@ -26,6 +28,7 @@ func (e *ResourceLimitsExtension) Init(_ context.Context, host ext.HostContext) 
 	e.host = host
 	e.usage = agent.NewResourceUsage()
 	e.active = true
+	e.limits = agent.DefaultLimitsProfile().Get("task")
 	return nil
 }
 
@@ -57,13 +60,45 @@ func (e *ResourceLimitsExtension) StepHooks() []ext.StepHook {
 					e.usage.AddTokens(text)
 				}
 
-				profile := agent.DefaultLimitsProfile()
-				limits := profile.Get("task")
-				e.usage.WarnTokensOnce(limits.MaxTokens)
-				e.usage.WarnStepsOnce(limits.MaxSteps)
-				e.usage.WarnDurationOnce(limits)
+				// Soft-limit warnings only (no stop).
+				e.usage.WarnTokensOnce(e.limits.MaxTokens)
+				e.usage.WarnStepsOnce(e.limits.MaxSteps)
+				e.usage.WarnDurationOnce(e.limits)
 
 				return nil
+			},
+			StopCondition: func(_ context.Context, _ []fantasy.StepResult) bool {
+				e.mu.RLock()
+				defer e.mu.RUnlock()
+				if !e.active || e.usage == nil {
+					return false
+				}
+
+				snapshot := e.usage.Snapshot()
+
+				if e.limits.MaxTokens.Exceeded(int(snapshot.TokensUsed)) {
+					slog.Warn("Hard token limit exceeded, stopping agent",
+						"tokens_used", snapshot.TokensUsed,
+						"hard_limit", e.limits.MaxTokens.Hard,
+					)
+					return true
+				}
+				if e.limits.MaxSteps.Exceeded(int(snapshot.StepsTaken)) {
+					slog.Warn("Hard step limit exceeded, stopping agent",
+						"steps_taken", snapshot.StepsTaken,
+						"hard_limit", e.limits.MaxSteps.Hard,
+					)
+					return true
+				}
+				if e.limits.DurationExceeded(snapshot.Elapsed) {
+					slog.Warn("Hard duration limit exceeded, stopping agent",
+						"elapsed", snapshot.Elapsed,
+						"hard_limit", e.limits.MaxDuration,
+					)
+					return true
+				}
+
+				return false
 			},
 		},
 	}
