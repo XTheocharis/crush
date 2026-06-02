@@ -6,6 +6,8 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/stretchr/testify/require"
+
+	"github.com/charmbracelet/crush/internal/agent/tools/types"
 )
 
 func TestCompactTool_Creation(t *testing.T) {
@@ -61,7 +63,7 @@ func TestCompactTool_InvalidPressure(t *testing.T) {
 	mgr := NewManager(q, rawDB)
 	tool := newCompactTool(mgr)
 
-	ctx := context.WithValue(context.Background(), sessionIDKey{}, "test-session")
+	ctx := context.WithValue(context.Background(), types.SessionIDContextKey, "test-session")
 	resp, err := tool.Run(ctx, fantasy.ToolCall{
 		ID:    "1",
 		Name:  "lcm_compact",
@@ -85,7 +87,7 @@ func TestCompactTool_ValidPressures(t *testing.T) {
 			t.Parallel()
 
 			tool := newCompactTool(mgr)
-			ctx := context.WithValue(context.Background(), sessionIDKey{}, "session-press")
+			ctx := context.WithValue(context.Background(), types.SessionIDContextKey, "session-press")
 			input := "{}"
 			if pressure != "" {
 				input = `{"pressure": "` + pressure + `"}`
@@ -111,7 +113,7 @@ func TestCompactTool_WithTargetTokens(t *testing.T) {
 	createTestSession(t, q, "session-target")
 
 	tool := newCompactTool(mgr)
-	ctx := context.WithValue(context.Background(), sessionIDKey{}, "session-target")
+	ctx := context.WithValue(context.Background(), types.SessionIDContextKey, "session-target")
 	resp, err := tool.Run(ctx, fantasy.ToolCall{
 		ID:    "1",
 		Name:  "lcm_compact",
@@ -133,7 +135,7 @@ func TestCompactTool_OutputFormat(t *testing.T) {
 	createTestSession(t, q, "session-fmt")
 
 	tool := newCompactTool(mgr)
-	ctx := context.WithValue(context.Background(), sessionIDKey{}, "session-fmt")
+	ctx := context.WithValue(context.Background(), types.SessionIDContextKey, "session-fmt")
 	resp, err := tool.Run(ctx, fantasy.ToolCall{
 		ID:    "1",
 		Name:  "lcm_compact",

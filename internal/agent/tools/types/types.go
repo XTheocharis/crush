@@ -24,6 +24,22 @@ type LLMCallFunc func(ctx context.Context, prompt string) (string, error)
 // should be restricted to read-only tools.
 type SubAgentRunFunc func(ctx context.Context, task string, readOnly bool) (string, error)
 
+// SessionIDKey is the context key type for session IDs.
+type SessionIDKey string
+
+const (
+	// SessionIDContextKey is the context key for the session ID.
+	SessionIDContextKey SessionIDKey = "session_id"
+)
+
+// SessionIDFromContext retrieves the session ID from the context.
+func SessionIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(SessionIDContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // LCMToolFactory provides constructors for LCM-related agent tools.
 // The concrete implementation lives in the parent tools package. Consumers
 // (e.g., internal/lcm) depend on this interface to avoid importing

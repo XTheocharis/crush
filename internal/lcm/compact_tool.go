@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"charm.land/fantasy"
+
+	"github.com/charmbracelet/crush/internal/agent/tools/types"
 )
 
 // compactToolParams holds the optional parameters for the lcm_compact tool.
@@ -37,7 +39,7 @@ func newCompactTool(mgr Manager) fantasy.AgentTool {
 				return fantasy.NewTextErrorResponse("LCM manager is not available"), nil
 			}
 
-			sessionID := sessionIDFromContext(ctx)
+			sessionID := types.SessionIDFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.NewTextErrorResponse("Session ID not found in context"), nil
 			}

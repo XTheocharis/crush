@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"charm.land/fantasy"
+
+	"github.com/charmbracelet/crush/internal/agent/tools/types"
 )
 
 type bindleParams struct {
@@ -246,7 +248,7 @@ func newLineageTool(store *Store) fantasy.AgentTool {
 			if maxDepth <= 0 {
 				maxDepth = 10
 			}
-			result, err := store.Lineage(ctx, sessionIDFromContext(ctx), params.SummaryID, direction, maxDepth)
+			result, err := store.Lineage(ctx, types.SessionIDFromContext(ctx), params.SummaryID, direction, maxDepth)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Error tracing lineage: %v", err)), nil
 			}
@@ -301,12 +303,3 @@ func parseLineageDirection(s string) LineageDirection {
 		return LineageBoth
 	}
 }
-
-func sessionIDFromContext(ctx context.Context) string {
-	if s, ok := ctx.Value(sessionIDKey{}).(string); ok {
-		return s
-	}
-	return ""
-}
-
-type sessionIDKey struct{}

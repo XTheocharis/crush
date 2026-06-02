@@ -8,18 +8,20 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+
+	"github.com/charmbracelet/crush/internal/agent/tools/types"
 )
 
 type (
-	sessionIDContextKey string
 	messageIDContextKey string
 	supportsImagesKey   string
 	modelNameKey        string
 )
 
+// SessionIDContextKey is re-exported from types for backward compatibility.
+const SessionIDContextKey = types.SessionIDContextKey
+
 const (
-	// SessionIDContextKey is the key for the session ID in the context.
-	SessionIDContextKey sessionIDContextKey = "session_id"
 	// MessageIDContextKey is the key for the message ID in the context.
 	MessageIDContextKey messageIDContextKey = "message_id"
 	// SupportsImagesContextKey is the key for the model's image support capability.
@@ -43,7 +45,7 @@ func getContextValue[T any](ctx context.Context, key any, defaultValue T) T {
 
 // GetSessionFromContext retrieves the session ID from the context.
 func GetSessionFromContext(ctx context.Context) string {
-	return getContextValue(ctx, SessionIDContextKey, "")
+	return types.SessionIDFromContext(ctx)
 }
 
 // GetMessageFromContext retrieves the message ID from the context.

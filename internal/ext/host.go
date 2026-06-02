@@ -92,15 +92,37 @@ func (h *ExtensionHost) Bootstrap(ctx context.Context) error {
 
 	hc := &hostContext{deps: h.deps, host: h}
 
-	toolNameSet := make(map[string]string)
-
 	for _, ext := range h.extensions {
 		if err := safeCall("Init:"+ext.Name(), func() error {
 			return ext.Init(ctx, hc)
 		}); err != nil {
 			return fmt.Errorf("extension %q Init failed: %w", ext.Name(), err)
 		}
+	}
 
+	if err := h.collectToolsFromProviders(ctx); err != nil {
+		return err
+	}
+
+	h.bootstrapped = true
+	return nil
+}
+
+// collectToolsFromProviders rebuilds the tool, hook, and prompt-hook slices
+// from all registered extensions. The caller must hold h.mu (or be Bootstrap
+// which already holds it).
+func (h *ExtensionHost) collectToolsFromProviders(ctx context.Context) error {
+	var (
+		newTools      []fantasy.AgentTool
+		newToolNames  []string
+		newRunHooks   []RunHook
+		newStepHooks  []StepHook
+		newPromptHook *PromptHook
+	)
+
+	toolNameSet := make(map[string]string)
+
+	for _, ext := range h.extensions {
 		if tp, ok := ext.(ToolProvider); ok {
 			tools, names, err := CollectTools(ctx, tp)
 			if err != nil {
@@ -112,33 +134,51 @@ func (h *ExtensionHost) Bootstrap(ctx context.Context) error {
 				}
 				toolNameSet[name] = ext.Name()
 			}
-			h.tools = append(h.tools, tools...)
-			h.toolNames = append(h.toolNames, names...)
+			newTools = append(newTools, tools...)
+			newToolNames = append(newToolNames, names...)
 		}
 
 		if rhp, ok := ext.(RunHookProvider); ok {
 			hooks := safeCallRunHooks(rhp)
-			h.runHooks = append(h.runHooks, hooks...)
+			newRunHooks = append(newRunHooks, hooks...)
 		}
 
 		if shp, ok := ext.(StepHookProvider); ok {
 			hooks := safeCallStepHooks(shp)
-			h.stepHooks = append(h.stepHooks, hooks...)
+			newStepHooks = append(newStepHooks, hooks...)
 		}
 
 		if php, ok := ext.(PromptHookProvider); ok {
 			hook := safeCallPromptHook(php)
 			if hook != nil {
-				if h.promptHook != nil {
+				if newPromptHook != nil {
 					return fmt.Errorf("multiple prompt hooks registered: %q conflicts with existing", ext.Name())
 				}
-				h.promptHook = hook
+				newPromptHook = hook
 			}
 		}
 	}
 
-	h.bootstrapped = true
+	h.tools = newTools
+	h.toolNames = newToolNames
+	h.runHooks = newRunHooks
+	h.stepHooks = newStepHooks
+	h.promptHook = newPromptHook
 	return nil
+}
+
+// RefreshContributedTools re-collects tools and hooks from all registered
+// extensions, replacing the previously collected set. The host must already
+// be bootstrapped. It is safe to call concurrently with read accessors.
+func (h *ExtensionHost) RefreshContributedTools(ctx context.Context) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if !h.bootstrapped {
+		return fmt.Errorf("cannot refresh tools before bootstrap")
+	}
+
+	return h.collectToolsFromProviders(ctx)
 }
 
 // Shutdown calls extension Shutdown in reverse order.

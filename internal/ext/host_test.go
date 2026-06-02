@@ -816,6 +816,75 @@ func TestRegisterAfterBootstrap(t *testing.T) {
 	require.Contains(t, err.Error(), "after bootstrap")
 }
 
+func TestRefreshContributedTools_basic(t *testing.T) {
+	setupTest(t)
+
+	ctx := context.Background()
+
+	tool1 := createMockTool("refresh_tool_1")
+	ext := newMockExtension("refresh_ext").withTools([]fantasy.AgentTool{tool1}, []string{"refresh_tool_1"})
+
+	host := NewExtensionHost(HostDeps{})
+	require.NoError(t, host.Register(ext))
+	require.NoError(t, host.Bootstrap(ctx))
+
+	require.Equal(t, []string{"refresh_tool_1"}, host.ContributedToolNames())
+	require.Len(t, host.ContributedTools(), 1)
+
+	tool2 := createMockTool("refresh_tool_2")
+	ext.mu.Lock()
+	ext.tools = []fantasy.AgentTool{tool1, tool2}
+	ext.toolNames = []string{"refresh_tool_1", "refresh_tool_2"}
+	ext.mu.Unlock()
+
+	require.NoError(t, host.RefreshContributedTools(ctx))
+
+	require.Equal(t, []string{"refresh_tool_1", "refresh_tool_2"}, host.ContributedToolNames())
+	require.Len(t, host.ContributedTools(), 2)
+}
+
+func TestRefreshContributedTools_threadSafety(t *testing.T) {
+	setupTest(t)
+
+	ctx := context.Background()
+
+	tool1 := createMockTool("ts_tool_1")
+	ext := newMockExtension("ts_ext").withTools([]fantasy.AgentTool{tool1}, []string{"ts_tool_1"})
+
+	host := NewExtensionHost(HostDeps{})
+	require.NoError(t, host.Register(ext))
+	require.NoError(t, host.Bootstrap(ctx))
+
+	var wg sync.WaitGroup
+	iterations := 50
+
+	for i := range iterations {
+		wg.Go(func() {
+			_ = host.ContributedTools()
+			_ = host.ContributedToolNames()
+		})
+
+		if i%10 == 0 {
+			wg.Go(func() {
+				_ = host.RefreshContributedTools(ctx)
+			})
+		}
+	}
+
+	wg.Wait()
+
+	require.Equal(t, []string{"ts_tool_1"}, host.ContributedToolNames())
+}
+
+func TestRefreshContributedTools_beforeBootstrap(t *testing.T) {
+	setupTest(t)
+
+	host := NewExtensionHost(HostDeps{})
+	err := host.RefreshContributedTools(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "before bootstrap")
+}
+
 func TestResetForTesting(t *testing.T) {
 	ResetForTesting()
 
