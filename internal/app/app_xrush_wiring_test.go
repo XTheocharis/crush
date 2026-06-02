@@ -23,35 +23,39 @@ import (
 )
 
 type stubCoordinator struct {
-	model   agent.Model
+	model      agent.Model
 	resolveErr error
 }
 
 func (s *stubCoordinator) Run(_ context.Context, _, _ string, _ ...message.Attachment) (*fantasy.AgentResult, error) {
 	return nil, nil
 }
-func (s *stubCoordinator) Cancel(string)               {}
-func (s *stubCoordinator) CancelAll()                   {}
-func (s *stubCoordinator) IsSessionBusy(string) bool    { return false }
-func (s *stubCoordinator) IsBusy() bool                 { return false }
-func (s *stubCoordinator) QueuedPrompts(string) int     { return 0 }
-func (s *stubCoordinator) QueuedPromptsList(string) []string { return nil }
-func (s *stubCoordinator) ClearQueue(string)            {}
+func (s *stubCoordinator) Cancel(string)                               {}
+func (s *stubCoordinator) CancelAll()                                  {}
+func (s *stubCoordinator) IsSessionBusy(string) bool                   { return false }
+func (s *stubCoordinator) IsBusy() bool                                { return false }
+func (s *stubCoordinator) QueuedPrompts(string) int                    { return 0 }
+func (s *stubCoordinator) QueuedPromptsList(string) []string           { return nil }
+func (s *stubCoordinator) ClearQueue(string)                           {}
 func (s *stubCoordinator) Summarize(_ context.Context, _ string) error { return nil }
-func (s *stubCoordinator) Model() agent.Model           { return s.model }
-func (s *stubCoordinator) UpdateModels(_ context.Context) error { return nil }
+func (s *stubCoordinator) Model() agent.Model                          { return s.model }
+func (s *stubCoordinator) UpdateModels(_ context.Context) error        { return nil }
 func (s *stubCoordinator) RecoverSession(_ context.Context, _ string) error {
 	return nil
 }
+
 func (s *stubCoordinator) RepoMapRefresh(_ context.Context, _ string) error {
 	return nil
 }
+
 func (s *stubCoordinator) RestoreAgentConfig(_ context.Context, _ map[string][]string) error {
 	return nil
 }
+
 func (s *stubCoordinator) StructuredSubagentFactory() agent.StructuredSubagentFactory {
 	return nil
 }
+
 func (s *stubCoordinator) ResolveLCMModel(_ context.Context, selected config.SelectedModel, _ config.ProviderConfig) (agent.Model, error) {
 	if s.resolveErr != nil {
 		return agent.Model{}, s.resolveErr
@@ -66,12 +70,15 @@ type stubLanguageModel struct {
 func (s *stubLanguageModel) Generate(_ context.Context, _ fantasy.Call) (*fantasy.Response, error) {
 	return &fantasy.Response{Content: fantasy.ResponseContent{fantasy.TextContent{Text: s.resp}}}, nil
 }
+
 func (s *stubLanguageModel) Stream(_ context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
 	return nil, nil
 }
+
 func (s *stubLanguageModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
 	return nil, nil
 }
+
 func (s *stubLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
 	return nil, nil
 }
@@ -192,9 +199,9 @@ func TestWireLCMLLMClientWithRealProvider(t *testing.T) {
 	lm := &stubLanguageModel{resp: "lcm summary"}
 	coord := &stubCoordinator{
 		model: agent.Model{
-			Model: lm,
+			Model:      lm,
 			CatwalkCfg: catwalk.Model{ID: "test-model", ContextWindow: 128000, DefaultMaxTokens: 4096},
-			ModelCfg: config.SelectedModel{Provider: "test", Model: "test-model"},
+			ModelCfg:   config.SelectedModel{Provider: "test", Model: "test-model"},
 		},
 	}
 

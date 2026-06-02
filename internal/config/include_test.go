@@ -736,7 +736,7 @@ nested
 
 		_, err := ProcessIncludes(`<!-- endif -->`, tmp, 0, nil, nil)
 		require.Error(t, err)
-	require.Contains(t, err.Error(), "unexpected endif")
+		require.Contains(t, err.Error(), "unexpected endif")
 	})
 
 	t.Run("UnclosedConditional", func(t *testing.T) {

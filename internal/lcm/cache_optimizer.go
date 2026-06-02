@@ -614,8 +614,8 @@ func (o *CacheOptimizer) assembleSections(builder *CompactPromptBuilder, entries
 					Prompt:         "",
 					CurrentTokens:  totalTokens,
 					ContextWindow:  defaultContextWindow,
-				TurnCount:      int(turnCount),
-				IterationCount: int(iterCount),
+					TurnCount:      int(turnCount),
+					IterationCount: int(iterCount),
 				})
 			if err == nil && nudgeResult != "" {
 				builder.SetSection(SectionNudge, nudgeResult)

@@ -447,13 +447,13 @@ func TestFallback_IntegrationWithTierRouter(t *testing.T) {
 
 	r := NewTierRouter([]config.RoutingTier{
 		{
-			UpToTokens:   1000,
-			ModelType:    config.SelectedModelTypeSmall,
+			UpToTokens:    1000,
+			ModelType:     config.SelectedModelTypeSmall,
 			FallbackChain: []string{"small-primary", "small-backup"},
 		},
 		{
-			UpToTokens:   10000,
-			ModelType:    config.SelectedModelTypeLarge,
+			UpToTokens:    10000,
+			ModelType:     config.SelectedModelTypeLarge,
 			FallbackChain: []string{"large-primary", "large-backup"},
 		},
 	})

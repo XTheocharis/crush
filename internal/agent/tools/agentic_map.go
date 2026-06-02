@@ -33,8 +33,8 @@ type AgenticMapOption func(*agenticMapConfig)
 
 type agenticMapConfig struct {
 	subAgentRun SubAgentRunFunc
-	db         *sql.DB
-	toolType   string
+	db          *sql.DB
+	toolType    string
 }
 
 // WithSubAgentRun sets the sub-agent runner function for the agentic map tool.
