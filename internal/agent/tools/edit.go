@@ -380,7 +380,10 @@ func replaceContent(edit editContext, filePath, oldString, newString string, rep
 
 	var newContent string
 
-	if replaceAll {
+	// Try anchor-based replacement first for drift-tolerant editing.
+	if anchorResult, ok := tryAnchorReplace(oldContent, oldString, newString, filePath, replaceAll); ok {
+		newContent = anchorResult
+	} else if replaceAll {
 		newContent = strings.ReplaceAll(oldContent, oldString, newString)
 	} else {
 		index := strings.Index(oldContent, oldString)

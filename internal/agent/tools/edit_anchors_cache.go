@@ -35,11 +35,11 @@ func deleteAnchorMap(filePath string) {
 }
 
 // anchorHashOnlyRE matches <hash:XXXXXXXX> markers anywhere in a string.
-var anchorHashOnlyRE = regexp.MustCompile(`<hash:([0-9a-fA-F]{8})>`)
+var anchorHashOnlyRE = regexp.MustCompile(`<hash:([0-9a-fA-F]{8,16})>`)
 
 // anchorMarkerRE matches the full comment form "// <hash:XXXXXXXX>" with
 // optional surrounding whitespace, for stripping from old_string.
-var anchorMarkerRE = regexp.MustCompile(`\s*//\s*<hash:[0-9a-fA-F]{8}>`)
+var anchorMarkerRE = regexp.MustCompile(`\s*//\s*<hash:[0-9a-fA-F]{8,16}>`)
 
 // extractAnchorHashes parses <hash:XXXXXXXX> markers from s and returns the
 // hash values as uint64.
