@@ -4,6 +4,8 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"sort"
+	"strings"
 
 	"charm.land/fantasy"
 )
@@ -26,6 +28,25 @@ type TeamCreateResponseMetadata struct {
 	AgentsFound int      `json:"agents_found"`
 }
 
+var knownRoles = map[string]bool{
+	"researcher": true,
+	"tester":     true,
+	"reviewer":   true,
+}
+
+func isKnownRole(name string) bool {
+	return knownRoles[name]
+}
+
+func sortedRoleNames() []string {
+	names := make([]string, 0, len(knownRoles))
+	for name := range knownRoles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func NewTeamCreateTool(registry AgentRegistry, mailbox Mailbox) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		TeamCreateToolName,
@@ -43,22 +64,29 @@ func NewTeamCreateTool(registry AgentRegistry, mailbox Mailbox) fantasy.AgentToo
 			}
 
 			var found []string
-			var missing []string
+			var invalidRoles []string
 			for _, name := range params.Agents {
 				if registry.HasAgent(name) {
 					found = append(found, name)
-				} else {
-					missing = append(missing, name)
+					continue
 				}
+				if !isKnownRole(name) {
+					invalidRoles = append(invalidRoles, name)
+					continue
+				}
+				found = append(found, name)
 			}
 
 			if len(found) == 0 {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("none of the specified agents found: %v", params.Agents)), nil
+				return fantasy.NewTextErrorResponse(fmt.Sprintf(
+					"no valid agents or roles found: %v (valid roles: %s)",
+					params.Agents, strings.Join(sortedRoleNames(), ", "),
+				)), nil
 			}
 
 			result := fmt.Sprintf("Team %q created with %d agent(s)", params.TeamName, len(found))
-			if len(missing) > 0 {
-				result += fmt.Sprintf(" (skipped missing: %v)", missing)
+			if len(invalidRoles) > 0 {
+				result += fmt.Sprintf(" (invalid roles: %v)", invalidRoles)
 			}
 
 			metadata := TeamCreateResponseMetadata{

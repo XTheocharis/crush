@@ -416,3 +416,71 @@ func TestXrushSwarmParallelExecution(t *testing.T) {
 	require.True(t, resp.Success)
 	require.Equal(t, int32(5), factory.callCount.Load())
 }
+
+func TestXrushDefaultTeammateConfigResearcher(t *testing.T) {
+	t.Parallel()
+	cfg, err := DefaultTeammateConfig(RoleResearcher)
+	require.NoError(t, err)
+	require.Equal(t, RoleResearcher, cfg.Role)
+	require.Equal(t, 10, cfg.MaxSteps)
+	require.Contains(t, cfg.Tools, "view")
+	require.Contains(t, cfg.Tools, "grep")
+	require.Contains(t, cfg.Tools, "glob")
+	require.Contains(t, cfg.Tools, "lsp_definition")
+	require.NotContains(t, cfg.Tools, "bash")
+	require.NotContains(t, cfg.Tools, "edit")
+}
+
+func TestXrushDefaultTeammateConfigTester(t *testing.T) {
+	t.Parallel()
+	cfg, err := DefaultTeammateConfig(RoleTester)
+	require.NoError(t, err)
+	require.Equal(t, RoleTester, cfg.Role)
+	require.Equal(t, 10, cfg.MaxSteps)
+	require.Contains(t, cfg.Tools, "bash")
+	require.Contains(t, cfg.Tools, "view")
+	require.Contains(t, cfg.Tools, "grep")
+	require.NotContains(t, cfg.Tools, "edit")
+}
+
+func TestXrushDefaultTeammateConfigReviewer(t *testing.T) {
+	t.Parallel()
+	cfg, err := DefaultTeammateConfig(RoleReviewer)
+	require.NoError(t, err)
+	require.Equal(t, RoleReviewer, cfg.Role)
+	require.Equal(t, 10, cfg.MaxSteps)
+	require.Contains(t, cfg.Tools, "view")
+	require.Contains(t, cfg.Tools, "grep")
+	require.Contains(t, cfg.Tools, "lsp_diagnostics")
+	require.NotContains(t, cfg.Tools, "bash")
+	require.NotContains(t, cfg.Tools, "edit")
+}
+
+func TestXrushDefaultTeammateConfigUnknownRole(t *testing.T) {
+	t.Parallel()
+	_, err := DefaultTeammateConfig("unknown")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown teammate role")
+	require.Contains(t, err.Error(), "researcher")
+	require.Contains(t, err.Error(), "tester")
+	require.Contains(t, err.Error(), "reviewer")
+}
+
+func TestXrushValidTeammateRoles(t *testing.T) {
+	t.Parallel()
+	roles := ValidTeammateRoles()
+	require.Len(t, roles, 3)
+	require.Contains(t, roles, RoleResearcher)
+	require.Contains(t, roles, RoleTester)
+	require.Contains(t, roles, RoleReviewer)
+}
+
+func TestXrushDefaultConfigUsesDefaultSystemPrompt(t *testing.T) {
+	t.Parallel()
+	for _, role := range ValidTeammateRoles() {
+		cfg, err := DefaultTeammateConfig(role)
+		require.NoError(t, err)
+		require.Empty(t, cfg.SystemPrompt, "should use systemPrompt() defaults, not override")
+		require.NotEmpty(t, cfg.systemPrompt())
+	}
+}

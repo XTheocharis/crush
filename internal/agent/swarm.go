@@ -177,6 +177,65 @@ type TeammateConfig struct {
 	SystemPrompt string
 }
 
+// ValidTeammateRoles returns the set of roles that have production default
+// configurations. Callers should use this to validate role names before
+// creating teammates.
+func ValidTeammateRoles() []TeammateRole {
+	return []TeammateRole{RoleResearcher, RoleTester, RoleReviewer}
+}
+
+// DefaultTeammateConfig returns a production-ready TeammateConfig for the
+// given role. Returns an error for unknown roles.
+//
+// TODO: iterate on role-specific prompts for production quality.
+func DefaultTeammateConfig(role TeammateRole) (TeammateConfig, error) {
+	switch role {
+	case RoleResearcher:
+		return TeammateConfig{
+			Role: RoleResearcher,
+			Tools: []string{
+				"view", "ls", "grep", "glob", "fetch",
+				"lsp_definition", "lsp_references", "lsp_hover",
+				"lsp_symbols", "lsp_workspace_symbols", "lsp_document_symbols",
+				"lsp_diagnostics", "lsp_completion", "lsp_signature_help",
+				"sourcegraph",
+			},
+			MaxSteps: 10,
+		}, nil
+	case RoleTester:
+		return TeammateConfig{
+			Role: RoleTester,
+			Tools: []string{
+				"bash", "view", "ls", "grep", "glob",
+				"lsp_diagnostics", "lsp_definition", "lsp_references",
+			},
+			MaxSteps: 10,
+		}, nil
+	case RoleReviewer:
+		return TeammateConfig{
+			Role: RoleReviewer,
+			Tools: []string{
+				"view", "ls", "grep", "glob",
+				"lsp_diagnostics", "lsp_definition", "lsp_references",
+				"lsp_hover", "lsp_symbols", "lsp_document_symbols",
+			},
+			MaxSteps: 10,
+		}, nil
+	default:
+		valid := make([]string, len(validRolesCache))
+		for i, r := range validRolesCache {
+			valid[i] = string(r)
+		}
+		return TeammateConfig{}, fmt.Errorf(
+			"unknown teammate role %q; valid roles: %s",
+			string(role), strings.Join(valid, ", "),
+		)
+	}
+}
+
+// validRolesCache avoids reallocating on every DefaultTeammateConfig error path.
+var validRolesCache = ValidTeammateRoles()
+
 func (c TeammateConfig) cacheTTL() time.Duration {
 	if c.CacheTTL <= 0 {
 		return DefaultDiagnosticsTTL
