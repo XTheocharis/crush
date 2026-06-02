@@ -6,8 +6,10 @@ import (
 
 	"charm.land/fantasy"
 
+	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
+	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -214,4 +216,56 @@ func TestCoordinatorExtHostGetterReturnsNilForSubAgent(t *testing.T) {
 		return c.extHost
 	}()
 	require.Nil(t, extHostForSub)
+}
+
+// TestLSPRestartNotDuplicated verifies that lsp_restart appears exactly once
+// in the built tool list — provided only by extension, not duplicated
+// by the coordinator.
+func TestLSPRestartNotDuplicated(t *testing.T) {
+	ext.ResetForTesting()
+	config.ResetExtensionToolNamesForTesting()
+	t.Cleanup(func() {
+		ext.ResetForTesting()
+		config.ResetExtensionToolNamesForTesting()
+	})
+
+	ctx := context.Background()
+	env := testEnv(t)
+
+	cfg, err := config.Init(env.workingDir, "", false)
+	require.NoError(t, err)
+
+	lspManager := lsp.NewManager(cfg)
+	lspRestartTool := tools.NewLSPRestartTool(lspManager)
+
+	config.RegisterExtensionToolNames(func() []string {
+		return []string{tools.LSPRestartToolName}
+	})
+	cfg.SetupAgents()
+
+	mockExt := newTestExtension("lsp-tools-mock", []fantasy.AgentTool{lspRestartTool}, []string{tools.LSPRestartToolName})
+	host := ext.NewExtensionHost(ext.HostDeps{})
+	require.NoError(t, host.Register(mockExt))
+	require.NoError(t, host.Bootstrap(ctx))
+	t.Cleanup(func() { host.Shutdown(ctx) })
+
+	c := &coordinator{
+		cfg:         cfg,
+		sessions:    env.sessions,
+		permissions: env.permissions,
+		lspManager:  lspManager,
+		extHost:     host,
+	}
+
+	agentCfg := cfg.Config().Agents[config.AgentCoder]
+	builtTools, err := c.buildTools(ctx, agentCfg, false)
+	require.NoError(t, err)
+
+	count := 0
+	for _, tool := range builtTools {
+		if tool.Info().Name == tools.LSPRestartToolName {
+			count++
+		}
+	}
+	require.Equal(t, 1, count, "lsp_restart should appear exactly once, got %d", count)
 }

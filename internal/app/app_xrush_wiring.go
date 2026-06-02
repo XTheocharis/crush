@@ -54,7 +54,7 @@ func wireAgentConfigRestorer(coord agent.Coordinator) {
 // falls back to the configured large model. When neither is available it
 // installs a fallback adapter so the manager is never left without a
 // compressor (which would block compaction entirely).
-func wireLCMLLMClient(store *config.ConfigStore) {
+func wireLCMLLMClient(ctx context.Context, store *config.ConfigStore, coord agent.Coordinator) {
 	mgr := extensions.TheLCMExtension.Manager()
 	if mgr == nil {
 		slog.Warn("LCM manager is nil, skipping LLM client wiring")
@@ -88,7 +88,7 @@ func wireLCMLLMClient(store *config.ConfigStore) {
 		return
 	}
 
-	model, err := resolveLCMModel(*selected, providerCfg)
+	model, err := resolveLCMModel(ctx, *selected, providerCfg, coord)
 	if err != nil {
 		slog.Warn("Failed to resolve LCM summarizer model, using fallback adapter", "error", err)
 		mgr.SetLLMClient(fallbackLCMClient{})
@@ -105,25 +105,8 @@ func wireLCMLLMClient(store *config.ConfigStore) {
 }
 
 // resolveLCMModel builds an agent.Model from the config for LCM summarization.
-func resolveLCMModel(selected config.SelectedModel, providerCfg config.ProviderConfig) (agent.Model, error) {
-	var catwalkCfg catwalk.Model
-	found := false
-	for _, m := range providerCfg.Models {
-		if m.ID == selected.Model {
-			catwalkCfg = m
-			found = true
-			break
-		}
-	}
-	if !found {
-		return agent.Model{}, fmt.Errorf("model %q not found in provider %q", selected.Model, selected.Provider)
-	}
-
-	return agent.Model{
-		Model:      &lcmFallbackLM{},
-		CatwalkCfg: catwalkCfg,
-		ModelCfg:   selected,
-	}, nil
+func resolveLCMModel(ctx context.Context, selected config.SelectedModel, providerCfg config.ProviderConfig, coord agent.Coordinator) (agent.Model, error) {
+	return coord.ResolveLCMModel(ctx, selected, providerCfg)
 }
 
 // fallbackLCMClient is a minimal LLM client used when no real model is

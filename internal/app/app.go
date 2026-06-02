@@ -148,6 +148,9 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		return nil, fmt.Errorf("failed to initialize coder agent: %w", err)
 	}
 
+	// [XRUSH: wire LCM LLM client after providers are available]
+	wireLCMLLMClient(ctx, store, app.AgentCoordinator)
+
 	// Set up callback for LSP state updates.
 	app.LSPManager.SetCallback(func(name string, client *lsp.Client) {
 		if client == nil {
@@ -574,6 +577,12 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 
 	wireAgentConfigRestorer(app.AgentCoordinator) // XRUSH: post-compaction skill restoration
 	wireSwarmFactory(app.AgentCoordinator)        // XRUSH: swarm factory wiring
+
+	if app.ExtHost != nil {
+		if err := app.ExtHost.RefreshContributedTools(ctx); err != nil {
+			slog.Warn("Failed to refresh contributed tools after swarm wiring", "err", err)
+		}
+	}
 
 	return nil
 }

@@ -94,6 +94,8 @@ type Coordinator interface {
 	RestoreAgentConfig(ctx context.Context, payload map[string][]string) error
 	// XRUSH: expose structured subagent factory for swarm wiring
 	StructuredSubagentFactory() StructuredSubagentFactory
+	// XRUSH: resolve a real LanguageModel for LCM summarization
+	ResolveLCMModel(ctx context.Context, selected config.SelectedModel, providerCfg config.ProviderConfig) (Model, error)
 }
 
 type coordinator struct {
@@ -804,7 +806,7 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 
 	// Add LSP tools if user has configured LSPs or auto_lsp is enabled (nil or true).
 	if len(c.cfg.Config().LSP) > 0 || c.cfg.Config().Options.AutoLSP == nil || *c.cfg.Config().Options.AutoLSP {
-		allTools = append(allTools, tools.NewDiagnosticsTool(c.lspManager), tools.NewReferencesTool(c.lspManager), tools.NewLSPRestartTool(c.lspManager))
+		allTools = append(allTools, tools.NewDiagnosticsTool(c.lspManager), tools.NewReferencesTool(c.lspManager))
 	}
 
 	if len(c.cfg.Config().MCP) > 0 {
@@ -1560,4 +1562,35 @@ func logDiscoveryStats(
 
 func (c *coordinator) StructuredSubagentFactory() StructuredSubagentFactory {
 	return c.structuredSubagentFactory
+}
+
+func (c *coordinator) ResolveLCMModel(ctx context.Context, selected config.SelectedModel, providerCfg config.ProviderConfig) (Model, error) {
+	var catwalkCfg catwalk.Model
+	found := false
+	for _, m := range providerCfg.Models {
+		if m.ID == selected.Model {
+			catwalkCfg = m
+			found = true
+			break
+		}
+	}
+	if !found {
+		return Model{}, fmt.Errorf("model %q not found in provider %q", selected.Model, selected.Provider)
+	}
+
+	provider, err := c.buildProvider(providerCfg, selected, false)
+	if err != nil {
+		return Model{}, fmt.Errorf("build provider for LCM: %w", err)
+	}
+
+	lm, err := provider.LanguageModel(ctx, selected.Model)
+	if err != nil {
+		return Model{}, fmt.Errorf("language model for LCM: %w", err)
+	}
+
+	return Model{
+		Model:      lm,
+		CatwalkCfg: catwalkCfg,
+		ModelCfg:   selected,
+	}, nil
 }

@@ -46,10 +46,6 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	}
 	app.ExtHost = extHost
 
-	// [XRUSH: begin: wire LCM LLM client]
-	wireLCMLLMClient(store)
-	// [XRUSH: end]
-
 	// [XRUSH: begin: wire LCM context window from model metadata]
 	wireLCMContextWindow(store)
 	// [XRUSH: end]
@@ -88,6 +84,12 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 
 	// [XRUSH: begin: wire orchestration tools]
 	wireOrchestration()
+	// [XRUSH: end]
+
+	// [XRUSH: begin: refresh contributed tools after orchestration wiring]
+	if err := extHost.RefreshContributedTools(ctx); err != nil {
+		slog.Warn("Failed to refresh contributed tools after orchestration wiring", "error", err)
+	}
 	// [XRUSH: end]
 
 	// [XRUSH: begin: wire swarm registry + mailbox]

@@ -102,6 +102,11 @@ func TestLCMLLMClientWired(t *testing.T) {
 
 	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
 
+	// wireLCMLLMClient is now called after InitCoderAgent in production.
+	// Simulate that call with a stub coordinator to verify fallback wiring.
+	coord := &stubCoordinator{}
+	wireLCMLLMClient(t.Context(), store, coord)
+
 	mgr := extensions.TheLCMExtension.Manager()
 	require.NotNil(t, mgr, "LCM manager should be initialized after setupExtensions")
 
@@ -406,6 +411,67 @@ func TestRepoMapPromptInjectionNoPanicWithoutRepomap(t *testing.T) {
 	}, "setupExtensions should not panic when RepomapExtension is nil")
 }
 
+func TestOrchestrationToolsReachCoordinator(t *testing.T) {
+	origXrush := extensions.TheXrushExtension
+	origOrch := extensions.TheOrchestrationExtension
+	origLCM := extensions.TheLCMExtension
+	t.Cleanup(func() {
+		extensions.TheXrushExtension = origXrush
+		extensions.TheOrchestrationExtension = origOrch
+		extensions.TheLCMExtension = origLCM
+	})
+
+	freshXrush := &extensions.XrushExtension{}
+	freshOrch := &extensions.OrchestrationExtension{}
+	freshLCM := &extensions.LCMExtension{}
+	extensions.TheXrushExtension = freshXrush
+	extensions.TheOrchestrationExtension = freshOrch
+	extensions.TheLCMExtension = freshLCM
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshXrush)
+	ext.RegisterExtension(freshLCM)
+	ext.RegisterExtension(freshOrch)
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options: &config.Options{
+			LCM: &config.LCMOptions{},
+		},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
+
+	names := app.ExtHost.ContributedToolNames()
+	nameSet := make(map[string]bool, len(names))
+	for _, n := range names {
+		nameSet[n] = true
+	}
+
+	for _, expected := range []string{"send_message", "team_create", "team_delete", "task_stop"} {
+		require.True(t, nameSet[expected],
+			"ContributedToolNames should contain %q after setupExtensions (got: %v)",
+			expected, names)
+	}
+}
+
 func TestWireOrchestrationNilSafe(t *testing.T) {
 	origXrush := extensions.TheXrushExtension
 	origOrch := extensions.TheOrchestrationExtension
@@ -482,6 +548,81 @@ func TestMessageDecoratorWired(t *testing.T) {
 	msgs, err := app.Messages.List(t.Context(), "nonexistent-session")
 	require.NoError(t, err, "decorated message service List should not error")
 	require.Empty(t, msgs, "List for nonexistent session should return empty")
+}
+
+// stubStructuredSubagent is a minimal StructuredSubagent for testing.
+type stubStructuredSubagent struct{}
+
+func (stubStructuredSubagent) Execute(_ context.Context, _ agent.StructuredRequest) (agent.StructuredResponse, error) {
+	return agent.StructuredResponse{Result: "stub", Success: true}, nil
+}
+func (stubStructuredSubagent) Capabilities() []string { return nil }
+
+// stubStructuredSubagentFactory is a minimal StructuredSubagentFactory for testing.
+type stubStructuredSubagentFactory struct{}
+
+func (stubStructuredSubagentFactory) NewStructuredSubagent(_ context.Context, _ string) (agent.StructuredSubagent, error) {
+	return stubStructuredSubagent{}, nil
+}
+
+func TestSwarmExecuteReachCoordinator(t *testing.T) {
+	origSwarm := extensions.TheSwarmExtension
+	origLCM := extensions.TheLCMExtension
+	t.Cleanup(func() {
+		extensions.TheSwarmExtension = origSwarm
+		extensions.TheLCMExtension = origLCM
+	})
+
+	freshSwarm := &extensions.SwarmExtension{}
+	freshLCM := &extensions.LCMExtension{}
+	extensions.TheSwarmExtension = freshSwarm
+	extensions.TheLCMExtension = freshLCM
+
+	ext.ResetForTesting()
+	ext.RegisterExtension(freshSwarm)
+	ext.RegisterExtension(freshLCM)
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+
+	cfg := &config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{LCM: &config.LCMOptions{}},
+	}
+	store := config.NewTestStore(cfg)
+
+	events := pubsub.NewBroker[tea.Msg]()
+	t.Cleanup(func() { events.Shutdown() })
+
+	app := &App{
+		globalCtx:       t.Context(),
+		serviceEventsWG: &sync.WaitGroup{},
+		eventsCtx:       t.Context(),
+		events:          events,
+	}
+
+	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
+
+	// Before wiring factory, swarm_execute should NOT be in contributed tools.
+	names := app.ExtHost.ContributedToolNames()
+	require.NotContains(t, names, "swarm_execute",
+		"swarm_execute should not appear before factory wiring")
+
+	// Simulate wireSwarmFactory: set factory and rebuild tools.
+	freshSwarm.SetFactory(stubStructuredSubagentFactory{})
+	freshSwarm.RebuildTools()
+
+	// Call RefreshContributedTools (the production code path added in InitCoderAgent).
+	err = app.ExtHost.RefreshContributedTools(t.Context())
+	require.NoError(t, err, "RefreshContributedTools should succeed after swarm factory wiring")
+
+	// Now swarm_execute should be present.
+	names = app.ExtHost.ContributedToolNames()
+	require.Contains(t, names, "swarm_execute",
+		"swarm_execute should appear in ContributedToolNames after RefreshContributedTools")
 }
 
 func TestMessageDecoratorNilSafe(t *testing.T) {
