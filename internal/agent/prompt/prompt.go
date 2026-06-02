@@ -165,13 +165,42 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 	files := map[string][]ContextFile{}
 
 	cfg := store.Config()
-	for _, pth := range cfg.Options.ContextPaths {
+
+	discovered, err := config.WalkContextPaths(workingDir)
+	if err != nil {
+		slog.Warn("Failed to walk context paths", "error", err)
+	}
+
+	var contextPaths []string
+	if cfg.Options != nil {
+		contextPaths = cfg.Options.ContextPaths
+	}
+
+	// Track basenames from explicit paths so they take precedence.
+	explicitBasenames := make(map[string]bool, len(contextPaths))
+	for _, pth := range contextPaths {
 		expanded := expandPath(pth, store)
+		explicitBasenames[strings.ToLower(filepath.Base(expanded))] = true
 		pathKey := strings.ToLower(expanded)
 		if _, ok := files[pathKey]; ok {
 			continue
 		}
 		content := processContextPath(expanded, store)
+		files[pathKey] = content
+	}
+
+	// Merge discovered paths, skipping any whose basename is already covered
+	// by an explicit path. Deduplicate by lowercased absolute path.
+	for _, discoveredPath := range discovered {
+		pathKey := strings.ToLower(discoveredPath)
+		if _, ok := files[pathKey]; ok {
+			continue
+		}
+		base := strings.ToLower(filepath.Base(discoveredPath))
+		if explicitBasenames[base] {
+			continue
+		}
+		content := processContextPath(discoveredPath, store)
 		files[pathKey] = content
 	}
 
