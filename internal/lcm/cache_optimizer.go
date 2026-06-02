@@ -238,6 +238,10 @@ type CacheOptimizerConfig struct {
 	// session. When nil, IterationCount defaults to 0 (no iteration-based
 	// nudges).
 	IterationCountFunc func() int64
+
+	// ContextWindowFunc returns the current context window for the active
+	// model. When nil, the default context window of 200000 tokens is used.
+	ContextWindowFunc func() int64
 }
 
 // CacheOptimizer implements Layers 6 and 7 of the compaction framework.
@@ -601,7 +605,11 @@ func (o *CacheOptimizer) assembleSections(builder *CompactPromptBuilder, entries
 			totalTokens += e.TokenCount
 		}
 		if totalTokens > 0 {
-			const defaultContextWindow = 200000
+			const fallbackContextWindow int64 = 200000
+			contextWindow := fallbackContextWindow
+			if o.cfg.ContextWindowFunc != nil {
+				contextWindow = o.cfg.ContextWindowFunc()
+			}
 			var turnCount, iterCount int64
 			if o.cfg.TurnCountFunc != nil {
 				turnCount = o.cfg.TurnCountFunc()
@@ -613,7 +621,7 @@ func (o *CacheOptimizer) assembleSections(builder *CompactPromptBuilder, entries
 				context.Background(), nudge.InjectParams{
 					Prompt:         "",
 					CurrentTokens:  totalTokens,
-					ContextWindow:  defaultContextWindow,
+					ContextWindow:  contextWindow,
 					TurnCount:      int(turnCount),
 					IterationCount: int(iterCount),
 				})

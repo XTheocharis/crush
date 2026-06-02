@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/lcm/nudge"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1282,4 +1283,118 @@ func TestAnthropicCacheIntegration_NoOversizedMessages_NoCacheReordering(t *test
 	result, err := micro.Compact(ctx, budget)
 	require.NoError(t, err)
 	require.False(t, result.ActionTaken, "no oversized messages, nothing to compact")
+}
+
+// ---------------------------------------------------------------------------
+// ContextWindowFunc — dynamic context window for nudge injection
+// ---------------------------------------------------------------------------
+
+func TestNudgeContextWindow_128k(t *testing.T) {
+	t.Parallel()
+
+	injector := nudge.NewNudgeInjector(nil, nil)
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		NudgeInjector:     injector,
+		ContextWindowFunc: func() int64 { return 128000 },
+	})
+
+	builder := NewCompactPromptBuilder()
+	entries := []ContextEntry{
+		{ItemType: "message", MessageID: "msg-big", TokenCount: 122000},
+	}
+	o.assembleSections(builder, entries)
+
+	prompt := builder.Build()
+	require.Contains(t, prompt, "--- nudge ---",
+		"PressureHigh at ~95%% of 128k (121600) with 122000 tokens should trigger nudge")
+}
+
+func TestNudgeContextWindow_200k(t *testing.T) {
+	t.Parallel()
+
+	injector := nudge.NewNudgeInjector(nil, nil)
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		NudgeInjector:     injector,
+		ContextWindowFunc: func() int64 { return 200000 },
+	})
+
+	builder := NewCompactPromptBuilder()
+	entries := []ContextEntry{
+		{ItemType: "message", MessageID: "msg-big", TokenCount: 122000},
+	}
+	o.assembleSections(builder, entries)
+
+	sections := builder.Sections()
+	for _, s := range sections {
+		require.NotEqual(t, SectionNudge, s.Name,
+			"122k tokens against 200k window is ~61%%, well below 95%% — no nudge expected")
+	}
+}
+
+func TestNudgeContextWindow_RuntimeUpdate(t *testing.T) {
+	t.Parallel()
+
+	injector := nudge.NewNudgeInjector(nil, nil)
+	window := int64(128000)
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		NudgeInjector:     injector,
+		ContextWindowFunc: func() int64 { return window },
+	})
+
+	entries := []ContextEntry{
+		{ItemType: "message", MessageID: "msg-big", TokenCount: 122000},
+	}
+
+	// With 128k window, 122k tokens (95.3%) triggers PressureHigh.
+	b1 := NewCompactPromptBuilder()
+	o.assembleSections(b1, entries)
+	require.Contains(t, b1.Build(), "--- nudge ---",
+		"122k tokens against 128k window should trigger nudge")
+
+	// Simulate runtime model switch to 200k window.
+	window = 200000
+
+	b2 := NewCompactPromptBuilder()
+	o.assembleSections(b2, entries)
+	require.NotContains(t, b2.Build(), "--- nudge ---",
+		"122k tokens against 200k window should NOT trigger nudge")
+}
+
+func TestNudgeContextWindow_NilFallback(t *testing.T) {
+	t.Parallel()
+
+	injector := nudge.NewNudgeInjector(nil, nil)
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		NudgeInjector:     injector,
+		ContextWindowFunc: nil, // nil should fall back to 200000.
+	})
+
+	builder := NewCompactPromptBuilder()
+	entries := []ContextEntry{
+		{ItemType: "message", MessageID: "msg-mid", TokenCount: 105000},
+	}
+	o.assembleSections(builder, entries)
+
+	prompt := builder.Build()
+	require.NotContains(t, prompt, "--- nudge ---",
+		"105k tokens against 200k fallback is ~52%%, well below 95%% — no nudge expected")
+}
+
+func TestNudgeContextWindow_ZeroWindow(t *testing.T) {
+	t.Parallel()
+
+	injector := nudge.NewNudgeInjector(nil, nil)
+	o := NewCacheOptimizer(CacheOptimizerConfig{
+		NudgeInjector:     injector,
+		ContextWindowFunc: func() int64 { return 0 },
+	})
+
+	builder := NewCompactPromptBuilder()
+	entries := []ContextEntry{
+		{ItemType: "message", MessageID: "msg-any", TokenCount: 50000},
+	}
+
+	require.NotPanics(t, func() {
+		o.assembleSections(builder, entries)
+	}, "zero context window must not panic")
 }

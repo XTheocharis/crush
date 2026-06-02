@@ -1285,6 +1285,7 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 		NudgeInjector:      m.nudgeInjector,
 		TurnCountFunc:      func() int64 { return m.GetTurnCount(sessionID) },
 		IterationCountFunc: func() int64 { return m.GetIterationCount(sessionID) },
+		ContextWindowFunc:  func() int64 { return m.defaultContextWindow },
 	})
 
 	microCompactor.cfg.CacheAware = true
@@ -1369,6 +1370,7 @@ func (m *compactionManager) BuildCompactPrompt(ctx context.Context, sessionID st
 		NudgeInjector:      m.nudgeInjector,
 		TurnCountFunc:      func() int64 { return m.GetTurnCount(sessionID) },
 		IterationCountFunc: func() int64 { return m.GetIterationCount(sessionID) },
+		ContextWindowFunc:  func() int64 { return m.defaultContextWindow },
 	})
 
 	entries, err := m.store.GetContextEntries(ctx, sessionID)
