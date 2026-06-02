@@ -249,3 +249,47 @@ func (s *stubLanguageModel) StreamObject(
 
 func (s *stubLanguageModel) Provider() string { return s.provider }
 func (s *stubLanguageModel) Model() string    { return s.model }
+
+func TestRateLimitCoordinatorWiredInBuildModels(t *testing.T) {
+	t.Parallel()
+
+	coord := NewRateLimitCoordinator()
+	inner := &stubLanguageModel{provider: "openai", model: "gpt-4"}
+
+	wrapped := newRateLimitedModel(inner, coord, "openai")
+
+	coord.RecordRateLimit("openai", &fantasy.ProviderError{
+		StatusCode:      http.StatusTooManyRequests,
+		ResponseHeaders: map[string]string{"retry-after-ms": "100"},
+	})
+
+	start := time.Now()
+	_, err := wrapped.Generate(context.Background(), fantasy.Call{})
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, elapsed, 80*time.Millisecond, "wrapped model should have waited for backoff")
+}
+
+func TestRateLimitCoordinatorBackoffShared(t *testing.T) {
+	t.Parallel()
+
+	coord := NewRateLimitCoordinator()
+
+	model1 := newRateLimitedModel(&stubLanguageModel{provider: "openai"}, coord, "openai")
+	model2 := newRateLimitedModel(&stubLanguageModel{provider: "openai"}, coord, "openai")
+
+	model1.Generate(context.Background(), fantasy.Call{})
+
+	coord.RecordRateLimit("openai", &fantasy.ProviderError{
+		StatusCode:      http.StatusTooManyRequests,
+		ResponseHeaders: map[string]string{"retry-after-ms": "200"},
+	})
+
+	start := time.Now()
+	_, err := model2.Generate(context.Background(), fantasy.Call{})
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, elapsed, 150*time.Millisecond, "second model should observe backoff recorded from first model's provider")
+}

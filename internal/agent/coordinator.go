@@ -119,6 +119,11 @@ type coordinator struct {
 	extHost *ext.ExtensionHost // nil if no extensions // XRUSH: extension host
 
 	structuredSubagentFactory StructuredSubagentFactory // XRUSH: structured subagent factory
+	rateLimitCoord            *RateLimitCoordinator     // XRUSH: shared rate-limit backoff coordination
+
+	// configLoader resolves subagent configs with 3-layer merge:
+	// runtime > project YAML > builtin defaults.
+	configLoader *AgentConfigLoader
 
 	readyWg errgroup.Group
 }
@@ -151,20 +156,23 @@ func NewCoordinator(
 	skillTracker := skills.NewTracker(activeSkills)
 
 	c := &coordinator{
-		cfg:          cfg,
-		sessions:     sessions,
-		messages:     messages,
-		permissions:  permissions,
-		history:      history,
-		filetracker:  filetracker,
-		lspManager:   lspManager,
-		notify:       notify,
-		agents:       make(map[string]SessionAgent),
-		allSkills:    allSkills,
-		activeSkills: activeSkills,
-		skillTracker: skillTracker,
-		extHost:      extHost, // XRUSH: extension host wiring
+		cfg:            cfg,
+		sessions:       sessions,
+		messages:       messages,
+		permissions:    permissions,
+		history:        history,
+		filetracker:    filetracker,
+		lspManager:     lspManager,
+		notify:         notify,
+		agents:         make(map[string]SessionAgent),
+		allSkills:      allSkills,
+		activeSkills:   activeSkills,
+		skillTracker:   skillTracker,
+		extHost:        extHost,
+		rateLimitCoord: NewRateLimitCoordinator(),
 	}
+
+	c.configLoader = NewAgentConfigLoader(cfg.WorkingDir())
 
 	for _, opt := range opts {
 		opt(c)
@@ -314,6 +322,7 @@ func (c *coordinator) executeWithArchitectEditor(
 		slog.Warn("Failed to create architect language model, falling back to single model", "error", err)
 		return c.Run(ctx, sessionID, prompt, attachments...)
 	}
+	archLM = newRateLimitedModel(archLM, c.rateLimitCoord, archModelCfg.Provider)
 
 	archModel := Model{
 		Model:      archLM,
@@ -402,6 +411,7 @@ func (c *coordinator) executeWithArchitectEditor(
 				if editCatwalk != nil {
 					editLM, err := editProvider.LanguageModel(ctx, editCfg.Model)
 					if err == nil {
+						editLM = newRateLimitedModel(editLM, c.rateLimitCoord, editCfg.Provider)
 						editorModel = Model{
 							Model:      editLM,
 							CatwalkCfg: *editCatwalk,
@@ -934,10 +944,13 @@ func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Mo
 	if err != nil {
 		return Model{}, Model{}, err
 	}
+	largeModel = newRateLimitedModel(largeModel, c.rateLimitCoord, largeModelCfg.Provider)
+
 	smallModel, err := smallProvider.LanguageModel(ctx, smallModelID)
 	if err != nil {
 		return Model{}, Model{}, err
 	}
+	smallModel = newRateLimitedModel(smallModel, c.rateLimitCoord, smallModelCfg.Provider)
 
 	return Model{
 			Model:      largeModel,
@@ -1562,6 +1575,12 @@ func logDiscoveryStats(
 
 func (c *coordinator) StructuredSubagentFactory() StructuredSubagentFactory {
 	return c.structuredSubagentFactory
+}
+
+// LoadAgentConfig returns the merged AgentConfig for the named subagent,
+// applying precedence: runtime > project YAML > builtin defaults.
+func (c *coordinator) LoadAgentConfig(name string, runtime AgentConfig) (AgentConfig, error) {
+	return c.configLoader.Load(name, runtime)
 }
 
 func (c *coordinator) ResolveLCMModel(ctx context.Context, selected config.SelectedModel, providerCfg config.ProviderConfig) (Model, error) {
