@@ -22,8 +22,9 @@ var safeProcessorNames = map[string]struct{}{
 	"token_limiter":          {},
 	"system_prompt_scrubber": {},
 	// Tier 1 — zero deps, zero risk.
-	"unicode_normalizer": {},
-	"batch_parts":        {},
+	"unicode_normalizer":     {},
+	"workspace_instructions": {},
+	"batch_parts":            {},
 	// Tier 2 — safe with config.
 	"pii_detector":      {},
 	"message_selection": {},
@@ -31,6 +32,11 @@ var safeProcessorNames = map[string]struct{}{
 	"tool_search":       {},
 	"skills":            {},
 	"skill_search":      {},
+	"message_history":   {},
+	// Tier 3 — LLM-dependent processors.
+	"moderation":        {},
+	"prompt_injection":  {},
+	"language_detector": {},
 }
 
 const defaultTokenBudget = 200000
@@ -329,6 +335,37 @@ func buildProcessorRunner(
 			inputProcessors = append(inputProcessors, &processor.Skills{Skills: skillDefs})
 		case "skill_search":
 			inputProcessors = append(inputProcessors, &processor.SkillSearch{})
+		case "workspace_instructions":
+			inputProcessors = append(inputProcessors, &processor.WorkspaceInstructions{})
+		case "message_history":
+			mh := &processor.MessageHistory{Store: &processor.InMemoryStore{}}
+			inputProcessors = append(inputProcessors, mh)
+			outputProcessors = append(outputProcessors, mh)
+		case "moderation":
+			if completer == nil {
+				slog.Debug("Skipping moderation: no text completer available")
+				continue
+			}
+			threshold := 0.7
+			pc := perProcessor(cfg, name)
+			if pc != nil {
+				if v, ok := pc["threshold"].(float64); ok && v > 0 && v <= 1 {
+					threshold = v
+				}
+			}
+			inputProcessors = append(inputProcessors, processor.NewModerationProcessor(&completerAdapter{fn: completer}, threshold))
+		case "prompt_injection":
+			if completer == nil {
+				slog.Debug("Skipping prompt_injection: no text completer available")
+				continue
+			}
+			inputProcessors = append(inputProcessors, processor.NewPromptInjectionDetector(&completerAdapter{fn: completer}))
+		case "language_detector":
+			if completer == nil {
+				slog.Debug("Skipping language_detector: no text completer available")
+				continue
+			}
+			inputProcessors = append(inputProcessors, processor.NewLanguageDetector(&completerAdapter{fn: completer}))
 		}
 	}
 

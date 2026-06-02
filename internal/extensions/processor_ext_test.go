@@ -420,9 +420,6 @@ func TestBuildProcessorRunner_DestructiveNotWhitelisted(t *testing.T) {
 	t.Parallel()
 	destructive := []string{
 		"structured_output",
-		"moderation",
-		"workspace_instructions",
-		"message_history",
 	}
 	runner := buildProcessorRunner(destructive, nil, nil, nil, nil)
 	require.Nil(t, runner)
@@ -430,7 +427,7 @@ func TestBuildProcessorRunner_DestructiveNotWhitelisted(t *testing.T) {
 
 func TestSafeProcessorNames_Count(t *testing.T) {
 	t.Parallel()
-	require.Len(t, safeProcessorNames, 10)
+	require.Len(t, safeProcessorNames, 15)
 }
 
 func TestProcessorConfigSchema(t *testing.T) {
@@ -542,4 +539,30 @@ func TestDefaultProcessorsActive(t *testing.T) {
 	// system_prompt_scrubber is skipped without completer, so only 2 input + 1 output.
 	require.Len(t, runner.InputProcessors, 2)
 	require.Len(t, runner.OutputProcessors, 1)
+}
+
+func TestBuildProcessorRunner_LLMProcessors_SkipWithoutCompleter(t *testing.T) {
+	t.Parallel()
+	names := []string{"moderation", "prompt_injection", "language_detector"}
+	runner := buildProcessorRunner(names, nil, nil, nil, nil)
+	require.Nil(t, runner, "LLM processors should all skip without completer")
+}
+
+func TestBuildProcessorRunner_LLMProcessors_ConstructWithCompleter(t *testing.T) {
+	t.Parallel()
+	completer := func(_ context.Context, _, _ string) (string, error) {
+		return `{"score":0.0,"categories":[]}`, nil
+	}
+	names := []string{"moderation", "prompt_injection", "language_detector"}
+	runner := buildProcessorRunner(names, nil, completer, nil, nil)
+	require.NotNil(t, runner)
+	require.Len(t, runner.InputProcessors, 3)
+
+	ids := make([]string, len(runner.InputProcessors))
+	for i, p := range runner.InputProcessors {
+		ids[i] = p.ID()
+	}
+	require.Contains(t, ids, "moderation")
+	require.Contains(t, ids, "prompt_injection")
+	require.Contains(t, ids, "language_detector")
 }
