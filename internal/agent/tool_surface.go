@@ -179,6 +179,8 @@ func (s *ToolSurface) registerDefaults() {
 
 	s.Register("batch_edit", CapabilityFS)
 	s.RegisterWithMarkers("synthetic_output", CapabilityObservation, MarkerBeta)
+
+	s.Register("productive_execute", CapabilityExecution)
 }
 
 // Register adds a tool to the surface with the given capability bitmask.

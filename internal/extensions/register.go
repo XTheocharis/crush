@@ -25,4 +25,5 @@ func init() {
 	ext.RegisterExtension(&ModelRouterExtension{})
 	ext.RegisterExtension(&ProcessorExtension{})
 	ext.RegisterExtension(&StepAdapter{})
+	ext.RegisterExtension(TheProductiveExtension)
 }

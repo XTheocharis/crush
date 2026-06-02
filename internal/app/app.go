@@ -577,6 +577,7 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 
 	wireAgentConfigRestorer(app.AgentCoordinator) // XRUSH: post-compaction skill restoration
 	wireSwarmFactory(app.AgentCoordinator)        // XRUSH: swarm factory wiring
+	wireProductiveFactory(app.AgentCoordinator)   // XRUSH: productive factory wiring
 
 	if app.ExtHost != nil {
 		if err := app.ExtHost.RefreshContributedTools(ctx); err != nil {

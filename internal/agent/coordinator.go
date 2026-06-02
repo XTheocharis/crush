@@ -120,6 +120,7 @@ type coordinator struct {
 
 	structuredSubagentFactory StructuredSubagentFactory // XRUSH: structured subagent factory
 	rateLimitCoord            *RateLimitCoordinator     // XRUSH: shared rate-limit backoff coordination
+	operatorConfig            OperatorConfig            // XRUSH: stored as config, NOT *Operator (visited sync.Map leaks state)
 
 	// configLoader resolves subagent configs with 3-layer merge:
 	// runtime > project YAML > builtin defaults.
@@ -173,6 +174,11 @@ func NewCoordinator(
 	}
 
 	c.configLoader = NewAgentConfigLoader(cfg.WorkingDir())
+	c.operatorConfig = OperatorConfig{
+		MaxDepth:   defaultMaxDepth,
+		MaxWorkers: defaultMaxWorkers,
+		Strategy:   StrategyConditional,
+	}
 
 	for _, opt := range opts {
 		opt(c)
@@ -382,6 +388,33 @@ func (c *coordinator) executeWithArchitectEditor(
 	if err := gate.Check(plan); err != nil {
 		slog.Info("Architect plan blocked by approval gate", "steps", len(plan.Steps))
 		return nil, fmt.Errorf("plan approval gate: %w", err)
+	}
+
+	// XRUSH: For complex multi-step plans (>3 steps), use Operator for
+	// recursive DAG decomposition with fresh subagents per subtask.
+	if len(plan.Steps) > 3 && c.structuredSubagentFactory != nil {
+		executor := makeSubagentExecutor(c.structuredSubagentFactory, sessionID)
+		subtasks := planStepsToSubtasks(plan.Steps)
+		decomposer := &planDecomposer{steps: subtasks}
+		op := NewOperator(c.operatorConfig, executor, decomposer)
+		opResult := op.Run(ctx, prompt, nil)
+
+		if opResult.Error == "" && opResult.Success {
+			for i := range plan.Steps {
+				plan.MarkStepCompleted(i)
+			}
+			slog.Info("Operator completed multi-step plan",
+				"steps", len(plan.Steps),
+				"strategy", opResult.Strategy,
+			)
+			return &fantasy.AgentResult{
+				Response: fantasy.Response{Content: fantasy.ResponseContent{fantasy.TextContent{Text: opResult.Result}}},
+			}, nil
+		}
+		slog.Warn("Operator failed, falling back to single-editor-prompt",
+			"error", opResult.Error,
+			"steps", len(plan.Steps),
+		)
 	}
 
 	// Phase 2: Editor executes the plan.
@@ -1577,6 +1610,16 @@ func (c *coordinator) StructuredSubagentFactory() StructuredSubagentFactory {
 	return c.structuredSubagentFactory
 }
 
+func makeSubagentExecutor(factory StructuredSubagentFactory, sessionID string) SubagentExecutor {
+	return func(ctx context.Context, req StructuredRequest) (StructuredResponse, error) {
+		sa, err := factory.NewStructuredSubagent(ctx, sessionID)
+		if err != nil {
+			return StructuredResponse{}, err
+		}
+		return sa.Execute(ctx, req)
+	}
+}
+
 // LoadAgentConfig returns the merged AgentConfig for the named subagent,
 // applying precedence: runtime > project YAML > builtin defaults.
 func (c *coordinator) LoadAgentConfig(name string, runtime AgentConfig) (AgentConfig, error) {
@@ -1612,4 +1655,33 @@ func (c *coordinator) ResolveLCMModel(ctx context.Context, selected config.Selec
 		CatwalkCfg: catwalkCfg,
 		ModelCfg:   selected,
 	}, nil
+}
+
+func planStepsToSubtasks(steps []PlanStep) []Subtask {
+	subtasks := make([]Subtask, len(steps))
+	for i, step := range steps {
+		ctx := make(map[string]string)
+		for _, f := range step.TargetFiles {
+			ctx[fmt.Sprintf("file_%s", f)] = f
+		}
+		deps := make([]string, len(step.Dependencies))
+		for j, depIdx := range step.Dependencies {
+			deps[j] = fmt.Sprintf("step-%d", depIdx)
+		}
+		subtasks[i] = Subtask{
+			ID:        fmt.Sprintf("step-%d", i+1),
+			Task:      step.Description,
+			Context:   ctx,
+			DependsOn: deps,
+		}
+	}
+	return subtasks
+}
+
+type planDecomposer struct {
+	steps []Subtask
+}
+
+func (d *planDecomposer) Decompose(_ context.Context, _ string, _ map[string]string) ([]Subtask, error) {
+	return d.steps, nil
 }

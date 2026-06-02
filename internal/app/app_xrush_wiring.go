@@ -442,6 +442,27 @@ func wireSwarmFactory(coord agent.Coordinator) {
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireProductiveFactory]
+func wireProductiveFactory(coord agent.Coordinator) {
+	prod := extensions.TheProductiveExtension
+	if prod == nil {
+		slog.Warn("ProductiveExtension singleton is nil, skipping factory wiring")
+		return
+	}
+
+	factory := coord.StructuredSubagentFactory()
+	if factory == nil {
+		slog.Warn("Coordinator StructuredSubagentFactory is nil, skipping productive factory wiring")
+		return
+	}
+
+	prod.SetFactory(factory)
+	prod.RebuildTools()
+	slog.Info("Productive factory wired and tools rebuilt")
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wirePromptAssembly]
 // wirePromptAssembly connects the LCM extension to the PromptAssemblyExtension
 // so that the system prompt modifier can inject LCM context files.
