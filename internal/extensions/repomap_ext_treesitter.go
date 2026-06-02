@@ -76,6 +76,9 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 		}
 		return svc.ShouldInject(sessionID, runKey)
 	}
+	e.fileScores = func(ctx context.Context, sessionID string) map[string]float64 {
+		return svc.FileScores(ctx, sessionID)
+	}
 	e.mu.Unlock()
 
 	return baseRepomapTools(refreshSync, refreshAsync, rawDB)

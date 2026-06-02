@@ -24,6 +24,7 @@ type RepomapExtension struct {
 	asyncRefresh    func(ctx context.Context, sessionID string) error
 	loadCachedMap   func(sessionID string) (string, int)
 	shouldInjectMap func(ctx context.Context, sessionID string) bool
+	fileScores      func(ctx context.Context, sessionID string) map[string]float64
 }
 
 func (e *RepomapExtension) Name() string { return "repomap" }
@@ -125,6 +126,17 @@ func (e *RepomapExtension) ShouldInjectMap(ctx context.Context, sessionID string
 	e.mu.RUnlock()
 	if fn == nil {
 		return false
+	}
+	return fn(ctx, sessionID)
+}
+
+// FileScores returns PageRank-based file scores for the given session.
+func (e *RepomapExtension) FileScores(ctx context.Context, sessionID string) map[string]float64 {
+	e.mu.RLock()
+	fn := e.fileScores
+	e.mu.RUnlock()
+	if fn == nil {
+		return nil
 	}
 	return fn(ctx, sessionID)
 }

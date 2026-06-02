@@ -159,6 +159,82 @@ func (x *xrushConfig) toConfig() *Config {
 		}
 	}
 
+	// Wire observation config → LCM observation options.
+	if x.Observation != nil {
+		obs := x.Observation
+		hasObserver := obs.Observer != nil && (obs.Observer.MessageTokens > 0 || obs.Observer.BufferRatio > 0 || obs.Observer.Model != "")
+		hasReflector := obs.Reflector != nil && (obs.Reflector.ObservationTokens > 0 || obs.Reflector.BufferActivation > 0 || obs.Reflector.Model != "")
+		if hasObserver || hasReflector {
+			if cfg.Options == nil {
+				cfg.Options = &Options{}
+			}
+			if cfg.Options.LCM == nil {
+				cfg.Options.LCM = &LCMOptions{}
+			}
+			observation := &ObservationOptions{}
+			if obs.Observer != nil {
+				observation.ObserverMessageTokens = obs.Observer.MessageTokens
+				observation.ObserverBufferRatio = obs.Observer.BufferRatio
+				observation.ObserverModel = obs.Observer.Model
+			}
+			if obs.Reflector != nil {
+				observation.ReflectorObservationTokens = obs.Reflector.ObservationTokens
+				observation.ReflectorBufferActivation = obs.Reflector.BufferActivation
+				observation.ReflectorModel = obs.Reflector.Model
+			}
+			cfg.Options.LCM.Observation = observation
+		}
+	}
+
+	// Wire quality config → validation options.
+	if x.Quality != nil {
+		if x.Quality.LintOnWrite || x.Quality.AutoCommit || x.Quality.MaxRetries > 0 {
+			if cfg.Options == nil {
+				cfg.Options = &Options{}
+			}
+			if cfg.Options.Validation == nil {
+				cfg.Options.Validation = &ValidationOptions{}
+			}
+			cfg.Options.Validation.AutoFix = x.Quality.LintOnWrite
+			cfg.Options.Validation.AutoFixLoopEnabled = x.Quality.AutoCommit
+			cfg.Options.Validation.MaxAutoFixRetries = x.Quality.MaxRetries
+		}
+	}
+
+	// Wire context autoCompact config → LCM options.
+	if x.Context != nil && x.Context.AutoCompact != nil {
+		ac := x.Context.AutoCompact
+		if ac.BufferTokens > 0 || ac.OutputReservation > 0 || ac.PostCompact != nil {
+			if cfg.Options == nil {
+				cfg.Options = &Options{}
+			}
+			if cfg.Options.LCM == nil {
+				cfg.Options.LCM = &LCMOptions{}
+			}
+			cfg.Options.LCM.LargeToolOutputTokenThreshold = ac.BufferTokens
+			cfg.Options.LCM.CtxCutoffThreshold = float64(ac.OutputReservation) / 100000
+			if ac.PostCompact != nil {
+				cfg.Options.LCM.PostCompactMaxFiles = ac.PostCompact.MaxFiles
+				cfg.Options.LCM.PostCompactTokenBudget = int64(ac.PostCompact.TokenBudget)
+			}
+		}
+	}
+
+	// Wire DCP strategies config → LCM options.
+	if x.DCP != nil && x.DCP.Strategies != nil {
+		s := x.DCP.Strategies
+		if s.Deduplication || s.PurgeErrors {
+			if cfg.Options == nil {
+				cfg.Options = &Options{}
+			}
+			if cfg.Options.LCM == nil {
+				cfg.Options.LCM = &LCMOptions{}
+			}
+			cfg.Options.LCM.DeduplicationEnabled = s.Deduplication
+			cfg.Options.LCM.PurgeErrorsEnabled = s.PurgeErrors
+		}
+	}
+
 	return cfg
 }
 
@@ -249,12 +325,72 @@ func fromConfig(cfg *Config) *xrushConfig {
 
 	if cfg.Options != nil && cfg.Options.LCM != nil {
 		lcm := cfg.Options.LCM
-		if lcm.CtxCutoffThreshold > 0 || lcm.LargeToolOutputTokenThreshold > 0 {
+		if lcm.CtxCutoffThreshold > 0 || lcm.LargeToolOutputTokenThreshold > 0 || lcm.PostCompactMaxFiles > 0 || lcm.PostCompactTokenBudget > 0 {
+			ac := &xrushAutoCompactConfig{
+				BufferTokens:      lcm.LargeToolOutputTokenThreshold,
+				OutputReservation: int(lcm.CtxCutoffThreshold * 100000),
+			}
+			if lcm.PostCompactMaxFiles > 0 || lcm.PostCompactTokenBudget > 0 {
+				ac.PostCompact = &xrushPostCompactConfig{
+					MaxFiles:    lcm.PostCompactMaxFiles,
+					TokenBudget: int(lcm.PostCompactTokenBudget),
+				}
+			}
 			dc.Context = &xrushContextConfig{
-				AutoCompact: &xrushAutoCompactConfig{
-					BufferTokens:      lcm.LargeToolOutputTokenThreshold,
-					OutputReservation: int(lcm.CtxCutoffThreshold * 100000),
-				},
+				AutoCompact: ac,
+			}
+		}
+
+		if lcm.Observation != nil {
+			obs := lcm.Observation
+			xobs := &xrushObservationConfig{}
+			hasObserver := obs.ObserverMessageTokens > 0 || obs.ObserverBufferRatio > 0 || obs.ObserverModel != ""
+			hasReflector := obs.ReflectorObservationTokens > 0 || obs.ReflectorBufferActivation > 0 || obs.ReflectorModel != ""
+			if hasObserver {
+				xobs.Observer = &xrushObserverConfig{
+					MessageTokens: obs.ObserverMessageTokens,
+					BufferRatio:   obs.ObserverBufferRatio,
+					Model:         obs.ObserverModel,
+				}
+			}
+			if hasReflector {
+				xobs.Reflector = &xrushReflectorConfig{
+					ObservationTokens: obs.ReflectorObservationTokens,
+					BufferActivation:  obs.ReflectorBufferActivation,
+					Model:             obs.ReflectorModel,
+				}
+			}
+			if hasObserver || hasReflector {
+				dc.Observation = xobs
+			}
+		}
+
+		if lcm.DeduplicationEnabled || lcm.PurgeErrorsEnabled {
+			if dc.DCP == nil {
+				dc.DCP = &xrushDCPConfig{}
+			}
+			dc.DCP.Strategies = &xrushDCPStrategiesConfig{
+				Deduplication: lcm.DeduplicationEnabled,
+				PurgeErrors:   lcm.PurgeErrorsEnabled,
+			}
+		}
+
+		if lcm.Nudge != nil && (lcm.Nudge.MaxContextLimit > 0 || lcm.Nudge.MinContextLimit > 0 || lcm.Nudge.NudgeFrequency > 0) {
+			if dc.DCP == nil {
+				dc.DCP = &xrushDCPConfig{}
+			}
+			dc.DCP.Compress = &xrushDCPCompressConfig{
+				MaxContextLimit: int(lcm.Nudge.MaxContextLimit),
+				MinContextLimit: int(lcm.Nudge.MinContextLimit),
+				NudgeFrequency:  lcm.Nudge.NudgeFrequency,
+			}
+		}
+
+		if cfg.Options.Validation != nil && (cfg.Options.Validation.AutoFix || cfg.Options.Validation.AutoFixLoopEnabled || cfg.Options.Validation.MaxAutoFixRetries > 0) {
+			dc.Quality = &xrushQualityConfig{
+				LintOnWrite: cfg.Options.Validation.AutoFix,
+				AutoCommit:  cfg.Options.Validation.AutoFixLoopEnabled,
+				MaxRetries:  cfg.Options.Validation.MaxAutoFixRetries,
 			}
 		}
 	}

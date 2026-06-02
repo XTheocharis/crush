@@ -118,6 +118,8 @@ type coordinator struct {
 
 	extHost *ext.ExtensionHost // nil if no extensions // XRUSH: extension host
 
+	fileScoreProvider tools.FileScoreProvider // XRUSH: PageRank file scores for batch read
+
 	structuredSubagentFactory StructuredSubagentFactory // XRUSH: structured subagent factory
 	rateLimitCoord            *RateLimitCoordinator     // XRUSH: shared rate-limit backoff coordination
 	operatorConfig            OperatorConfig            // XRUSH: stored as config, NOT *Operator (visited sync.Map leaks state)
@@ -171,6 +173,12 @@ func NewCoordinator(
 		skillTracker:   skillTracker,
 		extHost:        extHost,
 		rateLimitCoord: NewRateLimitCoordinator(),
+	}
+
+	if extHost != nil {
+		if fp, ok := extHost.ExtensionByName("repomap").(tools.FileScoreProvider); ok {
+			c.fileScoreProvider = fp
+		}
 	}
 
 	c.configLoader = NewAgentConfigLoader(cfg.WorkingDir())
@@ -843,7 +851,7 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		tools.NewLsTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Config().Tools.Ls),
 		tools.NewSourcegraphTool(nil),
 		tools.NewTodosTool(c.sessions),
-		tools.NewViewTool(c.lspManager, c.permissions, c.filetracker, c.skillTracker, c.cfg.WorkingDir(), c.cfg.Config().Options.SkillsPaths...),
+		tools.NewViewTool(c.lspManager, c.permissions, c.filetracker, c.skillTracker, c.cfg.WorkingDir(), c.fileScoreProvider, c.cfg.Config().Options.SkillsPaths...),
 		tools.NewWriteTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
 	)
 
@@ -899,6 +907,26 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})
 
+	// Filter by tool surface visibility. Tools whose runtime dependencies
+	// are not met (e.g., LSP tools when no LSP, LCM tools when no LCM)
+	// are excluded from the tool list.
+	if surface := c.getToolSurface(); surface != nil {
+		if visible := surface.GetVisibleTools(); len(visible) > 0 {
+			visibleSet := make(map[string]bool, len(visible))
+			for _, name := range visible {
+				visibleSet[name] = true
+			}
+			n := 0
+			for _, tool := range filteredTools {
+				if visibleSet[tool.Info().Name] {
+					filteredTools[n] = tool
+					n++
+				}
+			}
+			filteredTools = filteredTools[:n]
+		}
+	}
+
 	// Wrap tools with hook interception for the top-level agent only.
 	// Sub-agents (the `agent` task tool, `agentic_fetch`, etc.) run
 	// without hook interception to avoid firing the user's hook N times
@@ -907,6 +935,28 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 	filteredTools = wrapToolsWithHooks(filteredTools, preToolRunner, postToolRunner, isSubAgent)
 
 	return filteredTools, nil
+}
+
+// getToolSurface retrieves the shared ToolSurface from the tool-surface
+// extension via the extension host. Returns nil if unavailable.
+func (c *coordinator) getToolSurface() *ToolSurface {
+	if c.extHost == nil {
+		return nil
+	}
+	e := c.extHost.ExtensionByName("tool-surface")
+	if e == nil {
+		return nil
+	}
+	type surfaceGetter interface{ GetSurface() any }
+	sg, ok := e.(surfaceGetter)
+	if !ok {
+		return nil
+	}
+	s, ok := sg.GetSurface().(*ToolSurface)
+	if !ok {
+		return nil
+	}
+	return s
 }
 
 // TODO: when we support multiple agents we need to change this so that we pass in the agent specific model config

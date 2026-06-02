@@ -19,8 +19,9 @@ import (
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
-// maxAutoFixIterations caps the auto-fix loop to prevent infinite cycles.
-const maxAutoFixIterations = 3
+// defaultMaxAutoFixIterations is the fallback when
+// Validation.MaxAutoFixRetries is not set.
+const defaultMaxAutoFixIterations = 3
 
 // convergenceThreshold is the number of consecutive iterations with the same
 // error fingerprint that triggers a non-convergence stop.
@@ -40,6 +41,13 @@ type AutofixExtension struct {
 	// lint→format cycle. When true, the full lint→fix→test→reflect
 	// cycle is enabled via fullAutoFixCycle.
 	loopEnabled bool
+
+	// maxIterations caches MaxAutoFixRetries from config, falling back
+	// to defaultMaxAutoFixIterations when unset.
+	maxIterations int
+
+	// autoCommit caches the AutoFix flag from config for auto-commit.
+	autoCommit bool
 }
 
 func (e *AutofixExtension) Name() string { return "autofix" }
@@ -47,7 +55,10 @@ func (e *AutofixExtension) Name() string { return "autofix" }
 func (e *AutofixExtension) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
 	e.active = true
-	e.loopEnabled = autofixLoopEnabled(host.Config())
+	cfg := host.Config()
+	e.loopEnabled = autofixLoopEnabled(cfg)
+	e.maxIterations = autofixMaxRetries(cfg)
+	e.autoCommit = autofixAutoCommit(cfg)
 	return nil
 }
 
@@ -58,6 +69,27 @@ func autofixLoopEnabled(cfg *config.Config) bool {
 		return false
 	}
 	return cfg.Options.Validation.AutoFixLoopEnabled
+}
+
+// autofixMaxRetries reads MaxAutoFixRetries from config, falling back to
+// defaultMaxAutoFixIterations when zero or unset.
+func autofixMaxRetries(cfg *config.Config) int {
+	if cfg == nil || cfg.Options == nil || cfg.Options.Validation == nil {
+		return defaultMaxAutoFixIterations
+	}
+	if cfg.Options.Validation.MaxAutoFixRetries > 0 {
+		return cfg.Options.Validation.MaxAutoFixRetries
+	}
+	return defaultMaxAutoFixIterations
+}
+
+// autofixAutoCommit reads the AutoFix flag from config for auto-commit
+// behavior. Returns false when the config or Validation sub-config is nil.
+func autofixAutoCommit(cfg *config.Config) bool {
+	if cfg == nil || cfg.Options == nil || cfg.Options.Validation == nil {
+		return false
+	}
+	return cfg.Options.Validation.AutoFix
 }
 
 func (e *AutofixExtension) Shutdown(_ context.Context) error {
@@ -121,7 +153,7 @@ func (e *AutofixExtension) onRunEnd(
 		return nil
 	}
 
-	for attempt := 1; attempt <= maxAutoFixIterations; attempt++ {
+	for attempt := 1; attempt <= e.maxIterations; attempt++ {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -159,7 +191,7 @@ func (e *AutofixExtension) onRunEnd(
 
 	if len(finalErrors) > 0 {
 		slog.Warn("Autofix extension: rolling back, errors remain after max retries",
-			"max_retries", maxAutoFixIterations,
+			"max_retries", e.maxIterations,
 			"remaining_errors", len(finalErrors))
 		if restoreErr := rollback.Restore(snapshot); restoreErr != nil {
 			slog.Error("Autofix extension: rollback failed", "error", restoreErr)
@@ -327,7 +359,7 @@ func (e *AutofixExtension) fullAutoFixCycle(
 	var lastFingerprint string
 	var convergenceCount int
 
-	for attempt := 1; attempt <= maxAutoFixIterations; attempt++ {
+	for attempt := 1; attempt <= e.maxIterations; attempt++ {
 		select {
 		case <-ctx.Done():
 			return
@@ -444,7 +476,7 @@ func (e *AutofixExtension) fullAutoFixCycle(
 
 	if len(finalErrors) > 0 {
 		slog.Warn("Autofix extension: rolling back, errors remain after max retries",
-			"max_retries", maxAutoFixIterations,
+			"max_retries", e.maxIterations,
 			"remaining_errors", len(finalErrors))
 		if restoreErr := rollback.Restore(snapshot); restoreErr != nil {
 			slog.Error("Autofix extension: rollback failed", "error", restoreErr)

@@ -57,6 +57,12 @@ type ObservationCoordinator struct {
 	mu        sync.Mutex
 	threshold int64
 	strategy  ObservationStrategy
+	// observerModel is the model override for observation extraction. When
+	// empty, the session model is used.
+	observerModel string
+	// reflectorModel is the model override for reflection. When empty, the
+	// session model is used.
+	reflectorModel string
 	// pending tracks session IDs with an in-flight observation to avoid
 	// stacking duplicate goroutines for the same session.
 	pending map[string]struct{}
@@ -65,10 +71,24 @@ type ObservationCoordinator struct {
 	recentObs map[string]*degenerateRing
 }
 
+// ObservationCoordinatorConfig holds the configuration values for an
+// ObservationCoordinator extracted from the runtime config.
+type ObservationCoordinatorConfig struct {
+	ObserverModel  string
+	ReflectorModel string
+}
+
 // NewObservationCoordinator creates a coordinator using the given store and LLM
 // client. If llm is nil, Observe will be a no-op. If strategy is nil,
 // DefaultStrategy is used.
 func NewObservationCoordinator(store *Store, llm LLMClient, threshold int64, strategy ObservationStrategy) *ObservationCoordinator {
+	return NewObservationCoordinatorWithConfig(store, llm, threshold, strategy, ObservationCoordinatorConfig{})
+}
+
+// NewObservationCoordinatorWithConfig creates a coordinator with full config
+// support. If llm is nil, Observe will be a no-op. If strategy is nil,
+// DefaultStrategy is used.
+func NewObservationCoordinatorWithConfig(store *Store, llm LLMClient, threshold int64, strategy ObservationStrategy, cfg ObservationCoordinatorConfig) *ObservationCoordinator {
 	if threshold <= 0 {
 		threshold = DefaultObservationTokenThreshold
 	}
@@ -76,12 +96,14 @@ func NewObservationCoordinator(store *Store, llm LLMClient, threshold int64, str
 		strategy = DefaultStrategy{}
 	}
 	return &ObservationCoordinator{
-		store:     store,
-		llm:       llm,
-		threshold: threshold,
-		strategy:  strategy,
-		pending:   make(map[string]struct{}),
-		recentObs: make(map[string]*degenerateRing),
+		store:          store,
+		llm:            llm,
+		threshold:      threshold,
+		strategy:       strategy,
+		observerModel:  cfg.ObserverModel,
+		reflectorModel: cfg.ReflectorModel,
+		pending:        make(map[string]struct{}),
+		recentObs:      make(map[string]*degenerateRing),
 	}
 }
 
@@ -198,6 +220,34 @@ func (oc *ObservationCoordinator) SetLLMClient(llm LLMClient) {
 	oc.mu.Lock()
 	defer oc.mu.Unlock()
 	oc.llm = llm
+}
+
+// SetStrategy updates the observation strategy used for filtering and
+// formatting observations.
+func (oc *ObservationCoordinator) SetStrategy(strategy ObservationStrategy) {
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	if strategy != nil {
+		oc.strategy = strategy
+	}
+}
+
+// SetThreshold updates the token count threshold for triggering observations.
+func (oc *ObservationCoordinator) SetThreshold(threshold int64) {
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	if threshold > 0 {
+		oc.threshold = threshold
+	}
+}
+
+// SetModelOverrides updates the model overrides for observation extraction
+// and reflection.
+func (oc *ObservationCoordinator) SetModelOverrides(observerModel, reflectorModel string) {
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	oc.observerModel = observerModel
+	oc.reflectorModel = reflectorModel
 }
 
 // Threshold returns the configured token threshold for triggering observations.

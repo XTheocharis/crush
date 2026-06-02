@@ -308,6 +308,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			// Use latest tools (updated by SetTools when MCP tools change).
 			prepared.Tools = a.tools.Copy()
 
+			// Phase-based tool filtering: during Planning phase, hide edit
+			// tools to encourage the agent to plan before making changes.
+			prepared.Tools = applyPhaseFilter(prepared.Tools, call.Prompt)
+
 			queuedCalls, _ := a.messageQueue.Get(call.SessionID)
 			a.messageQueue.Del(call.SessionID)
 			for _, queued := range queuedCalls {

@@ -58,21 +58,43 @@ type AutoFixLoop struct {
 	WorkingDir    string
 }
 
+// AutoFixLoopOptions holds optional configuration for NewAutoFixLoop.
+// Zero values fall back to sensible defaults.
+type AutoFixLoopOptions struct {
+	// MaxRetries caps the number of fix iterations. Defaults to 3.
+	MaxRetries int
+	// AutoCommit controls automatic git commits after successful fixes.
+	// Defaults to disabled.
+	AutoCommit AutoCommitConfig
+}
+
 // NewAutoFixLoop creates an AutoFixLoop with sensible defaults.
+// When opts fields are zero, defaults are applied:
+//   - MaxRetries: 3
+//   - AutoCommit: disabled
 func NewAutoFixLoop(
 	linter Linter,
 	tester Tester,
 	fixer *tools.AutoFixer,
 	rollback *tools.RollbackManager,
+	opts ...AutoFixLoopOptions,
 ) *AutoFixLoop {
+	var o AutoFixLoopOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	maxRetries := o.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
 	return &AutoFixLoop{
 		Linter:        linter,
 		Tester:        tester,
 		Fixer:         fixer,
 		Rollback:      rollback,
-		MaxRetries:    3,
+		MaxRetries:    maxRetries,
 		Enabled:       true,
-		AutoCommitCfg: AutoCommitConfig{Enabled: false},
+		AutoCommitCfg: o.AutoCommit,
 	}
 }
 

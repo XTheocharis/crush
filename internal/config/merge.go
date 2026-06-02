@@ -114,11 +114,21 @@ func (o Options) merge(t Options) Options {
 		o.LCM.LargeToolOutputTokenThreshold = cmp.Or(t.LCM.LargeToolOutputTokenThreshold, o.LCM.LargeToolOutputTokenThreshold)
 		o.LCM.ExplorerOutputProfile = cmp.Or(t.LCM.ExplorerOutputProfile, o.LCM.ExplorerOutputProfile)
 		o.LCM.OperationalMemoryEnabled = o.LCM.OperationalMemoryEnabled || t.LCM.OperationalMemoryEnabled
+		o.LCM.PostCompactMaxFiles = cmp.Or(t.LCM.PostCompactMaxFiles, o.LCM.PostCompactMaxFiles)
+		o.LCM.PostCompactTokenBudget = cmp.Or(t.LCM.PostCompactTokenBudget, o.LCM.PostCompactTokenBudget)
+		o.LCM.DeduplicationEnabled = o.LCM.DeduplicationEnabled || t.LCM.DeduplicationEnabled
+		o.LCM.PurgeErrorsEnabled = o.LCM.PurgeErrorsEnabled || t.LCM.PurgeErrorsEnabled
 		if t.LCM.Observation != nil {
 			if o.LCM.Observation == nil {
 				o.LCM.Observation = &ObservationOptions{}
 			}
 			o.LCM.Observation.Strategy = cmp.Or(t.LCM.Observation.Strategy, o.LCM.Observation.Strategy)
+			o.LCM.Observation.ObserverMessageTokens = cmp.Or(t.LCM.Observation.ObserverMessageTokens, o.LCM.Observation.ObserverMessageTokens)
+			o.LCM.Observation.ObserverBufferRatio = cmp.Or(t.LCM.Observation.ObserverBufferRatio, o.LCM.Observation.ObserverBufferRatio)
+			o.LCM.Observation.ObserverModel = cmp.Or(t.LCM.Observation.ObserverModel, o.LCM.Observation.ObserverModel)
+			o.LCM.Observation.ReflectorObservationTokens = cmp.Or(t.LCM.Observation.ReflectorObservationTokens, o.LCM.Observation.ReflectorObservationTokens)
+			o.LCM.Observation.ReflectorBufferActivation = cmp.Or(t.LCM.Observation.ReflectorBufferActivation, o.LCM.Observation.ReflectorBufferActivation)
+			o.LCM.Observation.ReflectorModel = cmp.Or(t.LCM.Observation.ReflectorModel, o.LCM.Observation.ReflectorModel)
 		}
 		if t.LCM.Nudge != nil {
 			if o.LCM.Nudge == nil {

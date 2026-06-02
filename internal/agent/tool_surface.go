@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"charm.land/fantasy"
 )
 
 // Capability is a 6-bit bitmask identifying a tool's functional category.
@@ -420,4 +422,30 @@ var surfaceEditKeywords = []string{
 var surfacePlanKeywords = []string{
 	"plan", "design", "architect", "review", "analyze", "think",
 	"consider", "evaluate", "assess", "investigate", "explore", "understand",
+}
+
+// applyPhaseFilter filters a tool list based on the current agent phase
+// determined from the prompt. During Planning phase, edit tools are hidden.
+// No-op for other phases.
+func applyPhaseFilter(tools []fantasy.AgentTool, prompt string) []fantasy.AgentTool {
+	phase := ClassifyPhase(prompt)
+	if phase != PhasePlanning {
+		return tools
+	}
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Info().Name
+	}
+	filtered := PhaseFilteredTools(names, phase)
+	allowed := make(map[string]bool, len(filtered))
+	for _, n := range filtered {
+		allowed[n] = true
+	}
+	result := make([]fantasy.AgentTool, 0, len(filtered))
+	for _, t := range tools {
+		if allowed[t.Info().Name] {
+			result = append(result, t)
+		}
+	}
+	return result
 }

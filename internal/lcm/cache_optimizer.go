@@ -229,6 +229,15 @@ type CacheOptimizerConfig struct {
 	// NudgeInjector optionally injects context-limit nudges. When nil, no
 	// nudge section is added.
 	NudgeInjector *nudge.NudgeInjector
+
+	// TurnCountFunc returns the current turn count for the session. When
+	// nil, TurnCount defaults to 0 (no turn-based nudges).
+	TurnCountFunc func() int64
+
+	// IterationCountFunc returns the current iteration count for the
+	// session. When nil, IterationCount defaults to 0 (no iteration-based
+	// nudges).
+	IterationCountFunc func() int64
 }
 
 // CacheOptimizer implements Layers 6 and 7 of the compaction framework.
@@ -593,8 +602,21 @@ func (o *CacheOptimizer) assembleSections(builder *CompactPromptBuilder, entries
 		}
 		if totalTokens > 0 {
 			const defaultContextWindow = 200000
-			nudgeResult, err := o.cfg.NudgeInjector.Inject(
-				context.Background(), "", totalTokens, defaultContextWindow)
+			var turnCount, iterCount int64
+			if o.cfg.TurnCountFunc != nil {
+				turnCount = o.cfg.TurnCountFunc()
+			}
+			if o.cfg.IterationCountFunc != nil {
+				iterCount = o.cfg.IterationCountFunc()
+			}
+			nudgeResult, err := o.cfg.NudgeInjector.InjectFull(
+				context.Background(), nudge.InjectParams{
+					Prompt:         "",
+					CurrentTokens:  totalTokens,
+					ContextWindow:  defaultContextWindow,
+				TurnCount:      int(turnCount),
+				IterationCount: int(iterCount),
+				})
 			if err == nil && nudgeResult != "" {
 				builder.SetSection(SectionNudge, nudgeResult)
 			}

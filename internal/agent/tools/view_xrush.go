@@ -15,6 +15,12 @@ import (
 	"github.com/charmbracelet/crush/internal/filetracker"
 )
 
+// FileScoreProvider returns PageRank-based file scores for a session.
+// Returns nil when scores are unavailable.
+type FileScoreProvider interface {
+	FileScores(ctx context.Context, sessionID string) map[string]float64
+}
+
 const (
 	batchMaxWorkers         = 8
 	batchCharsPerToken      = 4
@@ -32,6 +38,7 @@ func handleBatchRead(
 	workingDir string,
 	ft filetracker.Service,
 	sessionID string,
+	scoreProvider FileScoreProvider,
 ) (fantasy.ToolResponse, error) {
 	resolved := make([]string, 0, len(params.FilePaths))
 	for _, p := range params.FilePaths {
@@ -46,7 +53,12 @@ func handleBatchRead(
 		readSet[p] = struct{}{}
 	}
 
-	results := batchReadFiles(ctx, unique, batchDefaultTokenBudget, readSet, nil)
+	var fileScores map[string]float64
+	if scoreProvider != nil {
+		fileScores = scoreProvider.FileScores(ctx, sessionID)
+	}
+
+	results := batchReadFiles(ctx, unique, batchDefaultTokenBudget, readSet, fileScores)
 
 	var b strings.Builder
 	var paths []string

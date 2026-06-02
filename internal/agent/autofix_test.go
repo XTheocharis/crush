@@ -297,10 +297,44 @@ func TestNewAutoFixLoop_Defaults(t *testing.T) {
 	loop := NewAutoFixLoop(linter, tester, fixer, rollback)
 	require.Equal(t, 3, loop.MaxRetries)
 	require.True(t, loop.Enabled)
+	require.False(t, loop.AutoCommitCfg.Enabled)
 	require.Same(t, linter, loop.Linter)
 	require.Same(t, tester, loop.Tester)
 	require.Same(t, fixer, loop.Fixer)
 	require.Same(t, rollback, loop.Rollback)
+}
+
+func TestNewAutoFixLoop_CustomOptions(t *testing.T) {
+	t.Parallel()
+
+	linter := &mockLinter{}
+	tester := &mockTester{}
+	fixer := tools.NewAutoFixer(nil, nil, nil, nil)
+	rollback := tools.NewRollbackManager()
+
+	t.Run("custom max retries", func(t *testing.T) {
+		t.Parallel()
+		loop := NewAutoFixLoop(linter, tester, fixer, rollback, AutoFixLoopOptions{
+			MaxRetries: 7,
+		})
+		require.Equal(t, 7, loop.MaxRetries)
+	})
+
+	t.Run("custom auto commit enabled", func(t *testing.T) {
+		t.Parallel()
+		loop := NewAutoFixLoop(linter, tester, fixer, rollback, AutoFixLoopOptions{
+			AutoCommit: AutoCommitConfig{Enabled: true},
+		})
+		require.True(t, loop.AutoCommitCfg.Enabled)
+	})
+
+	t.Run("zero max retries falls back to default", func(t *testing.T) {
+		t.Parallel()
+		loop := NewAutoFixLoop(linter, tester, fixer, rollback, AutoFixLoopOptions{
+			MaxRetries: 0,
+		})
+		require.Equal(t, 3, loop.MaxRetries)
+	})
 }
 
 func TestAutoFixLoop_Disabled(t *testing.T) {

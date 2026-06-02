@@ -176,6 +176,24 @@ type Manager interface {
 	// context-limit warnings are appended to prompts when pressure is high.
 	SetNudgeInjector(injector *nudge.NudgeInjector)
 
+	// GetTurnCount returns the current turn count for a session. Returns 0
+	// for unknown sessions.
+	GetTurnCount(sessionID string) int64
+
+	// GetIterationCount returns the current iteration count for a session.
+	// Returns 0 for unknown sessions.
+	GetIterationCount(sessionID string) int64
+
+	// IncrementIteration atomically increments the iteration counter for a
+	// session.
+	IncrementIteration(sessionID string)
+
+	// SetObservationConfig configures the observation coordinator with
+	// strategy, threshold, and model overrides derived from the runtime
+	// config. When strategyName is empty the default strategy is used.
+	// When threshold is zero the built-in default is used.
+	SetObservationConfig(strategyName string, threshold int64, observerModel string, reflectorModel string)
+
 	// CompressWith delegates to the configured Compressor strategy for
 	// semantic compression of text. Returns an error when no Compressor
 	// is configured.
@@ -271,6 +289,7 @@ type compactionManager struct {
 	operationalMemEnabled bool
 	autoMemoryExtractor   *AutoMemoryExtractor
 	turnCounter           sync.Map // sessionID -> *atomic.Int64
+	iterationCounter      sync.Map // sessionID -> *atomic.Int64
 	preCompactRunner      *hooks.Runner
 	postCompactRunner     *hooks.Runner
 
@@ -1260,10 +1279,12 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 	})
 
 	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
-		ProviderType:  m.providerType,
-		Store:         m.store,
-		SessionID:     sessionID,
-		NudgeInjector: m.nudgeInjector,
+		ProviderType:       m.providerType,
+		Store:              m.store,
+		SessionID:          sessionID,
+		NudgeInjector:      m.nudgeInjector,
+		TurnCountFunc:      func() int64 { return m.GetTurnCount(sessionID) },
+		IterationCountFunc: func() int64 { return m.GetIterationCount(sessionID) },
 	})
 
 	microCompactor.cfg.CacheAware = true
@@ -1342,10 +1363,12 @@ func (m *compactionManager) InjectCuesIntoPrompt(prompt string, cues []GhostCue,
 // CacheOptimizer's BuildPrompt method.
 func (m *compactionManager) BuildCompactPrompt(ctx context.Context, sessionID string) (string, error) {
 	opt := NewCacheOptimizer(CacheOptimizerConfig{
-		ProviderType:  m.providerType,
-		Store:         m.store,
-		SessionID:     sessionID,
-		NudgeInjector: m.nudgeInjector,
+		ProviderType:       m.providerType,
+		Store:              m.store,
+		SessionID:          sessionID,
+		NudgeInjector:      m.nudgeInjector,
+		TurnCountFunc:      func() int64 { return m.GetTurnCount(sessionID) },
+		IterationCountFunc: func() int64 { return m.GetIterationCount(sessionID) },
 	})
 
 	entries, err := m.store.GetContextEntries(ctx, sessionID)
@@ -1427,6 +1450,11 @@ func (m *compactionManager) PostTurnHook(ctx context.Context, sessionID string) 
 	counter := counterPtr.(*atomic.Int64)
 	newCount := counter.Add(1)
 
+	// Iterations accumulate within a single turn, not across turns.
+	if iterPtr, ok := m.iterationCounter.Load(sessionID); ok {
+		iterPtr.(*atomic.Int64).Store(0)
+	}
+
 	if !m.autoMemoryExtractor.ShouldExtract(int(newCount)) {
 		return
 	}
@@ -1481,6 +1509,39 @@ func (m *compactionManager) SetAgentConfigRestorer(restorer AgentConfigRestorer)
 
 func (m *compactionManager) SetNudgeInjector(injector *nudge.NudgeInjector) {
 	m.nudgeInjector = injector
+}
+
+// GetTurnCount returns the current turn count for a session. Returns 0 for
+// unknown sessions.
+func (m *compactionManager) GetTurnCount(sessionID string) int64 {
+	val, ok := m.turnCounter.Load(sessionID)
+	if !ok {
+		return 0
+	}
+	return val.(*atomic.Int64).Load()
+}
+
+// GetIterationCount returns the current iteration count for a session. Returns
+// 0 for unknown sessions.
+func (m *compactionManager) GetIterationCount(sessionID string) int64 {
+	val, ok := m.iterationCounter.Load(sessionID)
+	if !ok {
+		return 0
+	}
+	return val.(*atomic.Int64).Load()
+}
+
+// IncrementIteration atomically increments the iteration counter for a session.
+func (m *compactionManager) IncrementIteration(sessionID string) {
+	counterPtr, _ := m.iterationCounter.LoadOrStore(sessionID, new(atomic.Int64))
+	counterPtr.(*atomic.Int64).Add(1)
+}
+
+func (m *compactionManager) SetObservationConfig(strategyName string, threshold int64, observerModel string, reflectorModel string) {
+	strategy := NewObservationStrategyFromConfig(strategyName)
+	m.observer.SetStrategy(strategy)
+	m.observer.SetThreshold(threshold)
+	m.observer.SetModelOverrides(observerModel, reflectorModel)
 }
 
 func (m *compactionManager) OnSessionStart(ctx context.Context, sessionID string) error {

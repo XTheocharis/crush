@@ -273,3 +273,71 @@ func TestViewBatchRead_DuplicatePaths(t *testing.T) {
 	count := strings.Count(resp.Content, "unique-content")
 	require.Equal(t, 1, count, "content should appear exactly once despite 3 duplicate paths")
 }
+
+type mockFileScoreProvider struct {
+	scores map[string]float64
+}
+
+func (m *mockFileScoreProvider) FileScores(_ context.Context, _ string) map[string]float64 {
+	return m.scores
+}
+
+func TestHandleBatchRead_WithFileScores(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "low.go"), []byte("low content"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "high.go"), []byte("high content"), 0o644))
+
+	ft := mockFileTracker{}
+	scores := &mockFileScoreProvider{
+		scores: map[string]float64{
+			"high.go": 0.9,
+			"low.go":  0.1,
+		},
+	}
+
+	ctx := context.Background()
+	resp, err := handleBatchRead(ctx, ViewParams{
+		FilePaths: []string{"low.go", "high.go"},
+	}, workingDir, ft, "test-session", scores)
+
+	require.NoError(t, err)
+	require.Contains(t, resp.Content, "high content")
+	require.Contains(t, resp.Content, "low content")
+}
+
+func TestHandleBatchRead_NilScoreProvider(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "a.txt"), []byte("alpha"), 0o644))
+
+	ft := mockFileTracker{}
+
+	ctx := context.Background()
+	resp, err := handleBatchRead(ctx, ViewParams{
+		FilePaths: []string{"a.txt"},
+	}, workingDir, ft, "test-session", nil)
+
+	require.NoError(t, err)
+	require.Contains(t, resp.Content, "alpha")
+}
+
+func TestHandleBatchRead_ScoreProviderReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "a.txt"), []byte("alpha"), 0o644))
+
+	ft := mockFileTracker{}
+	scores := &mockFileScoreProvider{scores: nil}
+
+	ctx := context.Background()
+	resp, err := handleBatchRead(ctx, ViewParams{
+		FilePaths: []string{"a.txt"},
+	}, workingDir, ft, "test-session", scores)
+
+	require.NoError(t, err)
+	require.Contains(t, resp.Content, "alpha")
+}

@@ -130,3 +130,82 @@ func TestNewObservationCoordinator_ResourceScopedStrategy(t *testing.T) {
 	oc := NewObservationCoordinator(store, &mockLLMClient{}, 0, strategy)
 	require.Equal(t, strategy, oc.strategy)
 }
+
+func TestSetStrategy_UpdatesStrategy(t *testing.T) {
+	t.Parallel()
+	_, store := setupObservationTestDB(t)
+	oc := NewObservationCoordinator(store, &mockLLMClient{}, 0, nil)
+	require.Equal(t, DefaultStrategy{}, oc.strategy)
+
+	oc.SetStrategy(ResourceScopedStrategy{AllocFraction: 0.5})
+	require.Equal(t, ResourceScopedStrategy{AllocFraction: 0.5}, oc.strategy)
+}
+
+func TestSetStrategy_NilIgnored(t *testing.T) {
+	t.Parallel()
+	_, store := setupObservationTestDB(t)
+	original := ResourceScopedStrategy{AllocFraction: 0.5}
+	oc := NewObservationCoordinator(store, &mockLLMClient{}, 0, original)
+
+	oc.SetStrategy(nil)
+	require.Equal(t, original, oc.strategy, "nil strategy should not replace existing strategy")
+}
+
+func TestSetThreshold_UpdatesThreshold(t *testing.T) {
+	t.Parallel()
+	_, store := setupObservationTestDB(t)
+	oc := NewObservationCoordinator(store, &mockLLMClient{}, 0, nil)
+	require.Equal(t, int64(DefaultObservationTokenThreshold), oc.Threshold())
+
+	oc.SetThreshold(50000)
+	require.Equal(t, int64(50000), oc.Threshold())
+}
+
+func TestSetThreshold_ZeroIgnored(t *testing.T) {
+	t.Parallel()
+	_, store := setupObservationTestDB(t)
+	oc := NewObservationCoordinator(store, &mockLLMClient{}, 40000, nil)
+
+	oc.SetThreshold(0)
+	require.Equal(t, int64(40000), oc.Threshold(), "zero threshold should not replace existing threshold")
+}
+
+func TestSetModelOverrides(t *testing.T) {
+	t.Parallel()
+	_, store := setupObservationTestDB(t)
+	oc := NewObservationCoordinator(store, &mockLLMClient{}, 0, nil)
+	require.Equal(t, "", oc.observerModel)
+	require.Equal(t, "", oc.reflectorModel)
+
+	oc.SetModelOverrides("claude-sonnet-4", "gpt-4o-mini")
+	require.Equal(t, "claude-sonnet-4", oc.observerModel)
+	require.Equal(t, "gpt-4o-mini", oc.reflectorModel)
+}
+
+func TestSetObservationConfig_Integration(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManagerWithLLM(queries, sqlDB, &mockLLMClient{})
+
+	mgr.SetObservationConfig("resource-scoped", 50000, "claude-sonnet-4", "gpt-4o-mini")
+
+	cm := mgr.(*compactionManager)
+	require.Equal(t, ResourceScopedStrategy{AllocFraction: 0.8}, cm.observer.strategy)
+	require.Equal(t, int64(50000), cm.observer.Threshold())
+	require.Equal(t, "claude-sonnet-4", cm.observer.observerModel)
+	require.Equal(t, "gpt-4o-mini", cm.observer.reflectorModel)
+}
+
+func TestSetObservationConfig_DefaultStrategy(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManagerWithLLM(queries, sqlDB, &mockLLMClient{})
+
+	mgr.SetObservationConfig("", 0, "", "")
+
+	cm := mgr.(*compactionManager)
+	require.Equal(t, DefaultStrategy{}, cm.observer.strategy)
+	require.Equal(t, int64(DefaultObservationTokenThreshold), cm.observer.Threshold())
+	require.Equal(t, "", cm.observer.observerModel)
+	require.Equal(t, "", cm.observer.reflectorModel)
+}

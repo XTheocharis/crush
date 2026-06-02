@@ -38,6 +38,7 @@ type ValidationOptions struct {
 	Enabled            bool   `json:"enabled,omitempty" jsonschema:"description=Enable post-edit validation pipeline,default=false"`
 	AutoFix            bool   `json:"auto_fix,omitempty" jsonschema:"description=Enable automatic fix attempts when validation fails,default=false"`
 	AutoFixLoopEnabled bool   `json:"autofix_loop_enabled,omitempty" jsonschema:"description=Enable post-turn auto-fix quality cycle,default=false"`
+	MaxAutoFixRetries  int    `json:"max_auto_fix_retries,omitempty" jsonschema:"description=Maximum auto-fix retry iterations per validation cycle,default=3"`
 	SeverityFilter     string `json:"severity_filter,omitempty" jsonschema:"description=Minimum diagnostic severity to report: error, warning (default), info, or hint,enum=error,enum=warning,enum=info,enum=hint"`
 }
 

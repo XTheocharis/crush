@@ -1,8 +1,12 @@
 package agent
 
 import (
+	"context"
 	"testing"
 
+	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -194,3 +198,127 @@ func TestBetaToolsHiddenFromGetVisibleTools(t *testing.T) {
 	require.Contains(t, visible, "stable_b")
 	require.NotContains(t, hidden, "stable_b")
 }
+
+func TestApplyPhaseFilter_PlanningHidesEditTools(t *testing.T) {
+	t.Parallel()
+
+	tools := []fantasy.AgentTool{
+		&stubTool{name: "edit"},
+		&stubTool{name: "multiedit"},
+		&stubTool{name: "write"},
+		&stubTool{name: "view"},
+		&stubTool{name: "bash"},
+		&stubTool{name: "grep"},
+	}
+
+	// Planning prompt should hide edit/multiedit/write.
+	filtered := applyPhaseFilter(tools, "plan the architecture of the system")
+	names := toolNames(filtered)
+	require.NotContains(t, names, "edit")
+	require.NotContains(t, names, "multiedit")
+	require.NotContains(t, names, "write")
+	require.Contains(t, names, "view")
+	require.Contains(t, names, "bash")
+	require.Contains(t, names, "grep")
+}
+
+func TestApplyPhaseFilter_EditingKeepsAllTools(t *testing.T) {
+	t.Parallel()
+
+	tools := []fantasy.AgentTool{
+		&stubTool{name: "edit"},
+		&stubTool{name: "multiedit"},
+		&stubTool{name: "write"},
+		&stubTool{name: "view"},
+	}
+
+	// Editing prompt keeps all tools.
+	filtered := applyPhaseFilter(tools, "fix the bug in main.go")
+	names := toolNames(filtered)
+	require.Contains(t, names, "edit")
+	require.Contains(t, names, "multiedit")
+	require.Contains(t, names, "write")
+	require.Contains(t, names, "view")
+}
+
+func TestApplyPhaseFilter_EmptyPromptKeepsAllTools(t *testing.T) {
+	t.Parallel()
+
+	tools := []fantasy.AgentTool{
+		&stubTool{name: "edit"},
+		&stubTool{name: "view"},
+	}
+
+	// Empty prompt defaults to Reviewing, which keeps all tools.
+	filtered := applyPhaseFilter(tools, "")
+	require.Len(t, filtered, 2)
+}
+
+func TestGetToolSurface_NilExtHost(t *testing.T) {
+	t.Parallel()
+
+	c := &coordinator{}
+	require.Nil(t, c.getToolSurface())
+}
+
+func TestGetToolSurface_ValidExtension(t *testing.T) {
+	ext.ResetForTesting()
+	t.Cleanup(ext.ResetForTesting)
+
+	surface := NewToolSurface()
+	surface.UpdateCapabilities(SurfaceContext{})
+	ext.RegisterExtension(&testSurfaceExt{surface: surface})
+
+	host := ext.NewExtensionHost(ext.HostDeps{
+		Config: config.NewTestStore(&config.Config{}),
+	})
+	require.NoError(t, host.Bootstrap(context.Background()))
+	t.Cleanup(func() { _ = host.Shutdown(context.Background()) })
+
+	c := &coordinator{extHost: host}
+	got := c.getToolSurface()
+	require.NotNil(t, got)
+	visible := got.GetVisibleTools()
+	require.NotEmpty(t, visible)
+}
+
+func TestGetToolSurface_NoMatchingExtension(t *testing.T) {
+	ext.ResetForTesting()
+	t.Cleanup(ext.ResetForTesting)
+
+	host := ext.NewExtensionHost(ext.HostDeps{
+		Config: config.NewTestStore(&config.Config{}),
+	})
+	require.NoError(t, host.Bootstrap(context.Background()))
+	t.Cleanup(func() { _ = host.Shutdown(context.Background()) })
+
+	c := &coordinator{extHost: host}
+	require.Nil(t, c.getToolSurface())
+}
+
+type stubTool struct {
+	fantasy.AgentTool
+	name string
+}
+
+func (s *stubTool) Info() fantasy.ToolInfo {
+	return fantasy.ToolInfo{Name: s.name}
+}
+
+func toolNames(tools []fantasy.AgentTool) []string {
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Info().Name
+	}
+	return names
+}
+
+// testSurfaceExt is a minimal extension that exposes a ToolSurface via GetSurface().
+type testSurfaceExt struct {
+	surface *ToolSurface
+}
+
+func (e *testSurfaceExt) Name() string                                { return "tool-surface" }
+func (e *testSurfaceExt) Init(context.Context, ext.HostContext) error { return nil }
+func (e *testSurfaceExt) Shutdown(context.Context) error              { return nil }
+func (e *testSurfaceExt) GetSurface() any                             { return e.surface }

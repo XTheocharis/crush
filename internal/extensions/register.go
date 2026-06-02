@@ -24,6 +24,5 @@ func init() {
 	ext.RegisterExtension(TheOrchestrationExtension)
 	ext.RegisterExtension(&ModelRouterExtension{})
 	ext.RegisterExtension(&ProcessorExtension{})
-	ext.RegisterExtension(&StepAdapter{})
 	ext.RegisterExtension(TheProductiveExtension)
 }

@@ -15,21 +15,14 @@ import (
 // It updates tool visibility based on runtime context (LSP presence, MCP
 // availability, etc.) at the start and end of each agent run.
 //
-// TECH DEBT: The write path (UpdateCapabilities via OnRunStart) is active and
-// computes tool visibility metadata on every agent run. However, the read path
-// on the underlying ToolSurface — GetVisibleTools(), GetHiddenTools(),
-// IsVisible(), and PhaseFilteredTools() — is NOT consumed by any production
-// code. These methods compute phase-based tool visibility (e.g., hiding edit
-// tools during Planning phase) that no caller currently acts upon. The
-// infrastructure was designed for future phase-based tool routing where the
-// coordinator would filter its tool surface based on conversation phase and
-// complexity tiers. Until that routing is wired in, the computed visibility
-// data is discarded after each UpdateCapabilities call.
+// The write path (UpdateCapabilities via OnRunStart) computes tool visibility
+// metadata on every agent run. The read path is consumed by:
+//   - coordinator.buildTools() — filters tools by visibility (GetVisibleTools)
+//   - agent.PrepareStep — applies phase-based filtering (PhaseFilteredTools)
 //
-// TODO(sisyphus): Wire ToolSurface read path into coordinator.buildTools() or
-// the prompt assembly pipeline so that phase-based tool filtering takes effect.
-// See internal/agent/tool_surface.go:PhaseFilteredTools and the
-// AgentPhase/phaseHiddenTools definitions.
+// Visibility filtering removes tools whose runtime dependencies are unsatisfied
+// (e.g., LSP tools when no LSP is running). Phase filtering hides edit tools
+// during the Planning phase.
 type ToolSurfaceExtension struct {
 	mu      sync.RWMutex
 	host    ext.HostContext
@@ -44,6 +37,14 @@ func (e *ToolSurfaceExtension) Init(_ context.Context, host ext.HostContext) err
 	e.surface = agent.NewToolSurface()
 	e.active = true
 	return nil
+}
+
+// GetSurface returns the underlying ToolSurface. Returns nil after Shutdown.
+// The return type is any to avoid coupling the ext package to agent types.
+func (e *ToolSurfaceExtension) GetSurface() any {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.surface
 }
 
 func (e *ToolSurfaceExtension) Shutdown(_ context.Context) error {

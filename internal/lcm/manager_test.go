@@ -741,3 +741,97 @@ func TestLargeOutputThreshold(t *testing.T) {
 		require.Equal(t, int64(25000), cm.largeOutputThreshold)
 	})
 }
+
+func TestManager_GetTurnCount_NoSession(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+
+	require.Equal(t, int64(0), mgr.GetTurnCount("nonexistent-session"))
+}
+
+func TestManager_GetTurnCount_AfterPostTurnHook(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-turn-count"
+	createTestSession(t, queries, sessionID)
+
+	cm := mgr.(*compactionManager)
+	// Use a very high interval so ShouldExtract always returns false.
+	cm.autoMemoryExtractor = NewAutoMemoryExtractor(nil, nil, 999999)
+
+	mgr.PostTurnHook(ctx, sessionID)
+	require.Equal(t, int64(1), mgr.GetTurnCount(sessionID))
+
+	mgr.PostTurnHook(ctx, sessionID)
+	require.Equal(t, int64(2), mgr.GetTurnCount(sessionID))
+}
+
+func TestManager_GetIterationCount_NoSession(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+
+	require.Equal(t, int64(0), mgr.GetIterationCount("nonexistent-session"))
+}
+
+func TestManager_IncrementIteration(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+
+	sessionID := "sess-iter-count"
+
+	mgr.IncrementIteration(sessionID)
+	require.Equal(t, int64(1), mgr.GetIterationCount(sessionID))
+
+	mgr.IncrementIteration(sessionID)
+	mgr.IncrementIteration(sessionID)
+	require.Equal(t, int64(3), mgr.GetIterationCount(sessionID))
+}
+
+func TestManager_PostTurnHook_ResetsIterationCounter(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-iter-reset"
+	createTestSession(t, queries, sessionID)
+
+	cm := mgr.(*compactionManager)
+	cm.autoMemoryExtractor = NewAutoMemoryExtractor(nil, nil, 999999)
+
+	mgr.IncrementIteration(sessionID)
+	mgr.IncrementIteration(sessionID)
+	require.Equal(t, int64(2), mgr.GetIterationCount(sessionID))
+
+	mgr.PostTurnHook(ctx, sessionID)
+	require.Equal(t, int64(0), mgr.GetIterationCount(sessionID),
+		"iteration counter should be reset when turn advances")
+	require.Equal(t, int64(1), mgr.GetTurnCount(sessionID))
+}
+
+func TestManager_IncrementIteration_Concurrent(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+
+	sessionID := "sess-iter-concurrent"
+	const workers = 100
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			mgr.IncrementIteration(sessionID)
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int64(workers), mgr.GetIterationCount(sessionID))
+}

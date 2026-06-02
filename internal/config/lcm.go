@@ -31,6 +31,22 @@ type LCMOptions struct {
 	// extracted observations. Defaults to false (off, zero overhead).
 	OperationalMemoryEnabled bool `json:"operational_memory_enabled,omitempty" jsonschema:"description=Enable operational memory persistence from LCM lifecycle hooks,default=false"`
 
+	// PostCompactMaxFiles limits how many files are re-injected after
+	// compaction. Default: 0 (unlimited).
+	PostCompactMaxFiles int `json:"post_compact_max_files,omitempty" jsonschema:"description=Maximum number of files re-injected after compaction,default=0"`
+
+	// PostCompactTokenBudget is the token budget for post-compaction
+	// re-injection. Default: 0 (unlimited).
+	PostCompactTokenBudget int64 `json:"post_compact_token_budget,omitempty" jsonschema:"description=Token budget for post-compaction re-injection,default=0"`
+
+	// DeduplicationEnabled enables deduplication of conversation entries
+	// during compaction. Default: false.
+	DeduplicationEnabled bool `json:"deduplication_enabled,omitempty" jsonschema:"description=Enable deduplication of conversation entries during compaction,default=false"`
+
+	// PurgeErrorsEnabled enables purging of error entries during compaction.
+	// Default: false.
+	PurgeErrorsEnabled bool `json:"purge_errors_enabled,omitempty" jsonschema:"description=Enable purging of error entries during compaction,default=false"`
+
 	// Observation configures the observation strategy used by the LCM observer.
 	// When nil, the default strategy (always observe, JSON output) is used.
 	Observation *ObservationOptions `json:"observation,omitempty" jsonschema:"description=Observation strategy configuration for the LCM observer"`
@@ -69,6 +85,28 @@ type ObservationOptions struct {
 	// TokenBudget is the maximum number of tokens allocated for observation
 	// text injected into agent prompts. Default: 2000.
 	TokenBudget int64 `json:"token_budget,omitempty" jsonschema:"description=Maximum tokens for observation prompt injection,default=2000"`
+
+	// ObserverMessageTokens is the token budget for observer message output.
+	// Default: 0 (use TokenBudget).
+	ObserverMessageTokens int `json:"observer_message_tokens,omitempty" jsonschema:"description=Token budget for observer message output,default=0"`
+
+	// ObserverBufferRatio is the buffer ratio for observer activation.
+	// Default: 0.
+	ObserverBufferRatio float64 `json:"observer_buffer_ratio,omitempty" jsonschema:"description=Buffer ratio for observer activation,default=0"`
+
+	// ObserverModel optionally overrides the model used for observation.
+	ObserverModel string `json:"observer_model,omitempty" jsonschema:"description=Optional model override for observer"`
+
+	// ReflectorObservationTokens is the token budget for reflector output.
+	// Default: 0.
+	ReflectorObservationTokens int `json:"reflector_observation_tokens,omitempty" jsonschema:"description=Token budget for reflector output,default=0"`
+
+	// ReflectorBufferActivation is the buffer activation threshold for the
+	// reflector. Default: 0.
+	ReflectorBufferActivation float64 `json:"reflector_buffer_activation,omitempty" jsonschema:"description=Buffer activation threshold for reflector,default=0"`
+
+	// ReflectorModel optionally overrides the model used for reflection.
+	ReflectorModel string `json:"reflector_model,omitempty" jsonschema:"description=Optional model override for reflector"`
 }
 
 // DefaultLCMOptions returns LCMOptions with default values applied.

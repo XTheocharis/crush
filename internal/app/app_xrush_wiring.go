@@ -314,6 +314,39 @@ func wireLCMOperationalMemory(conn *sql.DB, store *config.ConfigStore) {
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireLCMObservationConfig]
+// wireLCMObservationConfig reads observation options from the LCM config and
+// wires them into the LCM manager's observation coordinator. When observation
+// config is nil the default strategy and threshold are used (backward
+// compatible).
+func wireLCMObservationConfig(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	if cfg.Options == nil || cfg.Options.LCM == nil || cfg.Options.LCM.Observation == nil {
+		return
+	}
+
+	obs := cfg.Options.LCM.Observation
+	mgr.SetObservationConfig(
+		obs.Strategy,
+		int64(obs.ObserverMessageTokens),
+		obs.ObserverModel,
+		obs.ReflectorModel,
+	)
+	slog.Info("LCM observation config wired",
+		"strategy", obs.Strategy,
+		"threshold", obs.ObserverMessageTokens,
+		"observer_model", obs.ObserverModel,
+		"reflector_model", obs.ReflectorModel,
+	)
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wireCompactHookRunners]
 // wireCompactHookRunners creates hooks.Runner instances for PreCompact and
 // PostCompact events from the config and wires them into the LCM manager.

@@ -96,6 +96,7 @@ func NewViewTool(
 	filetracker filetracker.Service,
 	skillTracker *skills.Tracker,
 	workingDir string,
+	fileScoreProvider FileScoreProvider,
 	skillsPaths ...string,
 ) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
@@ -110,7 +111,7 @@ func NewViewTool(
 
 			// [XRUSH: begin: batch file reading]
 			if len(params.FilePaths) > 0 {
-				return handleBatchRead(ctx, params, workingDir, filetracker, sessionID)
+				return handleBatchRead(ctx, params, workingDir, filetracker, sessionID, fileScoreProvider)
 			}
 			// [XRUSH: end]
 

@@ -20,6 +20,8 @@ func TestAutoFixConfigWired(t *testing.T) {
 		host := &mockHostContext{cfg: &config.Config{}}
 		require.NoError(t, e.Init(context.Background(), host))
 		require.False(t, e.loopEnabled)
+		require.Equal(t, defaultMaxAutoFixIterations, e.maxIterations)
+		require.False(t, e.autoCommit)
 	})
 
 	t.Run("nil options is disabled", func(t *testing.T) {
@@ -28,6 +30,7 @@ func TestAutoFixConfigWired(t *testing.T) {
 		host := &mockHostContext{cfg: &config.Config{Options: nil}}
 		require.NoError(t, e.Init(context.Background(), host))
 		require.False(t, e.loopEnabled)
+		require.Equal(t, defaultMaxAutoFixIterations, e.maxIterations)
 	})
 
 	t.Run("nil validation is disabled", func(t *testing.T) {
@@ -36,6 +39,7 @@ func TestAutoFixConfigWired(t *testing.T) {
 		host := &mockHostContext{cfg: &config.Config{Options: &config.Options{}}}
 		require.NoError(t, e.Init(context.Background(), host))
 		require.False(t, e.loopEnabled)
+		require.Equal(t, defaultMaxAutoFixIterations, e.maxIterations)
 	})
 
 	t.Run("explicit false is disabled", func(t *testing.T) {
@@ -60,6 +64,54 @@ func TestAutoFixConfigWired(t *testing.T) {
 		}}
 		require.NoError(t, e.Init(context.Background(), host))
 		require.True(t, e.loopEnabled)
+	})
+
+	t.Run("max retries from config", func(t *testing.T) {
+		t.Parallel()
+		e := &AutofixExtension{}
+		host := &mockHostContext{cfg: &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{MaxAutoFixRetries: 5},
+			},
+		}}
+		require.NoError(t, e.Init(context.Background(), host))
+		require.Equal(t, 5, e.maxIterations)
+	})
+
+	t.Run("zero max retries falls back to default", func(t *testing.T) {
+		t.Parallel()
+		e := &AutofixExtension{}
+		host := &mockHostContext{cfg: &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{MaxAutoFixRetries: 0},
+			},
+		}}
+		require.NoError(t, e.Init(context.Background(), host))
+		require.Equal(t, defaultMaxAutoFixIterations, e.maxIterations)
+	})
+
+	t.Run("auto_commit from config", func(t *testing.T) {
+		t.Parallel()
+		e := &AutofixExtension{}
+		host := &mockHostContext{cfg: &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{AutoFix: true},
+			},
+		}}
+		require.NoError(t, e.Init(context.Background(), host))
+		require.True(t, e.autoCommit)
+	})
+
+	t.Run("auto_commit defaults to false", func(t *testing.T) {
+		t.Parallel()
+		e := &AutofixExtension{}
+		host := &mockHostContext{cfg: &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{},
+			},
+		}}
+		require.NoError(t, e.Init(context.Background(), host))
+		require.False(t, e.autoCommit)
 	})
 }
 
@@ -149,7 +201,7 @@ func TestAutoFixLoopPromotion(t *testing.T) {
 		fp := filepath.Join(dir, "main.go")
 		require.NoError(t, os.WriteFile(fp, []byte("package main\n"), 0o644))
 
-		e := &AutofixExtension{loopEnabled: true, active: true}
+		e := &AutofixExtension{loopEnabled: true, active: true, maxIterations: defaultMaxAutoFixIterations}
 		linter := &mockLinter{results: [][]string{{}}}
 		rollback := tools.NewRollbackManager()
 
@@ -163,7 +215,7 @@ func TestAutoFixLoopPromotion(t *testing.T) {
 		fp := filepath.Join(dir, "main.go")
 		require.NoError(t, os.WriteFile(fp, []byte("package main\n"), 0o644))
 
-		e := &AutofixExtension{loopEnabled: true, active: true}
+		e := &AutofixExtension{loopEnabled: true, active: true, maxIterations: defaultMaxAutoFixIterations}
 		linter := &mockLinter{results: [][]string{
 			{"main.go:1: some error"},
 			{},
@@ -181,7 +233,7 @@ func TestAutoFixLoopPromotion(t *testing.T) {
 		original := "package main\n"
 		require.NoError(t, os.WriteFile(fp, []byte(original), 0o644))
 
-		e := &AutofixExtension{loopEnabled: true, active: true}
+		e := &AutofixExtension{loopEnabled: true, active: true, maxIterations: defaultMaxAutoFixIterations}
 		// Each iteration: 1 lint at start + 1 re-lint after fix = 2 calls.
 		// 3 iterations = 6 calls, + 1 final lint = 7 total.
 		// All return errors to exhaust retries.
@@ -228,7 +280,7 @@ func TestConvergenceDetection(t *testing.T) {
 		original := "package main\n"
 		require.NoError(t, os.WriteFile(fp, []byte(original), 0o644))
 
-		e := &AutofixExtension{loopEnabled: true, active: true}
+		e := &AutofixExtension{loopEnabled: true, active: true, maxIterations: defaultMaxAutoFixIterations}
 		// Every lint call returns the exact same error set.
 		// Iteration 1: lint→err, re-lint→err → fingerprint match → count=1.
 		// Iteration 2: lint→err, re-lint→err → fingerprint match → count=2 → break.
@@ -264,7 +316,7 @@ func TestConvergenceDetection(t *testing.T) {
 		original := "package main\n"
 		require.NoError(t, os.WriteFile(fp, []byte(original), 0o644))
 
-		e := &AutofixExtension{loopEnabled: true, active: true}
+		e := &AutofixExtension{loopEnabled: true, active: true, maxIterations: defaultMaxAutoFixIterations}
 		// Errors are different each call → fingerprints never match → full 3 iterations.
 		changingErrors := [][]string{
 			{"main.go:1: err_a"},
@@ -327,7 +379,7 @@ func TestFullAutoFixCycle_RespectsContext(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		e := &AutofixExtension{loopEnabled: true, active: true}
+		e := &AutofixExtension{loopEnabled: true, active: true, maxIterations: defaultMaxAutoFixIterations}
 		linter := &mockLinter{results: [][]string{{"main.go:1: err"}}}
 		rollback := tools.NewRollbackManager()
 

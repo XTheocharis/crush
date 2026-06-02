@@ -78,6 +78,10 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMOperationalMemory(conn, store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM observation config]
+	wireLCMObservationConfig(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire compact hook runners]
 	wireCompactHookRunners(store)
 	// [XRUSH: end]
