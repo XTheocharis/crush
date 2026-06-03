@@ -2297,7 +2297,7 @@ explicit `url` and `sha256` configuration per server.
 
 ### Fork-New Tools
 
-> **Tool surface**: The fork registers 56 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built by extension; 2 additional from coordinator = 17 total registered; `lsp_restart` also upstream), and `ExtraAgentTools()` (15: 5 via toolFactory + 10 including Compact). Additional tools `agent` and `agentic_fetch` extend the base tool set, and 4 orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`) are registered outside registerDefaults. In total, the full tool surface across all registration mechanisms comprises 60 unique tool names.
+> **Tool surface**: The fork registers 59 tools via `tool_surface.go:registerDefaults()`. Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built by extension; 2 additional from coordinator = 17 total registered; `lsp_restart` also upstream), and `ExtraAgentTools()` (15: 5 via toolFactory + 10 including Compact). All 59 tools including orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`, `productive_execute`, `swarm_execute`, `agent`, `agentic_fetch`) are registered inside registerDefaults. In total, the full tool surface comprises 59 unique tool names.
 
 #### Registered Agent Tools (32)
 
@@ -2449,7 +2449,7 @@ auto-approve safe commands.
 
 ### User-Facing Description
 
-The fork provides 60 unique tools across all registration mechanisms: 56 via registerDefaults (23 inherited from upstream), plus 4 orchestration tools registered outside registerDefaults (`send_message`, `task_stop`, `team_create`, `team_delete`), and extension-provided tools (e.g., swarm_execute). Tools with overlapping names (e.g., lsp_restart) are counted once. The
+The fork provides 59 unique tools across all registration mechanisms: 59 via registerDefaults (23 inherited from upstream). All tools including orchestration tools (`send_message`, `task_stop`, `team_create`, `team_delete`, `productive_execute`, `swarm_execute`, `agent`, `agentic_fetch`) are registered inside registerDefaults. Extension-provided tools (e.g., swarm_execute) are factory-wired post-bootstrap. Tools with overlapping names (e.g., lsp_restart) are counted once. The
 enhanced edit subsystem introduces anchor-based edits (content-addressed hashes
 that survive minor file changes), fuzzy string matching for approximate edit
 targets with tree-sitter symbol resolution (T12), atomic multi-file batch
@@ -3396,7 +3396,7 @@ side-by-side. Syntax highlighting in diffs and markdown is always active.
 | `RateLimiting` (180L) | Reactive 429-backoff rate limit coordination |
 | `ModelRouter` + `TierRouter` | Model routing with tier-based selection; `ModelRouter` deprecated, `TierRouter` active |
 | `ConfigLoader` (253L) | Dynamic agent configuration from `crush.json` |
-| `ToolSurface` (421L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; 56 tools registered |
+| `ToolSurface` (421L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; 59 tools registered |
 | `Session` (349L) | Session management (`session/session.go`) |
 | `Completer` (88L) | Shell command completion |
 | `WrittenFiles` (79L) | Track files written during a session |
