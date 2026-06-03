@@ -63,6 +63,7 @@ func (e *TreesitterExtension) Init(_ context.Context, host ext.HostContext) erro
 	}
 
 	e.handler = tools.NewValidationHandler(parser, diagGate, handlerCfg)
+	tools.InitSymbolParser(parser)
 	e.active = true
 	return nil
 }
@@ -70,6 +71,7 @@ func (e *TreesitterExtension) Init(_ context.Context, host ext.HostContext) erro
 func (e *TreesitterExtension) Shutdown(_ context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	tools.InitSymbolParser(nil)
 	e.handler = nil
 	e.active = false
 	e.pendingWarning = ""

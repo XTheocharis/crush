@@ -26,6 +26,11 @@ type LCMOptions struct {
 	// "parity".
 	ExplorerOutputProfile string `json:"explorer_output_profile,omitempty"`
 
+	// SessionBudget is the maximum total auto-memory content per session in
+	// characters. When set to 0 (default), the hardcoded constant (60 KB) is
+	// used.
+	SessionBudget int `json:"session_budget,omitempty" jsonschema:"description=Maximum total auto-memory content per session in characters,default=0"`
+
 	// OperationalMemoryEnabled wires the session operational memory store into
 	// the LCM manager so that PostCompactionHook and PostTurnHook persist
 	// extracted observations. Defaults to false (off, zero overhead).

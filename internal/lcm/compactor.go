@@ -38,7 +38,7 @@ func (m *compactionManager) compactUntilUnderLimitLocked(ctx context.Context, se
 		}
 		lastTokenCount = tokenCount
 
-		result, err := m.compactLocked(ctx, sessionID, hookDecision)
+		result, err := m.compactLocked(ctx, sessionID, hookDecision, &compactConfig{})
 		if err != nil {
 			return fmt.Errorf("compaction round %d: %w", i, err)
 		}

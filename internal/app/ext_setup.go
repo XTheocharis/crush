@@ -58,6 +58,10 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMLargeOutputThreshold(store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM session budget from config]
+	wireLCMSessionBudget(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire LCM model output limit from model metadata]
 	wireLCMModelOutputLimit(store)
 	// [XRUSH: end]

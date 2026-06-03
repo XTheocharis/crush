@@ -275,6 +275,72 @@ func TestAutoMemorySessionBudget(t *testing.T) {
 	require.Empty(t, result.Memories)
 }
 
+func TestSessionBudgetConfigOverride(t *testing.T) {
+	t.Parallel()
+
+	queries, rawDB := setupTestDB(t)
+	store := newStore(queries, rawDB)
+
+	sessionID := "sess_cfg_override"
+	createTestSession(t, queries, sessionID)
+	createTestMessage(t, queries, sessionID, "msg_override_000", "user", "test override budget")
+
+	budget := 500
+	largeContent := strings.Repeat("a", budget-50)
+	_, err := rawDB.ExecContext(context.Background(),
+		`INSERT INTO lcm_auto_memory (id, session_id, memory_type, content, source_message_ids)
+		 VALUES (?, ?, ?, ?, ?)`,
+		"mem_override_00000", sessionID, MemoryFact, largeContent, "[]",
+	)
+	require.NoError(t, err)
+
+	memories := []map[string]any{
+		{"type": "fact", "content": strings.Repeat("b", 100), "confidence": 0.9},
+	}
+	respBytes, err := json.Marshal(memories)
+	require.NoError(t, err)
+
+	mock := &mockLLMClient{response: string(respBytes)}
+	extractor := NewAutoMemoryExtractor(store, mock, 5)
+	extractor.SetSessionBudget(budget)
+
+	result := extractor.ExtractSync(context.Background(), sessionID)
+	require.NoError(t, result.Error)
+	require.Empty(t, result.Memories)
+}
+
+func TestSessionBudgetFallbackToConstant(t *testing.T) {
+	t.Parallel()
+
+	queries, rawDB := setupTestDB(t)
+	store := newStore(queries, rawDB)
+
+	sessionID := "sess_fallback"
+	createTestSession(t, queries, sessionID)
+	createTestMessage(t, queries, sessionID, "msg_fallback_000", "user", "test fallback")
+
+	largeContent := strings.Repeat("a", MemorySessionMaxChars-100)
+	_, err := rawDB.ExecContext(context.Background(),
+		`INSERT INTO lcm_auto_memory (id, session_id, memory_type, content, source_message_ids)
+		 VALUES (?, ?, ?, ?, ?)`,
+		"mem_fallback_00000", sessionID, MemoryFact, largeContent, "[]",
+	)
+	require.NoError(t, err)
+
+	memories := []map[string]any{
+		{"type": "fact", "content": strings.Repeat("b", 200), "confidence": 0.9},
+	}
+	respBytes, err := json.Marshal(memories)
+	require.NoError(t, err)
+
+	mock := &mockLLMClient{response: string(respBytes)}
+	extractor := NewAutoMemoryExtractor(store, mock, 5)
+
+	result := extractor.ExtractSync(context.Background(), sessionID)
+	require.NoError(t, result.Error)
+	require.Empty(t, result.Memories)
+}
+
 func TestAutoMemoryExtractAsync(t *testing.T) {
 	t.Parallel()
 

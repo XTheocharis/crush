@@ -65,6 +65,8 @@ type AutoMemoryExtractor struct {
 	llm      LLMClient
 	mu       sync.Mutex
 	interval int // turns between extractions
+	// sessionBudget overrides MemorySessionMaxChars when > 0.
+	sessionBudget int
 	// pending tracks session IDs with an in-flight extraction to prevent
 	// stacking duplicate goroutines.
 	pending map[string]struct{}
@@ -94,6 +96,19 @@ func (e *AutoMemoryExtractor) SetLLMClient(llm LLMClient) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.llm = llm
+}
+
+func (e *AutoMemoryExtractor) SetSessionBudget(budget int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.sessionBudget = budget
+}
+
+func (e *AutoMemoryExtractor) getSessionBudget() int {
+	if e.sessionBudget > 0 {
+		return e.sessionBudget
+	}
+	return MemorySessionMaxChars
 }
 
 // Interval returns the configured turn interval.
@@ -236,7 +251,7 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 		mem.Content = content
 		memSize := len(content)
 
-		if currentSize+memSize > MemorySessionMaxChars {
+		if currentSize+memSize > e.getSessionBudget() {
 			break
 		}
 

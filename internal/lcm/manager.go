@@ -20,6 +20,25 @@ import (
 	"github.com/charmbracelet/crush/internal/session"
 )
 
+// CompactOption configures a compaction operation.
+type CompactOption func(*compactConfig)
+
+// compactConfig holds optional parameters for compaction.
+type compactConfig struct {
+	Pressure     string
+	TargetTokens int64
+}
+
+// WithPressure sets the compaction pressure tier.
+func WithPressure(p string) CompactOption {
+	return func(c *compactConfig) { c.Pressure = p }
+}
+
+// WithTargetTokens sets the target token count override.
+func WithTargetTokens(t int64) CompactOption {
+	return func(c *compactConfig) { c.TargetTokens = t }
+}
+
 // OperationalMemoryStore is the subset of session.OperationalMemory needed by
 // the LCM manager for session-lifecycle integration. Defined here to avoid a
 // circular import of the session package.
@@ -72,6 +91,10 @@ type Manager interface {
 	// is stored in LCM (default: 50000). Values <= 0 are ignored.
 	SetLargeOutputThreshold(threshold int64)
 
+	// SetSessionBudget sets the maximum total auto-memory content per session
+	// in characters. Values <= 0 keep the hardcoded default (60000).
+	SetSessionBudget(budget int)
+
 	// SetModelOutputLimit sets the model's max output token limit for budget computation.
 	SetModelOutputLimit(limit int64)
 
@@ -85,8 +108,9 @@ type Manager interface {
 	GetContextFiles() []ContextFile
 
 	// Compact runs compaction for a session via layered compaction with
-	// LLM summarization fallback.
-	Compact(ctx context.Context, sessionID string) error
+	// LLM summarization fallback. Options override pressure tier and
+	// target token count.
+	Compact(ctx context.Context, sessionID string, opts ...CompactOption) error
 
 	// Subscribe returns a channel of compaction events.
 	Subscribe(ctx context.Context) <-chan pubsub.Event[CompactionEvent]
@@ -123,7 +147,7 @@ type Manager interface {
 	// RunLayeredCompaction executes the multi-layer compaction framework for a
 	// session. Layers run in priority order (micro-compaction, post-compact
 	// restore, cache optimisation). Returns the aggregate layer result.
-	RunLayeredCompaction(ctx context.Context, sessionID string) (*CompactionLayerResult, error)
+	RunLayeredCompaction(ctx context.Context, sessionID string, overrideTier ...*PressureTier) (*CompactionLayerResult, error)
 
 	// InjectCuesIntoPrompt injects ghost cues into a prompt string, respecting
 	// the given token budget. Cues are sorted by descending priority.
@@ -532,6 +556,13 @@ func (m *compactionManager) SetLargeOutputThreshold(threshold int64) {
 	m.largeOutputThreshold = threshold
 }
 
+func (m *compactionManager) SetSessionBudget(budget int) {
+	if budget <= 0 || m.autoMemoryExtractor == nil {
+		return
+	}
+	m.autoMemoryExtractor.SetSessionBudget(budget)
+}
+
 // SetModelOutputLimit sets the model's max output token limit for budget computation.
 func (m *compactionManager) SetModelOutputLimit(limit int64) {
 	m.defaultModelOutputLimit = limit
@@ -922,7 +953,14 @@ func (m *compactionManager) CompactUntilUnderLimit(ctx context.Context, sessionI
 // Compact runs compaction for a session and publishes events. It delegates to
 // compactLocked which performs the two-phase approach (layered compaction first,
 // then LLM summarization fallback if still over the soft threshold).
-func (m *compactionManager) Compact(ctx context.Context, sessionID string) error {
+func (m *compactionManager) Compact(ctx context.Context, sessionID string, opts ...CompactOption) error {
+	cfg := &compactConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(cfg)
+		}
+	}
+
 	mu := m.sessionMutex(sessionID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -944,7 +982,7 @@ func (m *compactionManager) Compact(ctx context.Context, sessionID string) error
 		SessionID: sessionID,
 	})
 
-	result, err := m.compactLocked(ctx, sessionID, hookDecision)
+	result, err := m.compactLocked(ctx, sessionID, hookDecision, cfg)
 	if err != nil {
 		m.broker.Publish(pubsub.CreatedEvent, CompactionEvent{
 			Type:      CompactionFailed,
@@ -979,13 +1017,20 @@ func (m *compactionManager) Compact(ctx context.Context, sessionID string) error
 // Phase 2: If still over soft threshold, fall back to LLM summarization +
 // condensation (trySummarize/tryCondense).
 // Caller must hold the per-session mutex.
-func (m *compactionManager) compactLocked(ctx context.Context, sessionID string, hookDecision CompactHookDecision) (CompactionResult, error) {
+func (m *compactionManager) compactLocked(ctx context.Context, sessionID string, hookDecision CompactHookDecision, cfg *compactConfig) (CompactionResult, error) {
 	var actionTaken bool
 	var rounds int
 
+	var overrideTier *PressureTier
+	if cfg.Pressure != "" {
+		if tier, ok := parsePressureTier(cfg.Pressure); ok {
+			overrideTier = &tier
+		}
+	}
+
 	if !hookDecision.ForceFull {
 		// Phase 1: Run layered compaction.
-		layerResult, err := m.RunLayeredCompaction(ctx, sessionID)
+		layerResult, err := m.RunLayeredCompaction(ctx, sessionID, overrideTier)
 		if err != nil {
 			return CompactionResult{}, err
 		}
@@ -999,7 +1044,11 @@ func (m *compactionManager) compactLocked(ctx context.Context, sessionID string,
 	// Phase 2: If still over soft threshold, fall back to LLM summarization.
 	budget, budgetErr := m.GetBudget(ctx, sessionID)
 	tokensAfter, tokenErr := m.store.GetContextTokenCount(ctx, sessionID)
-	stillOver := budgetErr != nil || tokenErr != nil || tokensAfter > budget.SoftThreshold
+	softThreshold := budget.SoftThreshold
+	if cfg.TargetTokens > 0 {
+		softThreshold = cfg.TargetTokens
+	}
+	stillOver := budgetErr != nil || tokenErr != nil || tokensAfter > softThreshold
 	if stillOver || hookDecision.ForceFull {
 		onceResult, err := m.runLLMSummarization(ctx, sessionID)
 		if err != nil {
@@ -1144,7 +1193,7 @@ func (m *compactionManager) ScheduleCompaction(ctx context.Context, sessionID st
 			SessionID: sessionID,
 		})
 
-		result, err := m.compactLocked(detachedCtx, sessionID, hookDecision)
+		result, err := m.compactLocked(detachedCtx, sessionID, hookDecision, &compactConfig{})
 		if err != nil {
 			m.broker.Publish(pubsub.CreatedEvent, CompactionEvent{
 				Type:      CompactionFailed,
@@ -1265,7 +1314,7 @@ func (m *compactionManager) tokenUsageForSession(sessionID string) TokenUsageFun
 
 // newSessionLayerManager builds a CompactionLayerManager for the given session
 // with all currently available layers wired in.
-func (m *compactionManager) newSessionLayerManager(sessionID string) *CompactionLayerManager {
+func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTier ...*PressureTier) *CompactionLayerManager {
 	microCompactor := NewMicroCompactor(MicroCompactorConfig{
 		Store:     m.store,
 		SessionID: sessionID,
@@ -1341,13 +1390,13 @@ func (m *compactionManager) newSessionLayerManager(sessionID string) *Compaction
 // RunLayeredCompaction executes the multi-layer compaction framework for a
 // session. It builds a session-specific CompactionLayerManager with all wired
 // layers and runs them in priority order.
-func (m *compactionManager) RunLayeredCompaction(ctx context.Context, sessionID string) (*CompactionLayerResult, error) {
+func (m *compactionManager) RunLayeredCompaction(ctx context.Context, sessionID string, overrideTier ...*PressureTier) (*CompactionLayerResult, error) {
 	budget, err := m.GetBudget(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("layered compaction: getting budget: %w", err)
 	}
 
-	lm := m.newSessionLayerManager(sessionID)
+	lm := m.newSessionLayerManager(sessionID, overrideTier...)
 	return lm.RunAll(ctx, budget)
 }
 

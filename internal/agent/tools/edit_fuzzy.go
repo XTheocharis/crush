@@ -364,6 +364,16 @@ func SetSymbolParser(p symbolParser) {
 	globalSymbolParser = p
 }
 
+// InitSymbolParser initializes the global symbol parser for fuzzy matching.
+// Pass a treesitter.Parser (real build) or nil (stub build / cleanup).
+func InitSymbolParser(parser any) {
+	if parser != nil {
+		globalSymbolParser = newSymbolParserFromAny(parser)
+	} else {
+		globalSymbolParser = nil
+	}
+}
+
 // fuzzySymbolLookup attempts to find symbol definitions in filePath whose
 // names fuzzy-match the query. Returns matches sorted by descending score.
 // Returns an empty slice (not an error) if tree-sitter is unavailable or the

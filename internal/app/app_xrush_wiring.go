@@ -233,6 +233,29 @@ func wireLCMLargeOutputThreshold(store *config.ConfigStore) {
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireLCMSessionBudget]
+func wireLCMSessionBudget(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	if cfg.Options == nil || cfg.Options.LCM == nil {
+		return
+	}
+	if cfg.Options.LCM.SessionBudget <= 0 {
+		return
+	}
+
+	mgr.SetSessionBudget(cfg.Options.LCM.SessionBudget)
+	slog.Info("LCM session budget set from config",
+		"session_budget", cfg.Options.LCM.SessionBudget,
+	)
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wireNudgeConfig]
 // wireNudgeConfig reads nudge options from the LCM config and creates a
 // NudgeInjector wired into the LCM manager. When nudge config is nil, defaults

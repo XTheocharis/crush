@@ -240,6 +240,10 @@ type mockFileTracker struct{}
 
 func (m mockFileTracker) RecordRead(ctx context.Context, sessionID, path string) {}
 
+func (m mockFileTracker) RecordWrite(ctx context.Context, sessionID, path string) error {
+	return nil
+}
+
 func (m mockFileTracker) LastReadTime(ctx context.Context, sessionID, path string) time.Time {
 	return time.Time{}
 }

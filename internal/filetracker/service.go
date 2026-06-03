@@ -12,10 +12,13 @@ import (
 	"github.com/charmbracelet/crush/internal/db"
 )
 
-// Service defines the interface for tracking file reads in sessions.
+// Service defines the interface for tracking file reads and writes in sessions.
 type Service interface {
 	// RecordRead records when a file was read.
 	RecordRead(ctx context.Context, sessionID, path string)
+
+	// RecordWrite records when a file was written.
+	RecordWrite(ctx context.Context, sessionID, path string) error
 
 	// LastReadTime returns when a file was last read.
 	// Returns zero time if never read.
@@ -45,6 +48,14 @@ func (s *service) RecordRead(ctx context.Context, sessionID, path string) {
 	}); err != nil {
 		slog.Error("Error recording file read", "error", err, "file", path)
 	}
+}
+
+// RecordWrite records when a file was written.
+func (s *service) RecordWrite(ctx context.Context, sessionID, path string) error {
+	return s.q.RecordFileWrite(ctx, db.RecordFileWriteParams{
+		SessionID: sessionID,
+		Path:      relpath(path),
+	})
 }
 
 // LastReadTime returns when a file was last read.

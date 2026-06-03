@@ -55,7 +55,15 @@ func newCompactTool(mgr Manager) fantasy.AgentTool {
 			tokenCountBefore, _ := mgr.GetContextTokenCount(ctx, sessionID)
 			budget, budgetErr := mgr.GetBudget(ctx, sessionID)
 
-			if err := mgr.Compact(ctx, sessionID); err != nil {
+			var opts []CompactOption
+			if params.Pressure != "" {
+				opts = append(opts, WithPressure(params.Pressure))
+			}
+			if params.TargetTokens > 0 {
+				opts = append(opts, WithTargetTokens(int64(params.TargetTokens)))
+			}
+
+			if err := mgr.Compact(ctx, sessionID, opts...); err != nil {
 				return fantasy.NewTextErrorResponse(
 					fmt.Sprintf("Compaction failed: %v", err)), nil
 			}

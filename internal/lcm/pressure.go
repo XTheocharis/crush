@@ -3,6 +3,7 @@ package lcm
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,19 @@ func (t PressureTier) String() string {
 		return "high"
 	default:
 		return fmt.Sprintf("unknown(%d)", t)
+	}
+}
+
+func parsePressureTier(s string) (PressureTier, bool) {
+	switch strings.ToLower(s) {
+	case "low":
+		return PressureLow, true
+	case "medium":
+		return PressureMedium, true
+	case "high":
+		return PressureHigh, true
+	default:
+		return PressureLow, false
 	}
 }
 
@@ -169,9 +183,10 @@ type TokenUsageFunc func(ctx context.Context) (currentTokens int64, contextWindo
 // Sub-layers for each tier are supplied at construction time so the selector
 // itself does not hard-code any compaction logic.
 type PressureCompactionSelector struct {
-	cfg        PressureConfig
-	usageFn    TokenUsageFunc
-	tierLayers map[PressureTier][]CompactionLayer
+	cfg          PressureConfig
+	usageFn      TokenUsageFunc
+	tierLayers   map[PressureTier][]CompactionLayer
+	overrideTier *PressureTier
 }
 
 // NewPressureCompactionSelector creates a Layer 5 selector with the given
@@ -191,6 +206,12 @@ func NewPressureCompactionSelector(
 		usageFn:    usageFn,
 		tierLayers: tierLayers,
 	}
+}
+
+// SetOverrideTier sets a one-shot pressure tier override. The override is
+// consumed after the next Compact call.
+func (s *PressureCompactionSelector) SetOverrideTier(tier PressureTier) {
+	s.overrideTier = &tier
 }
 
 // fillDefaults replaces zero-valued fields with the defaults.
@@ -242,7 +263,13 @@ func (s *PressureCompactionSelector) Compact(ctx context.Context, budget Budget)
 		return nil, fmt.Errorf("pressure-selector: reading token usage: %w", err)
 	}
 
-	_, tier := CalculatePressureTier(currentTokens, contextWindow, s.cfg)
+	tier := PressureLow
+	if s.overrideTier != nil {
+		tier = *s.overrideTier
+		s.overrideTier = nil
+	} else {
+		_, tier = CalculatePressureTier(currentTokens, contextWindow, s.cfg)
+	}
 	return s.runTierLayers(ctx, tier, budget)
 }
 
