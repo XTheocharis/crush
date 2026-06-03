@@ -25,7 +25,7 @@ import (
 
 // [XRUSH: begin: initRewindService]
 // initRewindService creates the rewind service from the database and config.
-// Returns nil if snapshot config is missing (feature disabled).
+// The snapshot config's MaxPerSession controls retention limit; the service is always active.
 func initRewindService(q db.Querier, sessions session.Service, store *config.ConfigStore) rewind.Service {
 	cfg := store.Config()
 	var opts []rewind.SnapshotterOption
