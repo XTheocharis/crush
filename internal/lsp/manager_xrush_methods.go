@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"runtime"
 	"sort"
 	"time"
@@ -68,15 +69,21 @@ func (s *Manager) resolveAutoDownload(ctx context.Context, name string, server *
 	}
 
 	url, sha256, downloadType, ok := catalog.ResolveDownloadURL(name, runtime.GOOS, runtime.GOARCH)
-	if !ok {
+	if ok {
+		cfg := config.AutoDownloadConfig{URL: url, SHA256: sha256, DownloadType: downloadType}
+		resolved, dlErr := ResolveDownloadPath(ctx, name, server.Command, cfg)
+		if dlErr != nil {
+			slog.Debug("Catalog auto-download failed for LSP server", "name", name, "error", dlErr)
+		} else if resolved != server.Command {
+			server.Command = resolved
+		}
 		return
 	}
-	cfg := config.AutoDownloadConfig{URL: url, SHA256: sha256, DownloadType: downloadType}
-	resolved, dlErr := ResolveDownloadPath(ctx, name, server.Command, cfg)
-	if dlErr != nil {
-		slog.Debug("Catalog auto-download failed for LSP server", "name", name, "error", dlErr)
-	} else if resolved != server.Command {
-		server.Command = resolved
+
+	installCfg, ok := catalog.ResolveInstallMethod(name)
+	if ok {
+		s.resolveViaInstaller(ctx, name, server, installCfg)
+		return
 	}
 }
 
@@ -385,4 +392,31 @@ func (s *Manager) handleServerReadyFailure(ctx context.Context, client *Client, 
 // WaitForServerReady succeeds: start crash recovery.
 func (s *Manager) handleServerReadySuccess(ctx context.Context, name string, cfg config.LSPConfig) {
 	s.startCrashRecovery(ctx, name, cfg)
+}
+
+func (s *Manager) resolveViaInstaller(ctx context.Context, name string, server *powernapconfig.ServerConfig, cfg catalog.InstallConfig) {
+	if cfg.Method == "path" {
+		if _, err := exec.LookPath(server.Command); err != nil {
+			slog.Warn("LSP server not found on PATH", "name", name, "command", server.Command)
+		}
+		return
+	}
+
+	if cfg.RuntimeDep != "" && !IsRuntimeAvailable(cfg.RuntimeDep) {
+		slog.Warn("LSP server runtime not available, skipping", "name", name, "runtime", cfg.RuntimeDep)
+		return
+	}
+
+	installer, ok := s.installers[cfg.Method]
+	if !ok {
+		slog.Warn("No installer for method", "name", name, "method", cfg.Method)
+		return
+	}
+
+	resolved, err := installer.Install(ctx, name, cfg)
+	if err != nil {
+		slog.Warn("LSP server install failed", "name", name, "method", cfg.Method, "error", err)
+		return
+	}
+	server.Command = resolved
 }

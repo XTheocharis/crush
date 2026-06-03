@@ -36,6 +36,8 @@ type Manager struct {
 	crashRecovery   bool
 	healthChecker   *HealthChecker
 	withHealthCheck bool
+	// Installers keyed by install method ("npm", "pip").
+	installers map[string]Installer
 	// [XRUSH: end]
 }
 
@@ -79,6 +81,10 @@ func NewManager(cfg *config.ConfigStore) *Manager {
 		// Crash recovery default enabled.
 		crashRecovery:   true,
 		withHealthCheck: true,
+		installers: map[string]Installer{
+			"npm": NewNpmInstaller(LSPCacheDir()),
+			"pip": NewPipInstaller(LSPCacheDir()),
+		},
 		// [XRUSH: end]
 	}
 	// [XRUSH: begin: start executor and health checker]
