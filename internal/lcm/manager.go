@@ -1374,6 +1374,10 @@ func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTie
 		},
 	)
 
+	if len(overrideTier) > 0 && overrideTier[0] != nil {
+		pressureSelector.SetOverrideTier(*overrideTier[0])
+	}
+
 	return NewCompactionLayerManager(
 		microCompactor,
 		timeGapLayer,
