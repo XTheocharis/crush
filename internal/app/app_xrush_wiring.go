@@ -400,6 +400,43 @@ func wireLCMObservationConfig(store *config.ConfigStore) {
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireLCMDedupConfig]
+// wireLCMDedupConfig reads deduplication and purge-errors flags from the LCM
+// config and wires them into the LCM manager. When either flag is nil (not
+// explicitly set), the default is true (enabled).
+func wireLCMDedupConfig(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	if cfg.Options == nil || cfg.Options.LCM == nil {
+		// Both default to true when no LCM config is present.
+		mgr.SetDeduplicationEnabled(true)
+		mgr.SetPurgeErrorsEnabled(true)
+		return
+	}
+
+	dedup := true
+	if cfg.Options.LCM.DeduplicationEnabled != nil {
+		dedup = *cfg.Options.LCM.DeduplicationEnabled
+	}
+	purge := true
+	if cfg.Options.LCM.PurgeErrorsEnabled != nil {
+		purge = *cfg.Options.LCM.PurgeErrorsEnabled
+	}
+
+	mgr.SetDeduplicationEnabled(dedup)
+	mgr.SetPurgeErrorsEnabled(purge)
+	slog.Info("LCM dedup config wired",
+		"deduplication_enabled", dedup,
+		"purge_errors_enabled", purge,
+	)
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wireCompactHookRunners]
 // wireCompactHookRunners creates hooks.Runner instances for PreCompact and
 // PostCompact events from the config and wires them into the LCM manager.

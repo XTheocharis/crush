@@ -204,6 +204,14 @@ type Manager interface {
 	// Zero values keep the hardcoded defaults (MaxFiles=5, TokenBudget=50000).
 	SetPostCompactConfig(maxFiles int, tokenBudget int64)
 
+	// SetDeduplicationEnabled controls whether the dedup compaction layer is
+	// active (default: true).
+	SetDeduplicationEnabled(enabled bool)
+
+	// SetPurgeErrorsEnabled controls whether error entries are purged during
+	// compaction (default: true).
+	SetPurgeErrorsEnabled(enabled bool)
+
 	// GetTurnCount returns the current turn count for a session. Returns 0
 	// for unknown sessions.
 	GetTurnCount(sessionID string) int64
@@ -1659,12 +1667,15 @@ func (m *compactionManager) SetObservationConfig(strategyName string, threshold 
 	if reflectorObservationTokens > 0 {
 		m.reflector.SetThreshold(reflectorObservationTokens)
 	}
+	// observerBufferRatio controls the BufferingCoordinator's interval
+	// fraction (default 0.2). reflectorBufferActivation is a distinct
+	// concept (when async reflection starts relative to observationTokens,
+	// default 0.5) and is NOT wired through SetThresholdPercent, which
+	// would overwrite the observer ratio.
 	if observerBufferRatio > 0 {
 		m.bufferingCoordinator.SetThresholdPercent(observerBufferRatio)
 	}
-	if reflectorBufferActivation > 0 {
-		m.bufferingCoordinator.SetThresholdPercent(reflectorBufferActivation)
-	}
+	_ = reflectorBufferActivation
 }
 
 func (m *compactionManager) OnSessionStart(ctx context.Context, sessionID string) error {

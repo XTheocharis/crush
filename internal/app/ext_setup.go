@@ -86,6 +86,10 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMOperationalMemory(conn, store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM dedup config]
+	wireLCMDedupConfig(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire LCM observation config]
 	wireLCMObservationConfig(store)
 	// [XRUSH: end]
