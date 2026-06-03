@@ -82,6 +82,7 @@ func (o Options) merge(t Options) Options {
 	o.DisableProviderAutoUpdate = o.DisableProviderAutoUpdate || t.DisableProviderAutoUpdate
 	o.DisableDefaultProviders = o.DisableDefaultProviders || t.DisableDefaultProviders
 	o.DisableMetrics = o.DisableMetrics || t.DisableMetrics
+	o.DisableUpdateCheck = o.DisableUpdateCheck || t.DisableUpdateCheck
 	o.DataDirectory = cmp.Or(t.DataDirectory, o.DataDirectory)
 	o.InitializeAs = cmp.Or(t.InitializeAs, o.InitializeAs)
 	o.DisabledTools = append(o.DisabledTools, t.DisabledTools...)
@@ -185,6 +186,7 @@ func (o Options) merge(t Options) Options {
 	}
 	o.DoomLoopIntervention = cmp.Or(t.DoomLoopIntervention, o.DoomLoopIntervention)
 	o.DisableNotifications = o.DisableNotifications || t.DisableNotifications
+	o.BetaTools = o.BetaTools || t.BetaTools
 	o.DisabledSkills = append(o.DisabledSkills, t.DisabledSkills...)
 
 	if t.Snapshot != nil {

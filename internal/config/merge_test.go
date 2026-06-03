@@ -832,6 +832,40 @@ func TestConfigMerging(t *testing.T) {
 		require.True(t, c.Options.DisableDefaultProviders)
 	})
 
+	t.Run("options_disable_update_check_true_if_any", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				DisableUpdateCheck: false,
+				TUI:                &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				DisableUpdateCheck: true,
+				TUI:                &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.True(t, c.Options.DisableUpdateCheck)
+	})
+
+	t.Run("options_beta_tools_true_if_any", func(t *testing.T) {
+		c := exerciseMerge(t, Config{
+			Options: &Options{
+				BetaTools: false,
+				TUI:       &TUIOptions{},
+			},
+		}, Config{
+			Options: &Options{
+				BetaTools: true,
+				TUI:       &TUIOptions{},
+			},
+		})
+
+		require.NotNil(t, c)
+		require.True(t, c.Options.BetaTools)
+	})
+
 	t.Run("provider_config_merge_preserves_fields", func(t *testing.T) {
 		// Tests that merging a later provider config with empty fields
 		// does not overwrite earlier non-empty fields.
