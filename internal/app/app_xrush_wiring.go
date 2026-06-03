@@ -256,6 +256,30 @@ func wireLCMSessionBudget(store *config.ConfigStore) {
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireLCMPostCompactConfig]
+func wireLCMPostCompactConfig(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	if cfg.Options == nil || cfg.Options.LCM == nil {
+		return
+	}
+	if cfg.Options.LCM.PostCompactMaxFiles == 0 && cfg.Options.LCM.PostCompactTokenBudget == 0 {
+		return
+	}
+
+	mgr.SetPostCompactConfig(cfg.Options.LCM.PostCompactMaxFiles, cfg.Options.LCM.PostCompactTokenBudget)
+	slog.Info("LCM post-compact config set from config",
+		"max_files", cfg.Options.LCM.PostCompactMaxFiles,
+		"token_budget", cfg.Options.LCM.PostCompactTokenBudget,
+	)
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wireNudgeConfig]
 // wireNudgeConfig reads nudge options from the LCM config and creates a
 // NudgeInjector wired into the LCM manager. When nudge config is nil, defaults
@@ -359,12 +383,18 @@ func wireLCMObservationConfig(store *config.ConfigStore) {
 		int64(obs.ObserverMessageTokens),
 		obs.ObserverModel,
 		obs.ReflectorModel,
+		obs.ObserverBufferRatio,
+		int64(obs.ReflectorObservationTokens),
+		obs.ReflectorBufferActivation,
 	)
 	slog.Info("LCM observation config wired",
 		"strategy", obs.Strategy,
 		"threshold", obs.ObserverMessageTokens,
 		"observer_model", obs.ObserverModel,
 		"reflector_model", obs.ReflectorModel,
+		"observer_buffer_ratio", obs.ObserverBufferRatio,
+		"reflector_observation_tokens", obs.ReflectorObservationTokens,
+		"reflector_buffer_activation", obs.ReflectorBufferActivation,
 	)
 }
 

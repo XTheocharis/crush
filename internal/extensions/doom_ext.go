@@ -32,6 +32,7 @@ func (e *DoomExtension) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
 
 	doomDetector := agent.NewDoomLoopDetector(agent.DefaultDoomLoopThresholds, 0)
+	doomDetector.SetInterventionMode(host.Config().Options.DoomLoopIntervention)
 	e.detector = agent.NewProductiveLoopDetector(doomDetector)
 	e.maxWindow = 10
 	e.active = true

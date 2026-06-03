@@ -116,8 +116,12 @@ func (o Options) merge(t Options) Options {
 		o.LCM.OperationalMemoryEnabled = o.LCM.OperationalMemoryEnabled || t.LCM.OperationalMemoryEnabled
 		o.LCM.PostCompactMaxFiles = cmp.Or(t.LCM.PostCompactMaxFiles, o.LCM.PostCompactMaxFiles)
 		o.LCM.PostCompactTokenBudget = cmp.Or(t.LCM.PostCompactTokenBudget, o.LCM.PostCompactTokenBudget)
-		o.LCM.DeduplicationEnabled = o.LCM.DeduplicationEnabled || t.LCM.DeduplicationEnabled
-		o.LCM.PurgeErrorsEnabled = o.LCM.PurgeErrorsEnabled || t.LCM.PurgeErrorsEnabled
+		if t.LCM.DeduplicationEnabled != nil {
+			o.LCM.DeduplicationEnabled = cmp.Or(o.LCM.DeduplicationEnabled, t.LCM.DeduplicationEnabled)
+		}
+		if t.LCM.PurgeErrorsEnabled != nil {
+			o.LCM.PurgeErrorsEnabled = cmp.Or(o.LCM.PurgeErrorsEnabled, t.LCM.PurgeErrorsEnabled)
+		}
 		if t.LCM.Observation != nil {
 			if o.LCM.Observation == nil {
 				o.LCM.Observation = &ObservationOptions{}

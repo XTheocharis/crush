@@ -187,7 +187,7 @@ func TestSetObservationConfig_Integration(t *testing.T) {
 	queries, sqlDB := setupTestDB(t)
 	mgr := NewManagerWithLLM(queries, sqlDB, &mockLLMClient{})
 
-	mgr.SetObservationConfig("resource-scoped", 50000, "claude-sonnet-4", "gpt-4o-mini")
+	mgr.SetObservationConfig("resource-scoped", 50000, "claude-sonnet-4", "gpt-4o-mini", 0, 0, 0)
 
 	cm := mgr.(*compactionManager)
 	require.Equal(t, ResourceScopedStrategy{AllocFraction: 0.8}, cm.observer.strategy)
@@ -201,7 +201,7 @@ func TestSetObservationConfig_DefaultStrategy(t *testing.T) {
 	queries, sqlDB := setupTestDB(t)
 	mgr := NewManagerWithLLM(queries, sqlDB, &mockLLMClient{})
 
-	mgr.SetObservationConfig("", 0, "", "")
+	mgr.SetObservationConfig("", 0, "", "", 0, 0, 0)
 
 	cm := mgr.(*compactionManager)
 	require.Equal(t, DefaultStrategy{}, cm.observer.strategy)

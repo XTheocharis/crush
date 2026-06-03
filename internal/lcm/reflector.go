@@ -79,6 +79,15 @@ func (ra *ReflectorAgent) SetLLMClient(llm LLMClient) {
 	ra.llm = llm
 }
 
+// SetThreshold updates the token count threshold for triggering reflections.
+func (ra *ReflectorAgent) SetThreshold(threshold int64) {
+	ra.mu.Lock()
+	defer ra.mu.Unlock()
+	if threshold > 0 {
+		ra.threshold = threshold
+	}
+}
+
 // Threshold returns the configured token threshold for triggering reflections.
 func (ra *ReflectorAgent) Threshold() int64 {
 	return ra.threshold
@@ -513,6 +522,16 @@ func NewBufferingCoordinatorWithPercent(store *Store, reflector *ReflectorAgent,
 		reflector:        reflector,
 		thresholdPercent: percent,
 		intervals:        make(map[string]int),
+	}
+}
+
+// SetThresholdPercent updates the threshold percent used for interval
+// calculation.
+func (bc *BufferingCoordinator) SetThresholdPercent(percent float64) {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	if percent > 0 {
+		bc.thresholdPercent = percent
 	}
 }
 

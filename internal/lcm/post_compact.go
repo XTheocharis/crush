@@ -167,6 +167,14 @@ type PostCompactCleanerConfig struct {
 	// AgentConfigRestorer restores checkpointed agent configuration
 	// (skills, tools, agents) after compaction. Optional.
 	AgentConfigRestorer AgentConfigRestorer
+
+	// MaxFiles limits how many files are re-injected after compaction.
+	// When zero, defaults to 5.
+	MaxFiles int
+
+	// TokenBudget is the token budget for post-compaction re-injection.
+	// When zero, defaults to 50000.
+	TokenBudget int64
 }
 
 // PostCompactCleaner is Layer 4 of the compaction framework. It restores

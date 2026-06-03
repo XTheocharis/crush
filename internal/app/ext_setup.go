@@ -62,6 +62,10 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMSessionBudget(store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM post-compact config from config]
+	wireLCMPostCompactConfig(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire LCM model output limit from model metadata]
 	wireLCMModelOutputLimit(store)
 	// [XRUSH: end]

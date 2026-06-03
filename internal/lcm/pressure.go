@@ -337,25 +337,59 @@ type GraduatedPressureSystem struct {
 	strategies map[PressureTier][]CompressionStrategy
 }
 
+type graduatedPressureOpts struct {
+	purgeErrorsEnabled bool
+}
+
+// GraduatedPressureOption configures a GraduatedPressureSystem.
+type GraduatedPressureOption func(*graduatedPressureOpts)
+
+// WithPurgeErrorsEnabled controls whether the purge-errors strategy is
+// included. Defaults to true when no option is provided.
+func WithPurgeErrorsEnabled(enabled bool) GraduatedPressureOption {
+	return func(o *graduatedPressureOpts) { o.purgeErrorsEnabled = enabled }
+}
+
 // NewGraduatedPressureSystem creates a GraduatedPressureSystem with the given
 // configuration, context limits, and LLM client. It builds the default
 // tier-to-strategy mapping from the client. If cfg has zero-valued thresholds
 // they are filled from DefaultPressureConfig.
-func NewGraduatedPressureSystem(cfg PressureConfig, limits ContextLimits, llm LLMClient) *GraduatedPressureSystem {
+func NewGraduatedPressureSystem(cfg PressureConfig, limits ContextLimits, llm LLMClient, opts ...GraduatedPressureOption) *GraduatedPressureSystem {
 	cfg = fillDefaults(cfg)
 
-	purgeErrors := NewPurgeErrorsCompression(llm)
+	gOpts := graduatedPressureOpts{purgeErrorsEnabled: true}
+	for _, o := range opts {
+		o(&gOpts)
+	}
+
 	dedup := NewDedupCompression(llm)
 	message := NewMessageCompression(llm)
 	rng := NewRangeCompression(llm)
+
+	var purgeErrors CompressionStrategy
+	if gOpts.purgeErrorsEnabled {
+		purgeErrors = NewPurgeErrorsCompression(llm)
+	}
+
+	lowStrategies := []CompressionStrategy{}
+	medStrategies := []CompressionStrategy{}
+	highStrategies := []CompressionStrategy{}
+
+	if purgeErrors != nil {
+		lowStrategies = append(lowStrategies, purgeErrors)
+		medStrategies = append(medStrategies, purgeErrors)
+		highStrategies = append(highStrategies, purgeErrors)
+	}
+	medStrategies = append(medStrategies, dedup, message)
+	highStrategies = append(highStrategies, dedup, message, rng)
 
 	return &GraduatedPressureSystem{
 		cfg:    cfg,
 		limits: limits,
 		strategies: map[PressureTier][]CompressionStrategy{
-			PressureLow:    {purgeErrors},
-			PressureMedium: {purgeErrors, dedup, message},
-			PressureHigh:   {purgeErrors, dedup, message, rng},
+			PressureLow:    lowStrategies,
+			PressureMedium: medStrategies,
+			PressureHigh:   highStrategies,
 		},
 	}
 }

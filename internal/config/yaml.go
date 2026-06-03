@@ -230,8 +230,12 @@ func (x *xrushConfig) toConfig() *Config {
 			if cfg.Options.LCM == nil {
 				cfg.Options.LCM = &LCMOptions{}
 			}
-			cfg.Options.LCM.DeduplicationEnabled = s.Deduplication
-			cfg.Options.LCM.PurgeErrorsEnabled = s.PurgeErrors
+			if s.Deduplication {
+				cfg.Options.LCM.DeduplicationEnabled = &s.Deduplication
+			}
+			if s.PurgeErrors {
+				cfg.Options.LCM.PurgeErrorsEnabled = &s.PurgeErrors
+			}
 		}
 	}
 
@@ -365,13 +369,13 @@ func fromConfig(cfg *Config) *xrushConfig {
 			}
 		}
 
-		if lcm.DeduplicationEnabled || lcm.PurgeErrorsEnabled {
+		if boolPtrOr(lcm.DeduplicationEnabled, false) || boolPtrOr(lcm.PurgeErrorsEnabled, false) {
 			if dc.DCP == nil {
 				dc.DCP = &xrushDCPConfig{}
 			}
 			dc.DCP.Strategies = &xrushDCPStrategiesConfig{
-				Deduplication: lcm.DeduplicationEnabled,
-				PurgeErrors:   lcm.PurgeErrorsEnabled,
+				Deduplication: boolPtrOr(lcm.DeduplicationEnabled, false),
+				PurgeErrors:   boolPtrOr(lcm.PurgeErrorsEnabled, false),
 			}
 		}
 
@@ -485,4 +489,11 @@ func ReadYAMLConfig(path string) (*xrushConfig, error) {
 		return nil, err
 	}
 	return &dc, nil
+}
+
+func boolPtrOr(p *bool, def bool) bool {
+	if p == nil {
+		return def
+	}
+	return *p
 }

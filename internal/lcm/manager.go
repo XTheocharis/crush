@@ -200,6 +200,10 @@ type Manager interface {
 	// context-limit warnings are appended to prompts when pressure is high.
 	SetNudgeInjector(injector *nudge.NudgeInjector)
 
+	// SetPostCompactConfig sets the post-compaction re-injection limits.
+	// Zero values keep the hardcoded defaults (MaxFiles=5, TokenBudget=50000).
+	SetPostCompactConfig(maxFiles int, tokenBudget int64)
+
 	// GetTurnCount returns the current turn count for a session. Returns 0
 	// for unknown sessions.
 	GetTurnCount(sessionID string) int64
@@ -216,7 +220,11 @@ type Manager interface {
 	// strategy, threshold, and model overrides derived from the runtime
 	// config. When strategyName is empty the default strategy is used.
 	// When threshold is zero the built-in default is used.
-	SetObservationConfig(strategyName string, threshold int64, observerModel string, reflectorModel string)
+	// observerBufferRatio controls the BufferingCoordinator interval fraction
+	// (default 0.2). reflectorObservationTokens sets the reflector threshold
+	// (default 40000). reflectorBufferActivation sets the reflector's buffer
+	// activation percent (default 0.5).
+	SetObservationConfig(strategyName string, threshold int64, observerModel string, reflectorModel string, observerBufferRatio float64, reflectorObservationTokens int64, reflectorBufferActivation float64)
 
 	// CompressWith delegates to the configured Compressor strategy for
 	// semantic compression of text. Returns an error when no Compressor
@@ -317,9 +325,20 @@ type compactionManager struct {
 	preCompactRunner      *hooks.Runner
 	postCompactRunner     *hooks.Runner
 
+	// DeduplicationEnabled controls whether the dedup compaction layer is
+	// created. Defaults to true.
+	deduplicationEnabled bool
+
+	// purgeErrorsEnabled controls whether the purge-errors compression
+	// strategy is included in the graduated pressure system. Defaults to true.
+	purgeErrorsEnabled bool
+
 	// agentConfigRestorer restores checkpointed session agent configuration
 	// (skills, tools, agents) after compaction.
 	agentConfigRestorer AgentConfigRestorer
+
+	postCompactMaxFiles    int
+	postCompactTokenBudget int64
 
 	// toolFactory creates LCM agent tools. Injected via constructor to
 	// avoid importing the concrete tools package (layering violation).
@@ -372,6 +391,8 @@ func NewManager(queries *db.Queries, rawDB *sql.DB, toolFactory ...types.LCMTool
 		blockTracker:          NewBlockIDTracker("blk"),
 		toolFactory:           factory,
 		contentReplacements:   newContentReplacementStore(queries, rawDB),
+		deduplicationEnabled:  true,
+		purgeErrorsEnabled:    true,
 	}
 }
 
@@ -408,6 +429,8 @@ func NewManagerWithLLM(queries *db.Queries, rawDB *sql.DB, llm LLMClient, toolFa
 		blockTracker:          NewBlockIDTracker("blk"),
 		toolFactory:           factory,
 		contentReplacements:   newContentReplacementStore(queries, rawDB),
+		deduplicationEnabled:  true,
+		purgeErrorsEnabled:    true,
 	}
 }
 
@@ -1312,6 +1335,16 @@ func (m *compactionManager) tokenUsageForSession(sessionID string) TokenUsageFun
 	}
 }
 
+func filterNilLayers(layers ...CompactionLayer) []CompactionLayer {
+	filtered := make([]CompactionLayer, 0, len(layers))
+	for _, l := range layers {
+		if l != nil {
+			filtered = append(filtered, l)
+		}
+	}
+	return filtered
+}
+
 // newSessionLayerManager builds a CompactionLayerManager for the given session
 // with all currently available layers wired in.
 func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTier ...*PressureTier) *CompactionLayerManager {
@@ -1320,11 +1353,21 @@ func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTie
 		SessionID: sessionID,
 	})
 
+	maxFiles := m.postCompactMaxFiles
+	if maxFiles == 0 {
+		maxFiles = 5
+	}
+	tokenBudget := m.postCompactTokenBudget
+	if tokenBudget == 0 {
+		tokenBudget = 50000
+	}
 	postCompactCleaner := NewPostCompactCleaner(PostCompactCleanerConfig{
 		Store:               m.preservedContextStore,
 		SessionID:           sessionID,
 		AgentConfigRestorer: m.agentConfigRestorer,
 		OMStore:             m.opMemory,
+		MaxFiles:            maxFiles,
+		TokenBudget:         tokenBudget,
 	})
 
 	cacheOpt := NewCacheOptimizer(CacheOptimizerConfig{
@@ -1355,7 +1398,10 @@ func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTie
 		SessionID: sessionID,
 	})
 
-	dedupLayer := NewDedupCompactionLayer(m.store, sessionID)
+	var dedupLayer CompactionLayer
+	if m.deduplicationEnabled {
+		dedupLayer = NewDedupCompactionLayer(m.store, sessionID)
+	}
 	staleLayer := NewStaleEvictionLayer(m.store, sessionID, 0)
 	adjacentLayer := NewAdjacentCondensationLayer(m.store, sessionID, 0)
 	timeGapLayer := NewTimeGapCompactor(TimeGapCompactorConfig{
@@ -1378,7 +1424,7 @@ func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTie
 		pressureSelector.SetOverrideTier(*overrideTier[0])
 	}
 
-	return NewCompactionLayerManager(
+	return NewCompactionLayerManager(filterNilLayers(
 		microCompactor,
 		timeGapLayer,
 		dedupLayer,
@@ -1388,7 +1434,7 @@ func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTie
 		pressureSelector,
 		cacheOpt.Layer6(),
 		cacheOpt.Layer7(),
-	)
+	)...)
 }
 
 // RunLayeredCompaction executes the multi-layer compaction framework for a
@@ -1550,6 +1596,14 @@ func (m *compactionManager) SetOperationalMemoryEnabled(enabled bool) {
 	m.operationalMemEnabled = enabled
 }
 
+func (m *compactionManager) SetDeduplicationEnabled(enabled bool) {
+	m.deduplicationEnabled = enabled
+}
+
+func (m *compactionManager) SetPurgeErrorsEnabled(enabled bool) {
+	m.purgeErrorsEnabled = enabled
+}
+
 func (m *compactionManager) SetHookRunners(preCompact, postCompact *hooks.Runner) {
 	m.preCompactRunner = preCompact
 	m.postCompactRunner = postCompact
@@ -1564,6 +1618,11 @@ func (m *compactionManager) SetAgentConfigRestorer(restorer AgentConfigRestorer)
 
 func (m *compactionManager) SetNudgeInjector(injector *nudge.NudgeInjector) {
 	m.nudgeInjector = injector
+}
+
+func (m *compactionManager) SetPostCompactConfig(maxFiles int, tokenBudget int64) {
+	m.postCompactMaxFiles = maxFiles
+	m.postCompactTokenBudget = tokenBudget
 }
 
 // GetTurnCount returns the current turn count for a session. Returns 0 for
@@ -1592,11 +1651,20 @@ func (m *compactionManager) IncrementIteration(sessionID string) {
 	counterPtr.(*atomic.Int64).Add(1)
 }
 
-func (m *compactionManager) SetObservationConfig(strategyName string, threshold int64, observerModel string, reflectorModel string) {
+func (m *compactionManager) SetObservationConfig(strategyName string, threshold int64, observerModel string, reflectorModel string, observerBufferRatio float64, reflectorObservationTokens int64, reflectorBufferActivation float64) {
 	strategy := NewObservationStrategyFromConfig(strategyName)
 	m.observer.SetStrategy(strategy)
 	m.observer.SetThreshold(threshold)
 	m.observer.SetModelOverrides(observerModel, reflectorModel)
+	if reflectorObservationTokens > 0 {
+		m.reflector.SetThreshold(reflectorObservationTokens)
+	}
+	if observerBufferRatio > 0 {
+		m.bufferingCoordinator.SetThresholdPercent(observerBufferRatio)
+	}
+	if reflectorBufferActivation > 0 {
+		m.bufferingCoordinator.SetThresholdPercent(reflectorBufferActivation)
+	}
 }
 
 func (m *compactionManager) OnSessionStart(ctx context.Context, sessionID string) error {

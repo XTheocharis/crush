@@ -45,12 +45,12 @@ type LCMOptions struct {
 	PostCompactTokenBudget int64 `json:"post_compact_token_budget,omitempty" jsonschema:"description=Token budget for post-compaction re-injection,default=0"`
 
 	// DeduplicationEnabled enables deduplication of conversation entries
-	// during compaction. Default: false.
-	DeduplicationEnabled bool `json:"deduplication_enabled,omitempty" jsonschema:"description=Enable deduplication of conversation entries during compaction,default=false"`
+	// during compaction. Default: true.
+	DeduplicationEnabled *bool `json:"deduplication_enabled,omitempty" jsonschema:"description=Enable deduplication of conversation entries during compaction,default=true"`
 
 	// PurgeErrorsEnabled enables purging of error entries during compaction.
-	// Default: false.
-	PurgeErrorsEnabled bool `json:"purge_errors_enabled,omitempty" jsonschema:"description=Enable purging of error entries during compaction,default=false"`
+	// Default: true.
+	PurgeErrorsEnabled *bool `json:"purge_errors_enabled,omitempty" jsonschema:"description=Enable purging of error entries during compaction,default=true"`
 
 	// Observation configures the observation strategy used by the LCM observer.
 	// When nil, the default strategy (always observe, JSON output) is used.
