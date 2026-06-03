@@ -182,7 +182,7 @@ func (o Options) merge(t Options) Options {
 	o.DoomLoopIntervention = cmp.Or(t.DoomLoopIntervention, o.DoomLoopIntervention)
 	o.DisableNotifications = o.DisableNotifications || t.DisableNotifications
 	o.DisabledSkills = append(o.DisabledSkills, t.DisabledSkills...)
-	o.RouterTokenLimit = cmp.Or(t.RouterTokenLimit, o.RouterTokenLimit)
+
 	if t.Snapshot != nil {
 		if o.Snapshot == nil {
 			o.Snapshot = &SnapshotConfig{}

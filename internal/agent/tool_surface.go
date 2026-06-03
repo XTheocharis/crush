@@ -159,6 +159,7 @@ func (s *ToolSurface) registerDefaults() {
 	s.Register("lcm_describe", CapabilityMemory)
 	s.Register("lcm_expand", CapabilityMemory)
 	s.Register("lcm_bindle", CapabilityMemory)
+	s.Register("lcm_compact", CapabilityMemory)
 	s.Register("lcm_ancestry", CapabilityMemory)
 	s.Register("lcm_dolt", CapabilityMemory)
 	s.Register("lcm_archive", CapabilityMemory)
@@ -183,6 +184,7 @@ func (s *ToolSurface) registerDefaults() {
 	s.RegisterWithMarkers("synthetic_output", CapabilityObservation, MarkerBeta)
 
 	s.Register("productive_execute", CapabilityExecution)
+	s.Register("swarm_execute", CapabilityExecution)
 }
 
 // Register adds a tool to the surface with the given capability bitmask.

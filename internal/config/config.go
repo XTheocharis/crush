@@ -302,19 +302,9 @@ type Options struct {
 	// When nil the small model is used.
 	EditorModel *SelectedModel `json:"editor_model,omitempty" jsonschema:"description=Override model for editor/coding calls. Defaults to the small model when not set."`
 
-	// RouterTokenLimit is the token count threshold from the xrush router
-	// config's first tier. When set, it overrides the default small-model
-	// token limit used by the ModelRouter.
-	//
-	// Deprecated: Use RouterTiers for multi-tier routing instead.
-	// RouterTokenLimit only controls the binary ModelRouter, which has been
-	// superseded by TierRouter. See internal/agent/router_tier.go.
-	RouterTokenLimit int `json:"router_token_limit,omitempty" jsonschema:"description=Token count threshold for model routing, extracted from the xrush router config's first tier"`
-
 	// RouterTiers holds the full multi-tier routing configuration parsed
 	// from the xrush router config. When non-empty, TierRouter is used
-	// instead of the binary ModelRouter. Falls back to RouterTokenLimit
-	// when empty.
+	// instead of the binary ModelRouter.
 	RouterTiers []RoutingTier `json:"router_tiers,omitempty" jsonschema:"description=Multi-tier routing configuration with token thresholds"`
 
 	// Processors controls the message processing pipeline. When enabled, a

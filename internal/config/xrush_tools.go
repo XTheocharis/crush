@@ -27,8 +27,8 @@ func ResetExtensionToolNamesForTesting() {
 	extensionToolNames = nil
 }
 
-// xrushToolNames returns the list of xrush-only tool names in the
-// original order they appeared in allToolNames().
+// xrushToolNames returns the list of xrush-only tool names in
+// alphabetical order for deterministic interleaving in allToolNames().
 func xrushToolNames() []string {
 	return []string{
 		"agentic_map",
@@ -37,6 +37,7 @@ func xrushToolNames() []string {
 		"lcm_ancestry",
 		"lcm_archive",
 		"lcm_bindle",
+		"lcm_compact",
 		"lcm_describe",
 		"lcm_dolt",
 		"lcm_expand",
@@ -45,17 +46,19 @@ func xrushToolNames() []string {
 		"lcm_lineage",
 		"lcm_sprig",
 		"lcm_time_query",
+		"list_mcp_resources",
 		"llm_map",
 		"map_refresh",
 		"multiedit",
+		"productive_execute",
 		"read_mcp_resource",
 		"send_message",
 		"sourcegraph",
+		"swarm_execute",
 		"synthetic_output",
 		"task_stop",
 		"team_create",
 		"team_delete",
-		"list_mcp_resources",
 	}
 }
 
@@ -65,6 +68,7 @@ func xrushReadOnlyTools() []string {
 		"lcm_grep",
 		"lcm_describe",
 		"lcm_expand",
+		"lcm_compact",
 		"lcm_bindle",
 		"lcm_ancestry",
 		"lcm_dolt",
@@ -99,16 +103,17 @@ func allToolNames() []string {
 		fork[3],  // lcm_ancestry
 		fork[4],  // lcm_archive
 		fork[5],  // lcm_bindle
-		fork[6],  // lcm_describe
-		fork[7],  // lcm_dolt
-		fork[8],  // lcm_expand
-		fork[9],  // lcm_file_search
-		fork[10], // lcm_grep
-		fork[11], // lcm_lineage
-		fork[12], // lcm_sprig
-		fork[13], // lcm_time_query
-		fork[24], // list_mcp_resources
-		fork[14], // llm_map
+		fork[6],  // lcm_compact
+		fork[7],  // lcm_describe
+		fork[8],  // lcm_dolt
+		fork[9],  // lcm_expand
+		fork[10], // lcm_file_search
+		fork[11], // lcm_grep
+		fork[12], // lcm_lineage
+		fork[13], // lcm_sprig
+		fork[14], // lcm_time_query
+		fork[15], // list_mcp_resources
+		fork[16], // llm_map
 		"ls",
 		"lsp_diagnostics",
 		"lsp_document_symbols",
@@ -116,15 +121,17 @@ func allToolNames() []string {
 		"lsp_restart",
 		"lsp_symbols",
 		"lsp_workspace_symbols",
-		fork[15], // map_refresh
-		fork[16], // multiedit
-		fork[17], // read_mcp_resource
-		fork[18], // send_message
-		fork[19], // sourcegraph
-		fork[20], // synthetic_output
-		fork[21], // task_stop
-		fork[22], // team_create
-		fork[23], // team_delete
+		fork[17], // map_refresh
+		fork[18], // multiedit
+		fork[19], // productive_execute
+		fork[20], // read_mcp_resource
+		fork[21], // send_message
+		fork[22], // sourcegraph
+		fork[23], // swarm_execute
+		fork[24], // synthetic_output
+		fork[25], // task_stop
+		fork[26], // team_create
+		fork[27], // team_delete
 		"todos",
 		"view",
 		"write",

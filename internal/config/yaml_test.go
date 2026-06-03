@@ -424,7 +424,7 @@ func TestXrushRouterConfig_ToConfig(t *testing.T) {
 			}
 
 			require.NotNil(t, cfg.Options, "Options should be set when router is configured")
-			require.Equal(t, 0, cfg.Options.RouterTokenLimit, "RouterTokenLimit should NOT be set from yaml tiers")
+
 			require.Len(t, cfg.Options.RouterTiers, tt.expectedTiers)
 			require.Equal(t, tt.expectedUpTo, cfg.Options.RouterTiers[0].UpToTokens)
 		})

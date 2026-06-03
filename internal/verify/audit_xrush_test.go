@@ -608,17 +608,7 @@ func specGapComponents() []component {
 				{Pattern: "type Model struct", Files: []string{"internal/agent/agent.go"}},
 			},
 		},
-		// T5 — RouterTokenLimit in config.Options.
-		{
-			ID:   "T.5",
-			Name: "RouterTokenLimit in config.Options",
-			Files: []string{
-				"internal/config/config.go",
-			},
-			WireGrep: []wireCheck{
-				{Pattern: "RouterTokenLimit", Files: []string{"internal/config/config.go"}},
-			},
-		},
+
 		// T6 — repo_map_imports migration exists.
 		{
 			ID:   "T.6",

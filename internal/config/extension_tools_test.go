@@ -11,7 +11,7 @@ func TestExtensionToolNamesDefault(t *testing.T) {
 	t.Parallel()
 
 	names := allToolNames()
-	require.Len(t, names, 47)
+	require.Len(t, names, 50)
 	require.Contains(t, names, "bash")
 	require.Contains(t, names, "edit")
 	require.Contains(t, names, "view")
@@ -27,7 +27,7 @@ func TestExtensionToolNamesContributed(t *testing.T) {
 	})
 
 	names := allToolNames()
-	require.Len(t, names, 49)
+	require.Len(t, names, 52)
 	require.Contains(t, names, "bash")
 	require.Contains(t, names, "ext_tool_a")
 	require.Contains(t, names, "ext_tool_b")
@@ -50,7 +50,7 @@ func TestExtensionToolNamesReset(t *testing.T) {
 
 	namesAfter := allToolNames()
 	require.NotContains(t, namesAfter, "ext_tool_x")
-	require.Len(t, namesAfter, 47)
+	require.Len(t, namesAfter, 50)
 }
 
 func TestExtensionToolNamesEmptyFunction(t *testing.T) {
@@ -62,5 +62,5 @@ func TestExtensionToolNamesEmptyFunction(t *testing.T) {
 	})
 
 	names := allToolNames()
-	require.Len(t, names, 47)
+	require.Len(t, names, 50)
 }
