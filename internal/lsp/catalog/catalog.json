@@ -1,12 +1,7 @@
 {
   "_comment": "LSP server auto-download catalog. Each entry maps a server name to per-platform binary download URLs and SHA256 hashes. Supports bare binaries, gzip-compressed binaries, zip archives, and tar.gz archives via the download_type field.",
   "_skipped_servers": {
-    "_comment": "The following servers from the required list were skipped because they require npm, pip, a runtime, or have no standalone binary.",
-    "gopls": "go install only (go install golang.org/x/tools/gopls@latest)",
-    "elixir-ls": "zip archives containing scripts + Elixir runtime",
-    "kotlin-language-server": "zip archives containing JAR files (requires JVM)",
-    "dart-analysis-server": "Part of Dart SDK, no standalone binary",
-    "cmake-language-server": "pip only (Python package)"
+    "_comment": "The following servers from the required list were skipped because they require npm, pip, a runtime, or have no standalone binary."
   },
   "_multi_binary_map": {
     "vscode-json-language-server": { "canonical": "vscode-langservers-extracted", "entrypoint": "vscode-json-language-server" },
@@ -99,6 +94,23 @@
     "install_version": "1.19.2",
     "install_entrypoint": "yaml-language-server",
     "runtime_dep": "node"
+  },
+  "cmake-language-server": {
+    "install_method": "pip",
+    "install_package": "cmake-language-server",
+    "install_version": "0.1.11",
+    "install_entrypoint": "cmake-language-server",
+    "runtime_dep": "python"
+  },
+  "gopls": {
+    "install_method": "path",
+    "runtime_dep": "go"
+  },
+  "dart-analysis-server": {
+    "install_method": "path"
+  },
+  "elixir-ls": {
+    "install_method": "path"
   },
   "marksman": {
     "version": "2026-02-08",
@@ -603,6 +615,37 @@
       "windows/amd64": {
         "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.05.05-12.58.26/clojure-lsp-native-windows-amd64.zip",
         "sha256": "0a2b219d2c403c10c8296d33ef00b1e5b1b3bed7ea457828c0d3d949f0bd5122",
+        "download_type": "zip"
+      }
+    }
+  },
+  "kotlin-language-server": {
+    "version": "261.13587.0",
+    "description": "Kotlin Language Server",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://download-cdn.jetbrains.com/kotlin-lsp/261.13587.0/kotlin-lsp-261.13587.0-linux-x64.zip",
+        "sha256": "dc0ed2e70cb0d61fdabb26aefce8299b7a75c0dcfffb9413715e92caec6e83ec",
+        "download_type": "zip"
+      },
+      "linux/arm64": {
+        "url": "https://download-cdn.jetbrains.com/kotlin-lsp/261.13587.0/kotlin-lsp-261.13587.0-linux-aarch64.zip",
+        "sha256": "d1dceb000fe06c5e2c30b95e7f4ab01d05101bd03ed448167feeb544a9f1d651",
+        "download_type": "zip"
+      },
+      "darwin/amd64": {
+        "url": "https://download-cdn.jetbrains.com/kotlin-lsp/261.13587.0/kotlin-lsp-261.13587.0-mac-x64.zip",
+        "sha256": "a3972f27229eba2c226060e54baea1c958c82c326dfc971bf53f72a74d0564a3",
+        "download_type": "zip"
+      },
+      "darwin/arm64": {
+        "url": "https://download-cdn.jetbrains.com/kotlin-lsp/261.13587.0/kotlin-lsp-261.13587.0-mac-aarch64.zip",
+        "sha256": "d4ea28b22b29cf906fe16d23698a8468f11646a6a66dcb15584f306aaefbee6c",
+        "download_type": "zip"
+      },
+      "windows/amd64": {
+        "url": "https://download-cdn.jetbrains.com/kotlin-lsp/261.13587.0/kotlin-lsp-261.13587.0-win-x64.zip",
+        "sha256": "2806c2bd4810bd8e7ccc27d8c0ca4a5232a1c4f26ea1f4ba40e578b60860ccad",
         "download_type": "zip"
       }
     }
