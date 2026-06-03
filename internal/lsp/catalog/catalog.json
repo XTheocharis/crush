@@ -3,24 +3,10 @@
   "_skipped_servers": {
     "_comment": "The following servers from the required list were skipped because they require npm, pip, a runtime, or have no standalone binary.",
     "gopls": "go install only (go install golang.org/x/tools/gopls@latest)",
-    "typescript-language-server": "npm only (npm i -g typescript-language-server)",
-    "lua-language-server": "tar.gz/zip archives with 1314+ files (binary + Lua runtime)",
-    "bash-language-server": "npm only",
-    "yaml-language-server": "npm only",
-    "dockerfile-language-server": "npm only",
-    "graphql-language-service-server": "npm only",
-    "svelte-language-server": "npm only",
-    "vue-language-server": "npm only",
-    "tailwindcss-language-server": "npm only",
-    "prisma-language-server": "npm only (vsix packages)",
     "elixir-ls": "zip archives containing scripts + Elixir runtime",
     "kotlin-language-server": "zip archives containing JAR files (requires JVM)",
     "dart-analysis-server": "Part of Dart SDK, no standalone binary",
-    "cmake-language-server": "pip only (Python package)",
-    "solidity-ls": "npm only",
-    "vscode-json-language-server": "handled via _multi_binary_map",
-    "html-language-server": "handled via _multi_binary_map",
-    "css-language-server": "handled via _multi_binary_map"
+    "cmake-language-server": "pip only (Python package)"
   },
   "_multi_binary_map": {
     "vscode-json-language-server": { "canonical": "vscode-langservers-extracted", "entrypoint": "vscode-json-language-server" },
@@ -40,6 +26,78 @@
     "install_package": "some-sass-language-server",
     "install_version": "2.3.8",
     "install_entrypoint": "some-sass-language-server",
+    "runtime_dep": "node"
+  },
+  "bash-language-server": {
+    "install_method": "npm",
+    "install_package": "bash-language-server",
+    "install_version": "5.6.0",
+    "install_entrypoint": "bash-language-server",
+    "runtime_dep": "node"
+  },
+  "dockerfile-language-server": {
+    "install_method": "npm",
+    "install_package": "dockerfile-language-server",
+    "install_version": "0.11.0",
+    "install_entrypoint": "dockerfile-language-server",
+    "runtime_dep": "node"
+  },
+  "graphql-language-service-server": {
+    "install_method": "npm",
+    "install_package": "graphql-language-service-server",
+    "install_version": "1.10.0",
+    "install_entrypoint": "graphql-lsp",
+    "runtime_dep": "node"
+  },
+  "prisma-language-server": {
+    "install_method": "npm",
+    "install_package": "@prisma/language-server",
+    "install_version": "6.10.1",
+    "install_entrypoint": "prisma-language-server",
+    "runtime_dep": "node"
+  },
+  "solidity-ls": {
+    "install_method": "npm",
+    "install_package": "@nomicfoundation/solidity-language-server",
+    "install_version": "0.8.4",
+    "install_entrypoint": "nomicfoundation-solidity-language-server",
+    "runtime_dep": "node"
+  },
+  "svelte-language-server": {
+    "install_method": "npm",
+    "install_package": "svelte-language-server",
+    "install_version": "0.18.0",
+    "install_entrypoint": "svelteserver",
+    "runtime_dep": "node",
+    "companion_server": true
+  },
+  "tailwindcss-language-server": {
+    "install_method": "npm",
+    "install_package": "@tailwindcss/language-server",
+    "install_version": "0.14.4",
+    "install_entrypoint": "tailwindcss-language-server",
+    "runtime_dep": "node"
+  },
+  "typescript-language-server": {
+    "install_method": "npm",
+    "install_package": "typescript-language-server",
+    "install_version": "5.1.3",
+    "install_entrypoint": "typescript-language-server",
+    "runtime_dep": "node"
+  },
+  "vue-language-server": {
+    "install_method": "npm",
+    "install_package": "@vue/language-server",
+    "install_version": "3.1.5",
+    "install_entrypoint": "vue-language-server",
+    "runtime_dep": "node",
+    "companion_server": true
+  },
+  "yaml-language-server": {
+    "install_method": "npm",
+    "install_package": "yaml-language-server",
+    "install_version": "1.19.2",
+    "install_entrypoint": "yaml-language-server",
     "runtime_dep": "node"
   },
   "marksman": {
