@@ -1600,14 +1600,15 @@ conversation, press `o` to open the action menu, and select:
 
 ### Default Behavior
 
-The rewind system is **disabled** unless `options.snapshot` is present in
-`crush.json`. When enabled with an empty object `{}`, the default is 50
-snapshots per session. Setting the key to `null` or omitting it disables
-snapshots entirely.
+The rewind system is **always active** — `initRewindService()` unconditionally
+creates a non-nil service regardless of config. The `options.snapshot` key in
+`crush.json` controls `MaxPerSession` retention (default 50 snapshots per
+session). Setting the key to `null` or omitting it uses the default retention,
+not disable.
 
-> **Note**: Rewind requires explicit configuration to enable. You must add
-> `"snapshot": {}` (or with custom settings) to `crush.json` under `options`.
-> It is completely inactive when the key is absent.
+> **Note**: The function comment on `initRewindService()` ("Returns nil if
+> snapshot config is missing") is aspirational — it contradicts the actual code,
+> which always returns a non-nil service.
 
 ---
 
@@ -2175,13 +2176,11 @@ language plugins, or multi-file layouts are excluded).
 
 The LSP catalog and auto-discovery system cover three tiers of servers:
 
-**8 servers with real SHA256 hashes** (auto-downloadable):
+**18 servers with real SHA256 hashes** (auto-downloadable, verified):
+`tinymist`, `biome`, `spectral`, `squawk`, `kube-linter`,
+`action-validator`, `shfmt`, `rust-analyzer`, `taplo`, `sqls`, `clojure-lsp`,
 `marksman`, `jsonnet-language-server`, `helm_ls`, `buf`, `snyk-ls`,
 `hadolint`, `opa`, `cosign`
-
-**10 servers with PLACEHOLDER hashes** (pending verification):
-`tinymist`, `biome`, `spectral`, `squawk`, `kube-linter`,
-`action-validator`, `shfmt`, `rust-analyzer`, `taplo`, `sqls`, `clojure-lsp`
 
 **19 servers requiring runtime dependencies** (not auto-downloadable,
 require npm/pip/JVM/Dart):
@@ -2337,7 +2336,7 @@ explicit `url` and `sha256` configuration per server.
 | `sourcegraph` | Search | Sourcegraph code search integration |
 | `list_mcp_resources` | MCP | List available MCP server resources |
 
-#### LCM Retrieval Tools (15 tools via `ExtraAgentTools()`: 5 via toolFactory + 10 retrieval)
+#### LCM Retrieval Tools (15 tools via `ExtraAgentTools()`: 5 via toolFactory + 9 retrieval + 1 manual compact)
 
 `lcm_bindle`, `lcm_ancestry`, `lcm_dolt`, `lcm_archive`, `lcm_sprig`,
 `lcm_time_query`, `lcm_file_search`, `lcm_active_context`, `lcm_lineage`
