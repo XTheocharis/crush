@@ -679,5 +679,230 @@
         "sha256": "66f3914987edeccfee8a2558470e0fde4f8c4154232ff4baa5d73373ebc819d4"
       }
     }
+  },
+  "lua-language-server": {
+    "version": "3.15.0",
+    "description": "Lua Language Server",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/LuaLS/lua-language-server/releases/download/3.15.0/lua-language-server-3.15.0-linux-x64.tar.gz",
+        "sha256": "4877b874c52fb7587707898da9026cc3a6c854d9bbab115ef49ac4e6a1b88007",
+        "download_type": "tar.gz"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/LuaLS/lua-language-server/releases/download/3.15.0/lua-language-server-3.15.0-linux-arm64.tar.gz",
+        "sha256": "7dff8edfed4f34cf6325ff384791287d95f9a8dd9615a5279c7c6af81cf8c45d",
+        "download_type": "tar.gz"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/LuaLS/lua-language-server/releases/download/3.15.0/lua-language-server-3.15.0-darwin-x64.tar.gz",
+        "sha256": "01d28a31e264434e51662814a68f584af068393caecfa158c4df5f7fdc3ca2f7",
+        "download_type": "tar.gz"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/LuaLS/lua-language-server/releases/download/3.15.0/lua-language-server-3.15.0-darwin-arm64.tar.gz",
+        "sha256": "050f5f493f65112afc116e31281a9f73918546782d3696485dc052724838f58b",
+        "download_type": "tar.gz"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/LuaLS/lua-language-server/releases/download/3.15.0/lua-language-server-3.15.0-win32-x64.zip",
+        "sha256": "76a10c05e8c947a448f00a61acead4240484cd1e2e8c66d54401c67d99b77535",
+        "download_type": "zip"
+      }
+    }
+  },
+  "intelephense": {
+    "install_method": "npm",
+    "install_package": "intelephense",
+    "install_version": "1.14.4",
+    "install_entrypoint": "intelephense",
+    "runtime_dep": "node"
+  },
+  "angular-language-server": {
+    "install_method": "companion",
+    "install_package": "@angular/language-server",
+    "install_version": "21.2.10",
+    "install_entrypoint": "ngserver",
+    "runtime_dep": "node",
+    "companion_packages": ["@angular/language-service@21.2.10", "typescript@5.9.3", "typescript-language-server@5.1.3"],
+    "companion_server": "typescript-language-server"
+  },
+  "ansible-language-server": {
+    "install_method": "npm",
+    "install_package": "@ansible/ansible-language-server",
+    "install_version": "1.2.3",
+    "install_entrypoint": "ansible-language-server",
+    "runtime_dep": "node"
+  },
+  "elm-language-server": {
+    "install_method": "npm",
+    "install_package": "@elm-tooling/elm-language-server",
+    "install_version": "2.8.0",
+    "install_entrypoint": "elm-language-server",
+    "runtime_dep": "node"
+  },
+  "fortran-language-server": {
+    "install_method": "pip",
+    "install_package": "fortls",
+    "install_version": "3.2.2",
+    "install_entrypoint": "fortls",
+    "runtime_dep": "python"
+  },
+  "pyright": {
+    "install_method": "pip",
+    "install_package": "pyright",
+    "install_version": "1.1.403",
+    "install_entrypoint": "pyright-langserver",
+    "runtime_dep": "python"
+  },
+  "sourcekit-lsp": {
+    "install_method": "path"
+  },
+  "crystalline": {
+    "install_method": "path"
+  },
+  "regal": {
+    "install_method": "path"
+  },
+  "nixd": {
+    "install_method": "path"
+  },
+  "zls": {
+    "install_method": "path"
+  },
+  "haskell-language-server": {
+    "install_method": "path"
+  },
+  "ada-language-server": {
+    "version": "2026.2.202604091",
+    "description": "Ada Language Server",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/AdaCore/ada_language_server/releases/download/2026.2.202604091/als-2026.2.202604091-linux-x64.tar.gz",
+        "sha256": "2eb436a7c0e3740128cceaa15da9ff856fa75ef3fbb3e2e9d3a1bd17e15cb949",
+        "download_type": "tar.gz"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/AdaCore/ada_language_server/releases/download/2026.2.202604091/als-2026.2.202604091-linux-arm64.tar.gz",
+        "sha256": "65c57df715df90f7581ecd6a1d1884663376baaf38cedbab80d10060ff91b03d",
+        "download_type": "tar.gz"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/AdaCore/ada_language_server/releases/download/2026.2.202604091/als-2026.2.202604091-darwin-x64.tar.gz",
+        "sha256": "18d3277a25a6e08ce3ee7230c3e5ac20419d573cb8d8c883e7983f387a67d223",
+        "download_type": "tar.gz"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/AdaCore/ada_language_server/releases/download/2026.2.202604091/als-2026.2.202604091-darwin-arm64.tar.gz",
+        "sha256": "1d25ded29b6beafcb34c9d0084d52809d84577356e467bf92e8fef32fc4216c4",
+        "download_type": "tar.gz"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/AdaCore/ada_language_server/releases/download/2026.2.202604091/als-2026.2.202604091-win32-x64.tar.gz",
+        "sha256": "bca024dc3643b2d91aebbb747398e2e6f183ad8cb2f149e24fe7a38cdb16ed8d",
+        "download_type": "tar.gz"
+      }
+    }
+  },
+  "pascal-language-server": {
+    "version": "v0.2.0",
+    "description": "Pascal Language Server (pasls)",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/zen010101/pascal-language-server/releases/download/v0.2.0/pasls-x86_64-linux.tar.gz",
+        "sha256": "517259395b0a385a5e848cf48b967645a984be3dd456118bc08771283a822a5b",
+        "download_type": "tar.gz"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/zen010101/pascal-language-server/releases/download/v0.2.0/pasls-aarch64-linux.tar.gz",
+        "sha256": "cb4986941cfdcf9cb74ece6bbb53a443390a908e880108a37f4ccf82b2d6c502",
+        "download_type": "tar.gz"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/zen010101/pascal-language-server/releases/download/v0.2.0/pasls-x86_64-darwin.zip",
+        "sha256": "0abfcd98f63f77dba74094339a40d4407b69317c1c77b13a26b9b7dbdfd885f1",
+        "download_type": "zip"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/zen010101/pascal-language-server/releases/download/v0.2.0/pasls-aarch64-darwin.zip",
+        "sha256": "d4c2411e406af96ceae12b11e77fdb0c684ca15a68bfd8b4f9c6fe1fbdf515a7",
+        "download_type": "zip"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/zen010101/pascal-language-server/releases/download/v0.2.0/pasls-x86_64-win64.zip",
+        "sha256": "1493c31552e6f90a59800b2d44669e01fc4551d3647f3cea5dd105a9f6bc73e5",
+        "download_type": "zip"
+      }
+    }
+  },
+  "terraform-ls": {
+    "version": "0.36.5",
+    "description": "Terraform Language Server",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://releases.hashicorp.com/terraform-ls/0.36.5/terraform-ls_0.36.5_linux_amd64.zip",
+        "sha256": "37e645cc54fd03e863157e2a3e773e7a5ff1d6cb3d045e4c20860cac1f550a44",
+        "download_type": "zip"
+      },
+      "linux/arm64": {
+        "url": "https://releases.hashicorp.com/terraform-ls/0.36.5/terraform-ls_0.36.5_linux_arm64.zip",
+        "sha256": "724f45029f32d02d88b1952c7d1526c59fc8cd5dae49e31b9fed676a83f6cae7",
+        "download_type": "zip"
+      },
+      "darwin/amd64": {
+        "url": "https://releases.hashicorp.com/terraform-ls/0.36.5/terraform-ls_0.36.5_darwin_amd64.zip",
+        "sha256": "17c5c480f8eec7e528292565f1c05d5097a41edf7ef8ee2a9f3a18d288a1415a",
+        "download_type": "zip"
+      },
+      "darwin/arm64": {
+        "url": "https://releases.hashicorp.com/terraform-ls/0.36.5/terraform-ls_0.36.5_darwin_arm64.zip",
+        "sha256": "fee8743aa71fe2d8b0b9b91283b844cfa57d58457306a62e53a8f38d143cec8c",
+        "download_type": "zip"
+      },
+      "windows/amd64": {
+        "url": "https://releases.hashicorp.com/terraform-ls/0.36.5/terraform-ls_0.36.5_windows_amd64.zip",
+        "sha256": "a9223462cac9e1c0e6ba33043fbf9fb4483609b6970b5681a6306b04366698ec",
+        "download_type": "zip"
+      }
+    }
+  },
+  "cue": {
+    "version": "v0.16.1",
+    "description": "CUE Language Server (cue lsp)",
+    "platforms": {
+      "linux/amd64": {
+        "url": "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_amd64.tar.gz",
+        "sha256": "5d644c1305a2b86504c8dcd2ec829cf5b4999efc2cf51ee375624e0455f774ae",
+        "download_type": "tar.gz"
+      },
+      "linux/arm64": {
+        "url": "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_arm64.tar.gz",
+        "sha256": "3cc715a9e969f87b93c4fa34cfaef5388b93e96efa20b248e8ad6826abd25a83",
+        "download_type": "tar.gz"
+      },
+      "darwin/amd64": {
+        "url": "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_darwin_amd64.tar.gz",
+        "sha256": "97b0d78e4c5ee49ff72145fd6ef4f4bab0bb332d55f29660de3fec2af5ec96a9",
+        "download_type": "tar.gz"
+      },
+      "darwin/arm64": {
+        "url": "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_darwin_arm64.tar.gz",
+        "sha256": "a72b0cddb377c52d1b003bed9a335d893b70cd75a182cd5e3fee8bae30ddb6d6",
+        "download_type": "tar.gz"
+      },
+      "windows/amd64": {
+        "url": "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_windows_amd64.zip",
+        "sha256": "2f24123f458229fcf283db534bd86692ad1074da806defee0f0cc62976c0397c",
+        "download_type": "zip"
+      }
+    }
+  },
+  "perl-language-server": {
+    "install_method": "path",
+    "runtime_dep": "perl"
+  },
+  "r-language-server": {
+    "install_method": "path",
+    "runtime_dep": "r"
   }
 }
