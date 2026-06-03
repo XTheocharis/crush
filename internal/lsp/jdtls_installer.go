@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -208,8 +209,15 @@ func extractVSIX(data []byte, dest string) error {
 		return fmt.Errorf("open zip: %w", err)
 	}
 
+	cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
+
 	for _, f := range r.File {
 		path := filepath.Join(dest, f.Name)
+
+		// Guard against zip slip: reject entries that escape the target directory.
+		if !strings.HasPrefix(filepath.Clean(path)+string(os.PathSeparator), cleanDest) && filepath.Clean(path) != filepath.Clean(dest) {
+			return fmt.Errorf("zip entry %q escapes target directory", f.Name)
+		}
 
 		if f.FileInfo().IsDir() {
 			if err := os.MkdirAll(path, 0o755); err != nil {
