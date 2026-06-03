@@ -27,6 +27,35 @@ type PlatformEntry struct {
 type ServerEntry struct {
 	Version   string                   `json:"version"`
 	Platforms map[string]PlatformEntry `json:"platforms"` // key: "os/arch"
+
+	// Install method fields for non-binary LSP servers.
+	InstallMethod     string         `json:"install_method,omitempty"`     // "binary" (default), "npm", "pip", "path", "companion", "jdtls"
+	InstallPackage    string         `json:"install_package,omitempty"`    // npm/pip package name
+	InstallVersion    string         `json:"install_version,omitempty"`    // pinned version
+	InstallEntrypoint string         `json:"install_entrypoint,omitempty"` // binary name produced
+	MultiBinary       bool           `json:"multi_binary,omitempty"`       // one install → multiple binaries
+	RuntimeDep        string         `json:"runtime_dep,omitempty"`        // "node", "python", "go", "jvm", ""
+	CompanionPackages []string       `json:"companion_packages,omitempty"` // additional npm packages
+	CompanionServer   string         `json:"companion_server,omitempty"`   // companion TS server name
+	InitOptions       map[string]any `json:"init_options,omitempty"`       // LSP initializationOptions
+	VsixURL           string         `json:"vsix_url,omitempty"`           // VSIX download URL
+	VsixSHA256        string         `json:"vsix_sha256,omitempty"`        // SHA256 of VSIX
+}
+
+// InstallConfig holds the resolved install configuration for a non-binary
+// LSP server.
+type InstallConfig struct {
+	Method            string
+	Package           string
+	Version           string
+	Entrypoint        string
+	RuntimeDep        string
+	MultiBinary       bool
+	CompanionPackages []string
+	CompanionServer   string
+	InitOptions       map[string]any
+	VsixURL           string
+	VsixSHA256        string
 }
 
 var (
@@ -93,4 +122,28 @@ func ResolveDownloadURL(serverName, goos, goarch string) (url, sha256, downloadT
 func AllServers() map[string]ServerEntry {
 	load()
 	return servers
+}
+
+// ResolveInstallMethod returns the install configuration for servers that
+// use a non-binary install method (e.g. npm, pip, path). Returns
+// (InstallConfig{}, false) for binary-only servers or unknown names.
+func ResolveInstallMethod(name string) (InstallConfig, bool) {
+	load()
+	entry, ok := servers[name]
+	if !ok || entry.InstallMethod == "" || entry.InstallMethod == "binary" {
+		return InstallConfig{}, false
+	}
+	return InstallConfig{
+		Method:            entry.InstallMethod,
+		Package:           entry.InstallPackage,
+		Version:           entry.InstallVersion,
+		Entrypoint:        entry.InstallEntrypoint,
+		RuntimeDep:        entry.RuntimeDep,
+		MultiBinary:       entry.MultiBinary,
+		CompanionPackages: entry.CompanionPackages,
+		CompanionServer:   entry.CompanionServer,
+		InitOptions:       entry.InitOptions,
+		VsixURL:           entry.VsixURL,
+		VsixSHA256:        entry.VsixSHA256,
+	}, true
 }
