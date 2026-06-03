@@ -199,3 +199,215 @@ func TestNpmInstallerEntrypointPath(t *testing.T) {
 	}
 	require.Equal(t, expected, got)
 }
+
+func writeMockPython(t *testing.T, dir string) {
+	t.Helper()
+	python := filepath.Join(dir, "python")
+	err := os.WriteFile(python, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	require.NoError(t, err)
+}
+
+func writeMockPip(t *testing.T, entrypoint string) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeMockPython(t, dir)
+	script := filepath.Join(dir, "pip")
+	content := "#!/bin/sh\n" +
+		"TARGET=\"\"\n" +
+		"for arg in \"$@\"; do\n" +
+		"  if [ -n \"$TARGET\" ]; then TARGET_DIR=\"$arg\"; TARGET=\"\"; continue; fi\n" +
+		"  if [ \"$arg\" = \"--target\" ]; then TARGET=\"1\"; fi\n" +
+		"done\n" +
+		"mkdir -p \"${TARGET_DIR}/bin\"\n" +
+		"touch \"${TARGET_DIR}/bin/" + entrypoint + "\"\n" +
+		"chmod +x \"${TARGET_DIR}/bin/" + entrypoint + "\"\n"
+	err := os.WriteFile(script, []byte(content), 0o755)
+	require.NoError(t, err)
+	return dir
+}
+
+func writeMockPipFail(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeMockPython(t, dir)
+	script := filepath.Join(dir, "pip")
+	err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	require.NoError(t, err)
+	return dir
+}
+
+func writeMockPipNoBin(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeMockPython(t, dir)
+	script := filepath.Join(dir, "pip")
+	err := os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755)
+	require.NoError(t, err)
+	return dir
+}
+
+func writeMockPipTopLevel(t *testing.T, entrypoint string) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeMockPython(t, dir)
+	script := filepath.Join(dir, "pip")
+	content := "#!/bin/sh\n" +
+		"TARGET=\"\"\n" +
+		"for arg in \"$@\"; do\n" +
+		"  if [ -n \"$TARGET\" ]; then TARGET_DIR=\"$arg\"; TARGET=\"\"; continue; fi\n" +
+		"  if [ \"$arg\" = \"--target\" ]; then TARGET=\"1\"; fi\n" +
+		"done\n" +
+		"touch \"${TARGET_DIR}/" + entrypoint + "\"\n" +
+		"chmod +x \"${TARGET_DIR}/" + entrypoint + "\"\n"
+	err := os.WriteFile(script, []byte(content), 0o755)
+	require.NoError(t, err)
+	return dir
+}
+
+func TestPipInstallerBasicInstall(t *testing.T) {
+	tmpDir := t.TempDir()
+	entrypoint := "test-entry"
+	mockDir := writeMockPip(t, entrypoint)
+	prependPATH(t, mockDir)
+
+	inst := NewPipInstaller(tmpDir)
+	cfg := catalog.InstallConfig{
+		Package:    "some-lsp",
+		Version:    "1.0.0",
+		Entrypoint: entrypoint,
+	}
+
+	path, err := inst.Install(context.Background(), "test-lsp", cfg)
+	require.NoError(t, err)
+
+	expected := filepath.Join(tmpDir, "test-lsp", "1.0.0", "bin", entrypoint)
+	require.Equal(t, expected, path)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.True(t, info.Mode().IsRegular())
+}
+
+func TestPipInstallerTopLevelEntrypoint(t *testing.T) {
+	tmpDir := t.TempDir()
+	entrypoint := "top-level-entry"
+	mockDir := writeMockPipTopLevel(t, entrypoint)
+	prependPATH(t, mockDir)
+
+	inst := NewPipInstaller(tmpDir)
+	cfg := catalog.InstallConfig{
+		Package:    "some-lsp",
+		Version:    "1.0.0",
+		Entrypoint: entrypoint,
+	}
+
+	path, err := inst.Install(context.Background(), "test-lsp", cfg)
+	require.NoError(t, err)
+
+	expected := filepath.Join(tmpDir, "test-lsp", "1.0.0", entrypoint)
+	require.Equal(t, expected, path)
+}
+
+func TestPipInstallerIdempotent(t *testing.T) {
+	tmpDir := t.TempDir()
+	entrypoint := "idem-entry"
+	mockDir := writeMockPip(t, entrypoint)
+	prependPATH(t, mockDir)
+
+	inst := NewPipInstaller(tmpDir)
+	cfg := catalog.InstallConfig{
+		Package:    "some-lsp",
+		Version:    "2.0.0",
+		Entrypoint: entrypoint,
+	}
+
+	path1, err := inst.Install(context.Background(), "idem-lsp", cfg)
+	require.NoError(t, err)
+
+	path2, err := inst.Install(context.Background(), "idem-lsp", cfg)
+	require.NoError(t, err)
+
+	require.Equal(t, path1, path2)
+}
+
+func TestPipInstallerMissingRuntime(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("PATH", "")
+
+	inst := NewPipInstaller(tmpDir)
+	cfg := catalog.InstallConfig{
+		Package:    "some-lsp",
+		Version:    "1.0.0",
+		Entrypoint: "entry",
+	}
+
+	_, err := inst.Install(context.Background(), "no-runtime-lsp", cfg)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrRuntimeMissing))
+}
+
+func TestPipInstallerPipFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockDir := writeMockPipFail(t)
+	prependPATH(t, mockDir)
+
+	inst := NewPipInstaller(tmpDir)
+	cfg := catalog.InstallConfig{
+		Package:    "bad-lsp",
+		Version:    "1.0.0",
+		Entrypoint: "entry",
+	}
+
+	_, err := inst.Install(context.Background(), "fail-lsp", cfg)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInstallFailed))
+
+	installDir := filepath.Join(tmpDir, "fail-lsp", "1.0.0")
+	_, statErr := os.Stat(installDir)
+	require.True(t, os.IsNotExist(statErr))
+}
+
+func TestPipInstallerTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	dir := t.TempDir()
+	writeMockPython(t, dir)
+	err := os.WriteFile(filepath.Join(dir, "pip"), []byte("#!/bin/sh\nexec sleep 60\n"), 0o755)
+	require.NoError(t, err)
+	prependPATH(t, dir)
+
+	inst := NewPipInstaller(tmpDir)
+	inst.timeout = 100 * time.Millisecond
+
+	cfg := catalog.InstallConfig{
+		Package:    "slow-lsp",
+		Version:    "1.0.0",
+		Entrypoint: "entry",
+	}
+
+	_, err = inst.Install(context.Background(), "timeout-lsp", cfg)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInstallTimeout))
+}
+
+func TestPipInstallerEntrypointMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	dir := t.TempDir()
+	writeMockPython(t, dir)
+	err := os.WriteFile(filepath.Join(dir, "pip"), []byte("#!/bin/sh\n"), 0o755)
+	require.NoError(t, err)
+	prependPATH(t, dir)
+
+	inst := NewPipInstaller(tmpDir)
+	cfg := catalog.InstallConfig{
+		Package:    "noentry-lsp",
+		Version:    "1.0.0",
+		Entrypoint: "missing-entry",
+	}
+
+	_, err = inst.Install(context.Background(), "noentry-lsp", cfg)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInstallFailed))
+	require.Contains(t, err.Error(), "entrypoint not found")
+}

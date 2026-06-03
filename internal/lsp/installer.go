@@ -118,3 +118,99 @@ func (n *NpmInstaller) entrypointPath(installDir, entrypoint string) string {
 	}
 	return p
 }
+
+// PipInstaller installs LSP servers via pip.
+type PipInstaller struct {
+	cacheDir string        // Base directory for installations.
+	timeout  time.Duration // Per-install timeout (default 60s).
+	mu       sync.Map      // Keyed by "name/version" for concurrent install protection.
+}
+
+// NewPipInstaller creates a new pip-based installer.
+func NewPipInstaller(cacheDir string) *PipInstaller {
+	return &PipInstaller{
+		cacheDir: cacheDir,
+		timeout:  60 * time.Second,
+	}
+}
+
+// Install provisions a pip-based LSP server.
+func (p *PipInstaller) Install(ctx context.Context, name string, cfg catalog.InstallConfig) (string, error) {
+	// 1. Check runtime dependencies.
+	if !IsRuntimeAvailable("python") {
+		return "", fmt.Errorf("pip install %s: %w", name, ErrRuntimeMissing)
+	}
+
+	// 2. Compute install directory.
+	installDir := filepath.Join(p.cacheDir, name, cfg.Version)
+
+	// 3. Fast path: check if already installed (idempotency).
+	if entrypoint, err := p.resolveEntrypoint(installDir, cfg.Entrypoint); err == nil {
+		return entrypoint, nil
+	}
+
+	// 4. Acquire per-package lock for concurrent install protection.
+	key := name + "/" + cfg.Version
+	muIface, _ := p.mu.LoadOrStore(key, &sync.Mutex{})
+	mu := muIface.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	p.mu.Delete(key) // Clean up lock entry after use.
+
+	// Double-check after acquiring lock (another goroutine may have
+	// completed the install while we waited).
+	if entrypoint, err := p.resolveEntrypoint(installDir, cfg.Entrypoint); err == nil {
+		return entrypoint, nil
+	}
+
+	// 5. Create install directory.
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		return "", fmt.Errorf("pip install %s: mkdir: %w", name, err)
+	}
+
+	// 6. Run pip install with timeout.
+	installCtx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+
+	pkgSpec := cfg.Package + "==" + cfg.Version
+	cmd := exec.CommandContext(
+		installCtx, "pip", "install",
+		"--target", installDir, pkgSpec,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Clean up partial state on failure.
+		os.RemoveAll(installDir)
+		if installCtx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("pip install %s: %w", name, ErrInstallTimeout)
+		}
+		return "", fmt.Errorf("pip install %s: %w: %s", name, ErrInstallFailed, string(output))
+	}
+
+	// 7. Verify entrypoint exists after install.
+	entrypoint, err := p.resolveEntrypoint(installDir, cfg.Entrypoint)
+	if err != nil {
+		os.RemoveAll(installDir)
+		return "", fmt.Errorf(
+			"pip install %s: entrypoint not found at %s: %w",
+			name, cfg.Entrypoint, ErrInstallFailed,
+		)
+	}
+
+	return entrypoint, nil
+}
+
+// resolveEntrypoint checks {installDir}/bin/{entrypoint} first, then
+// {installDir}/{entrypoint}, returning the absolute path of whichever exists.
+func (p *PipInstaller) resolveEntrypoint(installDir, entrypoint string) (string, error) {
+	candidates := []string{
+		filepath.Join(installDir, "bin", entrypoint),
+		filepath.Join(installDir, entrypoint),
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.Mode().IsRegular() {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("entrypoint %q not found in %s", entrypoint, installDir)
+}
