@@ -86,6 +86,7 @@ func NewManager(cfg *config.ConfigStore) *Manager {
 			"npm":       NewNpmInstaller(LSPCacheDir()),
 			"pip":       NewPipInstaller(LSPCacheDir()),
 			"companion": NewCompanionInstaller(LSPCacheDir()),
+			"jdtls":     NewJdtlsInstaller(LSPCacheDir()),
 		},
 		companionMgr: NewCompanionManager(),
 		// [XRUSH: end]

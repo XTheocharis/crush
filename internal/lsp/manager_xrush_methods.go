@@ -429,12 +429,26 @@ func (s *Manager) resolveViaInstaller(ctx context.Context, name string, server *
 		installCfg.Entrypoint = entrypoint
 	}
 
+	if cfg.Method == "jdtls" {
+		if vsixURL, vsixSHA, ok := ResolveJdtlsPlatformURL(name); ok {
+			installCfg.VsixURL = vsixURL
+			installCfg.VsixSHA256 = vsixSHA
+		}
+	}
+
 	resolved, err := installer.Install(ctx, installName, installCfg)
 	if err != nil {
 		slog.Warn("LSP server install failed", "name", name, "method", cfg.Method, "error", err)
 		return
 	}
 	server.Command = resolved
+
+	if cfg.Method == "jdtls" {
+		jdtlsInstaller := installer.(*JdtlsInstaller)
+		if args := jdtlsInstaller.GetJdtlsArgs(name); len(args) > 0 {
+			server.Args = args
+		}
+	}
 
 	if cfg.Method == "companion" {
 		companionInstaller := installer.(*CompanionInstaller)

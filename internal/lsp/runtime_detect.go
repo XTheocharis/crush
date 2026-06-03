@@ -36,6 +36,11 @@ func DetectGo() (string, error) {
 	return exec.LookPath("go")
 }
 
+// DetectJVM finds the java binary on PATH.
+func DetectJVM() (string, error) {
+	return exec.LookPath("java")
+}
+
 // DetectRuntime dispatches to the appropriate detector based on dep name.
 // Returns ("", nil) for empty dep (no dependency = always available).
 func DetectRuntime(dep string) (string, error) {
@@ -52,6 +57,8 @@ func DetectRuntime(dep string) (string, error) {
 		return DetectUvx()
 	case "go":
 		return DetectGo()
+	case "jvm":
+		return DetectJVM()
 	default:
 		return "", fmt.Errorf("runtime detection: unknown runtime dependency %q", dep)
 	}
