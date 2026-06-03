@@ -1,8 +1,8 @@
 # Processor Pipeline
 
 Message processing pipeline that intercepts LLM input and output across four
-sequential phases. 15 processors total; 1 excluded (structured_output),
-14 configurable via `options.processors.list`, 3 active by default
+sequential phases. 16 processors total; 1 excluded (structured_output),
+15 configurable via `options.processors.list`, 3 active by default
 (TokenLimiter, SystemPromptScrubber, PIIDetector).
 
 ## Structure
@@ -56,7 +56,7 @@ Registration happens via `RunnerOption` functions: `WithInputProcessors()`,
 | `SystemPromptScrubber` | OutputStream, OutputResult | Noop without LLM client; sends output to LLM to detect/strip leaked system prompts |
 | `PIIDetector` | Input, OutputStream, OutputResult | Regex PII redaction (SSN, CC, email, phone). LLM-based contextual detection at high sensitivity |
 
-## Config-Activatable Processors (14)
+## Config-Activatable Processors (15)
 
 These are the processors that can be enabled via
 `options.processors.list` in `crush.json`. Three of them are active by

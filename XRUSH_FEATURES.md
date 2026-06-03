@@ -110,7 +110,10 @@ cycles. Five priority levels with float64 thresholds (defined in
 | `low` | *(default)* | < 0.3 |
 
 - ~60 KB per-session memory budget (`MemorySessionMaxChars=60000`;
-  `MemoryFileConfig.SessionBudget=61440` default exists but is unenforced)
+  `MemoryFileConfig.SessionBudget=61440` default exists but is not read by
+  production code — the session budget is currently enforced via the hardcoded
+  `MemorySessionMaxChars` constant. This will be made configurable via
+  `options.lcm.session_budget` in a future update)
 - Persists across sessions to `CRUSH.memory.md`
 
 ### Content Replacement
@@ -172,6 +175,10 @@ Twelve additional LCM files supporting the core modules:
 | `lcm_active_context` | Show currently active LCM context window |
 | `lcm_lineage` | Trace compaction lineage for a content block |
 | `lcm_compact` | Trigger manual compaction with `pressure` (low/medium/high) and `target_tokens` parameters |
+
+> **Note**: The `pressure` and `target_tokens` parameters are validated by the
+> tool but not yet passed to the compaction manager. They are currently
+> informational only — specifying them does not change compaction behavior.
 
 ### Reflector
 
@@ -906,17 +913,17 @@ files in this package (entire package added by the fork).
 | `OutputResultPhase` | After the complete response is received |
 | `APIErrorPhase` | When an API error occurs |
 
-### Processor Implementations (15 total)
+### Processor Implementations (16 total)
 
 #### Pipeline Configuration
 
 The pipeline is **active by default** with 3 processors
 (`TokenLimiter`, `SystemPromptScrubber`, `PIIDetector` — marked with \* below)
 when `ProcessorsOptions` is nil. Explicit `processors` configuration in
-`crush.json` can override defaults and activate the remaining 11 configurable
+`crush.json` can override defaults and activate the remaining 12 configurable
 processors.
 
-#### Configurable Processors (14)
+#### Configurable Processors (15)
 
 | Processor | Phase | Default | Description |
 |-----------|-------|---------|-------------|
@@ -2162,6 +2169,29 @@ warning and skip the entry without failing the entire catalog.
 **Coverage**: The catalog includes ~15 servers with per-platform URLs. Only
 single-binary servers are catalogued (servers requiring runtime installers,
 language plugins, or multi-file layouts are excluded).
+
+### Server Coverage
+
+The LSP catalog and auto-discovery system cover three tiers of servers:
+
+**8 servers with real SHA256 hashes** (auto-downloadable):
+`marksman`, `jsonnet-language-server`, `helm_ls`, `buf`, `snyk-ls`,
+`hadolint`, `opa`, `cosign`
+
+**10 servers with PLACEHOLDER hashes** (pending verification):
+`tinymist`, `biome`, `spectral`, `squawk`, `kube-linter`,
+`action-validator`, `shfmt`, `rust-analyzer`, `taplo`, `sqls`, `clojure-lsp`
+
+**19 servers requiring runtime dependencies** (not auto-downloadable,
+require npm/pip/JVM/Dart):
+`gopls`, `typescript-language-server`, `pyright`, `bash-language-server`,
+`yaml-language-server`, `dockerfile-language-server`,
+`graphql-language-service-server`, `svelte-language-server`,
+`vue-language-server`, `tailwindcss-language-server`,
+`prisma-language-server`, `elixir-ls`, `kotlin-language-server`,
+`dart-analysis-server`, `cmake-language-server`, `solidity-ls`,
+`vscode-json-language-server`, `html-language-server`,
+`css-language-server`
 
 ### User-Facing Description
 
