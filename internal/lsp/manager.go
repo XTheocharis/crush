@@ -37,7 +37,8 @@ type Manager struct {
 	healthChecker   *HealthChecker
 	withHealthCheck bool
 	// Installers keyed by install method ("npm", "pip").
-	installers map[string]Installer
+	installers   map[string]Installer
+	companionMgr *CompanionManager
 	// [XRUSH: end]
 }
 
@@ -86,6 +87,7 @@ func NewManager(cfg *config.ConfigStore) *Manager {
 			"pip":       NewPipInstaller(LSPCacheDir()),
 			"companion": NewCompanionInstaller(LSPCacheDir()),
 		},
+		companionMgr: NewCompanionManager(),
 		// [XRUSH: end]
 	}
 	// [XRUSH: begin: start executor and health checker]
@@ -314,6 +316,15 @@ func (s *Manager) buildConfig(name string, server *powernapconfig.ServerConfig) 
 	}
 	if userCfg, ok := s.cfg.Config().LSP[name]; ok {
 		cfg.Timeout = userCfg.Timeout
+	}
+	if companionOpts := s.companionMgr.GetInitOptions(name); companionOpts != nil {
+		if cfg.InitOptions == nil {
+			cfg.InitOptions = companionOpts
+		} else {
+			for k, v := range companionOpts {
+				cfg.InitOptions[k] = v
+			}
+		}
 	}
 	return cfg
 }

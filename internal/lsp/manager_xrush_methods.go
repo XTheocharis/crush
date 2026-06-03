@@ -435,4 +435,10 @@ func (s *Manager) resolveViaInstaller(ctx context.Context, name string, server *
 		return
 	}
 	server.Command = resolved
+
+	if cfg.Method == "companion" {
+		companionInstaller := installer.(*CompanionInstaller)
+		installDir := companionInstallDir(LSPCacheDir(), installName, installCfg.Version)
+		s.companionMgr.RegisterCompanion(name, companionInstaller, installCfg, installDir)
+	}
 }
