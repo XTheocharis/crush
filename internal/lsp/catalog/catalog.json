@@ -123,54 +123,56 @@
     }
   },
   "tinymist": {
+    "_version": "v0.14.18",
     "version": "v0.14.18",
     "description": "Typst Language Server",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/Myriad-Dreamin/tinymist/releases/download/v0.14.18/tinymist-linux-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "c7bdb0c7816b463fd450f1d2a19fed4d1f30a43a4458cacaadcb1d2aeaed1942"
       },
       "linux/arm64": {
         "url": "https://github.com/Myriad-Dreamin/tinymist/releases/download/v0.14.18/tinymist-linux-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "d97cd13f692f216bd94e1866cb0abb7371da6c5c7df3e9c2a4ca5378c0cdcdf2"
       },
       "darwin/amd64": {
         "url": "https://github.com/Myriad-Dreamin/tinymist/releases/download/v0.14.18/tinymist-darwin-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "a7cfc032d1fb5d5308db935e38595d41a99fd4c431d98f7b139368847b31b30f"
       },
       "darwin/arm64": {
         "url": "https://github.com/Myriad-Dreamin/tinymist/releases/download/v0.14.18/tinymist-darwin-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "f0eea7b0edd6e4126ba42fdab6157977bba98de344c4d477fee950abb1bc9ee8"
       },
       "windows/amd64": {
         "url": "https://github.com/Myriad-Dreamin/tinymist/releases/download/v0.14.18/tinymist-win32-x64.exe",
-        "sha256": "PLACEHOLDER"
+        "sha256": "16a0d40c84010f989cfd6c46af37b7580cb5cfc65f2d5ee9034315233c55e437"
       }
     }
   },
   "biome": {
+    "_version": "2.4.16",
     "version": "2.4.16",
     "description": "JS/TS/JSON/CSS LSP and formatter (biome lsp-proxy)",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.16/biome-linux-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "f6904c208ce8884cf859460178f32f885250b375da1810c551912a029f4abf79"
       },
       "linux/arm64": {
         "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.16/biome-linux-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "e81067782ddd9a9d45e13b8fe18bbef54c490cf26126f05d67bb370caf47502a"
       },
       "darwin/amd64": {
         "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.16/biome-darwin-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "42329e159a2f35b3776a01e7a16a53582d53e126fbc55bfdd5825e873a87b338"
       },
       "darwin/arm64": {
         "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.16/biome-darwin-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "8cf9e92a161e26bdbfc0896c208864e1de8b160dfb90f61040609c2743cf433b"
       },
       "windows/amd64": {
         "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.16/biome-win32-x64.exe",
-        "sha256": "PLACEHOLDER"
+        "sha256": "1247239dae8f57aafeaeb9914e30b92efcc51c632eee3be4463a95969558f6a3"
       }
     }
   },
@@ -227,80 +229,83 @@
     }
   },
   "spectral": {
+    "_version": "v6.15.0",
     "version": "v6.15.0",
     "description": "OpenAPI/AsyncAPI linter (has LSP mode)",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/stoplightio/spectral/releases/download/v6.15.0/spectral-linux-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "4e3745f3aacfc0f9196577a204c77790d57d4947e37a051e6c342f85b432618f"
       },
       "linux/arm64": {
         "url": "https://github.com/stoplightio/spectral/releases/download/v6.15.0/spectral-linux-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "4d2df9ac885a97b06ebbd07ee2fac9215dc9beef28abf4e3fede6517b7ecf2a1"
       },
       "darwin/amd64": {
         "url": "https://github.com/stoplightio/spectral/releases/download/v6.15.0/spectral-macos-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "e362d7c1766f987c3c7f4deab5900ea279464aa3d2495ee759298e398f1ebb42"
       },
       "darwin/arm64": {
         "url": "https://github.com/stoplightio/spectral/releases/download/v6.15.0/spectral-macos-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "dcb3b4d89426e2f532c10d0115d93a9b0ba78b3300e0853bac169d70a29f0ee6"
       },
       "windows/amd64": {
         "url": "https://github.com/stoplightio/spectral/releases/download/v6.15.0/spectral.exe",
-        "sha256": "PLACEHOLDER"
+        "sha256": "edbe2b70d81ca017a059057c63733f2454ff4319de45aab4e7ffc288c143d61c"
       }
     }
   },
   "squawk": {
+    "_version": "v2.55.0",
     "version": "v2.55.0",
     "description": "SQL linter for PostgreSQL (used as LSP diagnostic source)",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/sbdchd/squawk/releases/download/v2.55.0/squawk-linux-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "83e9679d231d7640c6dccc355742b29531c03dbb2cde642336af137a1869a160"
       },
       "linux/arm64": {
         "url": "https://github.com/sbdchd/squawk/releases/download/v2.55.0/squawk-linux-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "a082ce57ceebe8f7b473c0158b2babe78a575209d864e98f23a324eb5c55f45b"
       },
       "darwin/amd64": {
         "url": "https://github.com/sbdchd/squawk/releases/download/v2.55.0/squawk-darwin-x64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "4eeef1b8be692d76da7f1bc052cc1181ec0d3293c71e61f297be66b878c6dbe9"
       },
       "darwin/arm64": {
         "url": "https://github.com/sbdchd/squawk/releases/download/v2.55.0/squawk-darwin-arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "0e26306fd0a310c56a8d775929bc21b8e39fc167d7ba66c0e962e683ba8f6d9b"
       },
       "windows/amd64": {
         "url": "https://github.com/sbdchd/squawk/releases/download/v2.55.0/squawk-windows-x64.exe",
-        "sha256": "PLACEHOLDER"
+        "sha256": "934237af31ec825c9e101ea91d057a7507965647ad15630280a38312cf9c52a1"
       }
     }
   },
   "kube-linter": {
+    "_version": "v0.8.3",
     "version": "v0.8.3",
     "description": "Kubernetes YAML/Helm linter (used as LSP diagnostic source)",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter-linux",
-        "sha256": "PLACEHOLDER"
+        "sha256": "618d299a3e2839c8ca9d86fce0db617be0fba41f0fecbbbfb7fbf1c04299fae1"
       },
       "linux/arm64": {
         "url": "https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter-linux_arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "9c39d35252e0dcafb16b26197b9e93ba578e44eb402c3c6660fc94e08f94094f"
       },
       "darwin/amd64": {
         "url": "https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter-darwin",
-        "sha256": "PLACEHOLDER"
+        "sha256": "d935e2bc89e272c74227cdc4ac4dba35f468e0e486e846e5892231a301c91a67"
       },
       "darwin/arm64": {
         "url": "https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter-darwin_arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "662277a6a267ba2cb1371b56539a371872ef142b196fa0d87195e4213773cdf8"
       },
       "windows/amd64": {
         "url": "https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter.exe",
-        "sha256": "PLACEHOLDER"
+        "sha256": "8b0ccf51f18ab786fdcdede55046afc701a75c75122e046a2f0d3244bc91274a"
       }
     }
   },
@@ -357,173 +362,169 @@
     }
   },
   "action-validator": {
+    "_version": "v0.9.0",
     "version": "v0.9.0",
     "description": "GitHub Actions YAML validator (used as LSP diagnostic source)",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/mpalmer/action-validator/releases/download/v0.9.0/action-validator_linux_amd64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "9f42f94fca5b8d04c13bccfbb331104b37a9250650d89ae58dc888d46206f9b9"
       },
       "linux/arm64": {
         "url": "https://github.com/mpalmer/action-validator/releases/download/v0.9.0/action-validator_linux_arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "0fe137986e838c68f760d9a60569cf6749192fa6315915f19ba0c7d11d8e3d9a"
       },
       "darwin/amd64": {
         "url": "https://github.com/mpalmer/action-validator/releases/download/v0.9.0/action-validator_darwin_amd64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "b64010874b70e7e65e3ccd767d6b1c6e6d3a82a5a43748ddd9be2c817970a41d"
       },
       "darwin/arm64": {
         "url": "https://github.com/mpalmer/action-validator/releases/download/v0.9.0/action-validator_darwin_arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "1451a573f8d51ade3d21de7b02cc8a6fcc87b0936e9feb617d197f568b879f6b"
       }
     }
   },
   "shfmt": {
+    "_version": "v3.13.1",
     "version": "v3.13.1",
     "description": "Shell formatter (used with bash-language-server LSP workflows)",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_amd64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1"
       },
       "linux/arm64": {
         "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7"
       },
       "darwin/amd64": {
         "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_darwin_amd64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "6feedafc72915794163114f512348e2437d080d0047ef8b8fa2ec63b575f12af"
       },
       "darwin/arm64": {
         "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_darwin_arm64",
-        "sha256": "PLACEHOLDER"
+        "sha256": "9680526be4a66ea1ffe988ed08af58e1400fe1e4f4aef5bd88b20bb9b3da33f8"
       },
       "windows/amd64": {
         "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_windows_amd64.exe",
-        "sha256": "PLACEHOLDER"
+        "sha256": "60cd368533d0ad73fa86d93d5bbf95ef40587245ce684ed138c1b31557b5fe97"
       }
     }
   },
   "rust-analyzer": {
+    "_version": "2025-06-02",
     "version": "2025-06-02",
     "description": "Rust LSP server",
     "platforms": {
       "linux/amd64": {
         "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-x86_64-unknown-linux-gnu.gz",
-        "sha256": "PLACEHOLDER",
+        "sha256": "139b0717634e35e434f21595aafe41874323b8df83e73ab560a6409f7a7684a0",
         "download_type": "gzip"
       },
       "linux/arm64": {
         "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-aarch64-unknown-linux-gnu.gz",
-        "sha256": "PLACEHOLDER",
+        "sha256": "3257109e7d5194cb940978a2357e9c0265ef2cc682127a71883739deb8f333b1",
         "download_type": "gzip"
       },
       "darwin/amd64": {
         "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-x86_64-apple-darwin.gz",
-        "sha256": "PLACEHOLDER",
+        "sha256": "74f5d0147d3bb9050c8d57d193934292c67e53c3b0be5da2eb2c0a98db799ea1",
         "download_type": "gzip"
       },
       "darwin/arm64": {
         "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-aarch64-apple-darwin.gz",
-        "sha256": "PLACEHOLDER",
+        "sha256": "aa274d89c44310ae911847ab84467561ec0132d00d4eaa1646bd2bbfcf96b0b1",
         "download_type": "gzip"
       },
       "windows/amd64": {
-        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-x86_64-pc-windows-msvc.gz",
-        "sha256": "PLACEHOLDER",
-        "download_type": "gzip"
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2025-06-02/rust-analyzer-x86_64-pc-windows-msvc.zip",
+        "sha256": "756730d546f431bbe1d84fc4125d3e7d1ef285a7f7f5be2c0fadc5a15ea24c0f",
+        "download_type": "zip"
       }
     }
   },
   "taplo": {
-    "version": "0.9.3",
+    "_version": "0.10.0",
+    "version": "0.10.0",
     "description": "TOML LSP server",
     "platforms": {
       "linux/amd64": {
-        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-linux-x86_64.gz",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz",
+        "sha256": "dad2faf6377d2daa4f4fabf459fe7ccfb98a5448f0d4bca8270ca9acb0409bfe",
         "download_type": "gzip"
       },
       "linux/arm64": {
-        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-linux-aarch64.gz",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz",
+        "sha256": "82df9d765856d0d94d2147cc0912016e4a2bfb96cbe947347b7cc04c7f4431ba",
         "download_type": "gzip"
       },
       "darwin/amd64": {
-        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-darwin-x86_64.gz",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x86_64.gz",
+        "sha256": "9fd7a2872ea154df61a2c7e9ca69fc19ac08e29f2e2dc2f866e299bdc789c1a1",
         "download_type": "gzip"
       },
       "darwin/arm64": {
-        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-darwin-aarch64.gz",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz",
+        "sha256": "13cd257c1cadb003b40daf82b3fb1451e012e2463b760bdd33df07a07970c604",
         "download_type": "gzip"
       },
       "windows/amd64": {
-        "url": "https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-full-windows-x86_64.exe.gz",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.gz",
+        "sha256": "12660d24becf05a78b39133112e91d1bd319b22b8e49660448c222a6858a6827",
         "download_type": "gzip"
       }
     }
   },
   "sqls": {
-    "version": "v0.2.22",
+    "_version": "v0.2.45",
+    "version": "v0.2.45",
     "description": "SQL LSP server",
     "platforms": {
       "linux/amd64": {
-        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_linux_amd64.zip",
-        "sha256": "PLACEHOLDER",
-        "download_type": "zip"
-      },
-      "linux/arm64": {
-        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_linux_arm64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.45/sqls-linux-0.2.45.zip",
+        "sha256": "3b948a477f0fa315311d938ea9ad9c506c978c833ff3f068f0876ef8b4786841",
         "download_type": "zip"
       },
       "darwin/amd64": {
-        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_darwin_amd64.zip",
-        "sha256": "PLACEHOLDER",
-        "download_type": "zip"
-      },
-      "darwin/arm64": {
-        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_darwin_arm64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.45/sqls-darwin-0.2.45.zip",
+        "sha256": "a94792b332de14b5365b395ed3daa886ec5f878bc9573507ef609477db5c1f7e",
         "download_type": "zip"
       },
       "windows/amd64": {
-        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.22/sqls_windows_amd64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/sqls-server/sqls/releases/download/v0.2.45/sqls-windows-0.2.45.zip",
+        "sha256": "49cbdea247f7e99fa50568dbc887be4ace2e35bc0c71e703311011aeb8f8cf26",
         "download_type": "zip"
       }
     }
   },
   "clojure-lsp": {
-    "version": "2025.06.02-16.43.00",
+    "_version": "2026.05.05-12.58.26",
+    "version": "2026.05.05-12.58.26",
     "description": "Clojure LSP server (native GraalVM binary)",
     "platforms": {
       "linux/amd64": {
-        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-linux-amd64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.05.05-12.58.26/clojure-lsp-native-linux-amd64.zip",
+        "sha256": "7b6393323539f98ad2faf868eed1df1b8e40f103bb7b8a4db0ba5c90e722e86f",
         "download_type": "zip"
       },
       "linux/arm64": {
-        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-linux-aarch64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.05.05-12.58.26/clojure-lsp-native-linux-aarch64.zip",
+        "sha256": "42423e545a4c8ae72f50d05bad1dd21ce9c91e9a0dca9b1d435ae8782b03c4d0",
         "download_type": "zip"
       },
       "darwin/amd64": {
-        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-macos-amd64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.05.05-12.58.26/clojure-lsp-native-macos-amd64.zip",
+        "sha256": "a96477879edbffa126165ea7ec395bd01c09b65614448b9cedd002460c70493f",
         "download_type": "zip"
       },
       "darwin/arm64": {
-        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-macos-aarch64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.05.05-12.58.26/clojure-lsp-native-macos-aarch64.zip",
+        "sha256": "aee60b5efbd328967fb85732cb0dc2f11064fc55febbce773d042d23f8accbf6",
         "download_type": "zip"
       },
       "windows/amd64": {
-        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2025.06.02-16.43.00/clojure-lsp-native-windows-amd64.zip",
-        "sha256": "PLACEHOLDER",
+        "url": "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.05.05-12.58.26/clojure-lsp-native-windows-amd64.zip",
+        "sha256": "0a2b219d2c403c10c8296d33ef00b1e5b1b3bed7ea457828c0d3d949f0bd5122",
         "download_type": "zip"
       }
     }
