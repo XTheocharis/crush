@@ -82,8 +82,9 @@ func NewManager(cfg *config.ConfigStore) *Manager {
 		crashRecovery:   true,
 		withHealthCheck: true,
 		installers: map[string]Installer{
-			"npm": NewNpmInstaller(LSPCacheDir()),
-			"pip": NewPipInstaller(LSPCacheDir()),
+			"npm":       NewNpmInstaller(LSPCacheDir()),
+			"pip":       NewPipInstaller(LSPCacheDir()),
+			"companion": NewCompanionInstaller(LSPCacheDir()),
 		},
 		// [XRUSH: end]
 	}
