@@ -18,9 +18,22 @@
     "dart-analysis-server": "Part of Dart SDK, no standalone binary",
     "cmake-language-server": "pip only (Python package)",
     "solidity-ls": "npm only",
-    "vscode-json-language-server": "npm only (vscode-langservers-extracted)",
-    "html-language-server": "npm only (vscode-langservers-extracted)",
-    "css-language-server": "npm only (vscode-langservers-extracted)"
+    "vscode-json-language-server": "handled via _multi_binary_map",
+    "html-language-server": "handled via _multi_binary_map",
+    "css-language-server": "handled via _multi_binary_map"
+  },
+  "_multi_binary_map": {
+    "vscode-json-language-server": { "canonical": "vscode-langservers-extracted", "entrypoint": "vscode-json-language-server" },
+    "vscode-html-language-server": { "canonical": "vscode-langservers-extracted", "entrypoint": "vscode-html-language-server" },
+    "vscode-css-language-server": { "canonical": "vscode-langservers-extracted", "entrypoint": "vscode-css-language-server" }
+  },
+  "vscode-langservers-extracted": {
+    "install_method": "npm",
+    "install_package": "vscode-langservers-extracted",
+    "install_version": "4.10.0",
+    "install_entrypoint": "vscode-json-language-server",
+    "multi_binary": true,
+    "runtime_dep": "node"
   },
   "marksman": {
     "version": "2026-02-08",

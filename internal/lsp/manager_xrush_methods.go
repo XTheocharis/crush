@@ -80,6 +80,14 @@ func (s *Manager) resolveAutoDownload(ctx context.Context, name string, server *
 		return
 	}
 
+	if canonical, _, ok := catalog.ResolveMultiBinary(name); ok {
+		installCfg, found := catalog.ResolveInstallMethod(canonical)
+		if found {
+			s.resolveViaInstaller(ctx, name, server, installCfg)
+			return
+		}
+	}
+
 	installCfg, ok := catalog.ResolveInstallMethod(name)
 	if ok {
 		s.resolveViaInstaller(ctx, name, server, installCfg)
@@ -413,7 +421,15 @@ func (s *Manager) resolveViaInstaller(ctx context.Context, name string, server *
 		return
 	}
 
-	resolved, err := installer.Install(ctx, name, cfg)
+	installName := name
+	installCfg := cfg
+
+	if canonical, entrypoint, ok := catalog.ResolveMultiBinary(name); ok {
+		installName = canonical
+		installCfg.Entrypoint = entrypoint
+	}
+
+	resolved, err := installer.Install(ctx, installName, installCfg)
 	if err != nil {
 		slog.Warn("LSP server install failed", "name", name, "method", cfg.Method, "error", err)
 		return

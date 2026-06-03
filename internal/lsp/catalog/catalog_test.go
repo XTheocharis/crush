@@ -136,6 +136,8 @@ func TestIgnoreMetaKeys(t *testing.T) {
 	require.False(t, hasComment, "_comment should not be in AllServers")
 	_, hasSkipped := all["_skipped_servers"]
 	require.False(t, hasSkipped, "_skipped_servers should not be in AllServers")
+	_, hasMultiBinary := all["_multi_binary_map"]
+	require.False(t, hasMultiBinary, "_multi_binary_map should not be in AllServers")
 }
 
 func TestCurrentPlatform(t *testing.T) {
@@ -155,4 +157,45 @@ func TestMultipleServersResolve(t *testing.T) {
 		require.NotEmpty(t, entry.Version, "%s should have a version", name)
 		require.NotEmpty(t, entry.Platforms, "%s should have platforms", name)
 	}
+}
+
+func TestResolveMultiBinaryJSON(t *testing.T) {
+	canonical, entrypoint, ok := ResolveMultiBinary("vscode-json-language-server")
+	require.True(t, ok)
+	require.Equal(t, "vscode-langservers-extracted", canonical)
+	require.Equal(t, "vscode-json-language-server", entrypoint)
+}
+
+func TestResolveMultiBinaryHTML(t *testing.T) {
+	canonical, entrypoint, ok := ResolveMultiBinary("vscode-html-language-server")
+	require.True(t, ok)
+	require.Equal(t, "vscode-langservers-extracted", canonical)
+	require.Equal(t, "vscode-html-language-server", entrypoint)
+}
+
+func TestResolveMultiBinaryCSS(t *testing.T) {
+	canonical, entrypoint, ok := ResolveMultiBinary("vscode-css-language-server")
+	require.True(t, ok)
+	require.Equal(t, "vscode-langservers-extracted", canonical)
+	require.Equal(t, "vscode-css-language-server", entrypoint)
+}
+
+func TestResolveMultiBinaryUnknown(t *testing.T) {
+	_, _, ok := ResolveMultiBinary("nonexistent-server-xyz")
+	require.False(t, ok)
+}
+
+func TestResolveMultiBinaryCanonicalNotMapped(t *testing.T) {
+	_, _, ok := ResolveMultiBinary("vscode-langservers-extracted")
+	require.False(t, ok, "canonical name should not be in the multi-binary map")
+}
+
+func TestResolveInstallMethodVscodeLangservers(t *testing.T) {
+	cfg, ok := ResolveInstallMethod("vscode-langservers-extracted")
+	require.True(t, ok)
+	require.Equal(t, "npm", cfg.Method)
+	require.Equal(t, "vscode-langservers-extracted", cfg.Package)
+	require.Equal(t, "4.10.0", cfg.Version)
+	require.Equal(t, "node", cfg.RuntimeDep)
+	require.True(t, cfg.MultiBinary)
 }

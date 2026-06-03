@@ -58,14 +58,23 @@ type InstallConfig struct {
 	VsixSHA256        string
 }
 
+// MultiBinaryEntry maps a server name to its canonical install and the
+// specific entrypoint binary within that install.
+type MultiBinaryEntry struct {
+	Canonical  string `json:"canonical"`  // Package to install (e.g. "vscode-langservers-extracted").
+	Entrypoint string `json:"entrypoint"` // Binary name within the package (e.g. "vscode-json-language-server").
+}
+
 var (
-	once    sync.Once
-	servers map[string]ServerEntry
-	loadErr error
+	once           sync.Once
+	servers        map[string]ServerEntry
+	multiBinaryMap map[string]MultiBinaryEntry
+	loadErr        error
 )
 
 // load parses the embedded catalog JSON exactly once. Meta keys starting
-// with "_" are silently discarded.
+// with "_" are silently discarded except "_multi_binary_map" which is
+// parsed into the multi-binary lookup table.
 func load() {
 	once.Do(func() {
 		var raw map[string]json.RawMessage
@@ -76,8 +85,14 @@ func load() {
 		}
 
 		servers = make(map[string]ServerEntry, len(raw))
+		multiBinaryMap = make(map[string]MultiBinaryEntry)
 		for key, val := range raw {
-			// Skip meta/annotation keys.
+			if key == "_multi_binary_map" {
+				if err := json.Unmarshal(val, &multiBinaryMap); err != nil {
+					slog.Warn("Failed to parse _multi_binary_map", "error", err)
+				}
+				continue
+			}
 			if strings.HasPrefix(key, "_") {
 				continue
 			}
@@ -146,4 +161,17 @@ func ResolveInstallMethod(name string) (InstallConfig, bool) {
 		VsixURL:           entry.VsixURL,
 		VsixSHA256:        entry.VsixSHA256,
 	}, true
+}
+
+// ResolveMultiBinary looks up a server name in the multi-binary map.
+// Returns the canonical package name, the specific entrypoint binary,
+// and true if found. Returns ("", "", false) for unknown names or
+// for canonical names themselves.
+func ResolveMultiBinary(name string) (canonical string, entrypoint string, ok bool) {
+	load()
+	entry, found := multiBinaryMap[name]
+	if !found {
+		return "", "", false
+	}
+	return entry.Canonical, entry.Entrypoint, true
 }
