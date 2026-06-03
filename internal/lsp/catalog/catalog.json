@@ -35,6 +35,13 @@
     "multi_binary": true,
     "runtime_dep": "node"
   },
+  "some-sass-language-server": {
+    "install_method": "npm",
+    "install_package": "some-sass-language-server",
+    "install_version": "2.3.8",
+    "install_entrypoint": "some-sass-language-server",
+    "runtime_dep": "node"
+  },
   "marksman": {
     "version": "2026-02-08",
     "description": "Markdown LSP server",
