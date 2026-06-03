@@ -134,11 +134,39 @@ func NewPipInstaller(cacheDir string) *PipInstaller {
 	}
 }
 
+// pipCommand holds the resolved pip executable path and whether it is uv.
+type pipCommand struct {
+	path string // Absolute path to pip3, pip, or uv.
+	uv   bool   // True when the resolved command is uv (needs "pip" subcommand).
+}
+
+// resolvePipCommand finds an available pip or uv executable on PATH.
+func resolvePipCommand() (pipCommand, error) {
+	// Try pip3 first (most common on modern systems).
+	if p, err := exec.LookPath("pip3"); err == nil {
+		return pipCommand{path: p, uv: false}, nil
+	}
+	if p, err := exec.LookPath("pip"); err == nil {
+		return pipCommand{path: p, uv: false}, nil
+	}
+	// Fallback to uv pip.
+	if p, err := exec.LookPath("uv"); err == nil {
+		return pipCommand{path: p, uv: true}, nil
+	}
+	return pipCommand{}, fmt.Errorf("pip install: %w", ErrRuntimeMissing)
+}
+
 // Install provisions a pip-based LSP server.
 func (p *PipInstaller) Install(ctx context.Context, name string, cfg catalog.InstallConfig) (string, error) {
 	// 1. Check runtime dependencies.
 	if !IsRuntimeAvailable("python") {
 		return "", fmt.Errorf("pip install %s: %w", name, ErrRuntimeMissing)
+	}
+
+	// Resolve pip command (pip3, pip, or uv fallback).
+	pipCmd, err := resolvePipCommand()
+	if err != nil {
+		return "", fmt.Errorf("pip install %s: %w", name, err)
 	}
 
 	// 2. Compute install directory.
@@ -173,10 +201,19 @@ func (p *PipInstaller) Install(ctx context.Context, name string, cfg catalog.Ins
 	defer cancel()
 
 	pkgSpec := cfg.Package + "==" + cfg.Version
-	cmd := exec.CommandContext(
-		installCtx, "pip", "install",
-		"--target", installDir, pkgSpec,
-	)
+
+	var cmd *exec.Cmd
+	if pipCmd.uv {
+		cmd = exec.CommandContext(
+			installCtx, pipCmd.path, "pip", "install",
+			"--target", installDir, pkgSpec,
+		)
+	} else {
+		cmd = exec.CommandContext(
+			installCtx, pipCmd.path, "install",
+			"--target", installDir, pkgSpec,
+		)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Clean up partial state on failure.
