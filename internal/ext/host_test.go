@@ -906,3 +906,21 @@ func TestResetForTesting(t *testing.T) {
 
 	ResetForTesting()
 }
+
+func TestExtensionHost_StopConditionFlag(t *testing.T) {
+	t.Parallel()
+
+	h := NewExtensionHost(HostDeps{})
+	require.False(t, h.WasStoppedByCondition())
+
+	h.MarkStoppedByCondition()
+	require.True(t, h.WasStoppedByCondition())
+
+	h.ClearStoppedByCondition()
+	require.False(t, h.WasStoppedByCondition())
+
+	var nilHost *ExtensionHost
+	require.False(t, nilHost.WasStoppedByCondition())
+	nilHost.MarkStoppedByCondition()
+	nilHost.ClearStoppedByCondition()
+}

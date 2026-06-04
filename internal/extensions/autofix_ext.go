@@ -133,6 +133,11 @@ func (e *AutofixExtension) onRunEnd(
 		return nil
 	}
 
+	if ext.StoppedByCondition(ctx) {
+		slog.Debug("Autofix extension: skipping, agent was stopped by condition")
+		return nil
+	}
+
 	workingDir := e.host.WorkingDir()
 	filePaths := collectGoFilePaths(ctx, workingDir)
 	if len(filePaths) == 0 {

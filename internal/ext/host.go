@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/fantasy"
@@ -42,15 +43,17 @@ func ResetForTesting() {
 // ExtensionHost manages the lifecycle of all registered extensions and
 // provides accessors for contributed tools, hooks, and prompt modifiers.
 type ExtensionHost struct {
-	deps         HostDeps
-	extensions   []Extension
-	tools        []fantasy.AgentTool
-	toolNames    []string
-	runHooks     []RunHook
-	stepHooks    []StepHook
-	promptHook   *PromptHook
-	mu           sync.RWMutex
-	bootstrapped bool
+	deps               HostDeps
+	extensions         []Extension
+	tools              []fantasy.AgentTool
+	toolNames          []string
+	runHooks           []RunHook
+	stepHooks          []StepHook
+	promptHook         *PromptHook
+	mu                 sync.RWMutex
+	bootstrapped       bool
+	stoppedByCondition atomic.Bool
+	skipCompiledIn     bool
 }
 
 // NewExtensionHost creates a new host with the given dependencies. The host
@@ -58,6 +61,18 @@ type ExtensionHost struct {
 func NewExtensionHost(deps HostDeps) *ExtensionHost {
 	return &ExtensionHost{
 		deps: deps,
+	}
+}
+
+// NewLightweightHost creates a host for sub-agents that uses only the
+// explicitly provided extensions. Compiled-in extensions are not merged,
+// preventing heavy extensions (autofix, repomap, etc.) from running on
+// sub-agents.
+func NewLightweightHost(deps HostDeps, exts []Extension) *ExtensionHost {
+	return &ExtensionHost{
+		deps:           deps,
+		extensions:     exts,
+		skipCompiledIn: true,
 	}
 }
 
@@ -84,11 +99,13 @@ func (h *ExtensionHost) Bootstrap(ctx context.Context) error {
 		return fmt.Errorf("already bootstrapped")
 	}
 
-	// Merge compiled-in extensions.
-	globalMu.Lock()
-	h.extensions = append(compiledInExtensions, h.extensions...)
-	compiledInExtensions = nil
-	globalMu.Unlock()
+	// Merge compiled-in extensions (skip for lightweight sub-agent hosts).
+	if !h.skipCompiledIn {
+		globalMu.Lock()
+		h.extensions = append(compiledInExtensions, h.extensions...)
+		compiledInExtensions = nil
+		globalMu.Unlock()
+	}
 
 	hc := &hostContext{deps: h.deps, host: h}
 
@@ -251,6 +268,30 @@ func (h *ExtensionHost) ExtensionByName(name string) Extension {
 		}
 	}
 	return nil
+}
+
+// MarkStoppedByCondition records that a stop condition was triggered.
+func (h *ExtensionHost) MarkStoppedByCondition() {
+	if h == nil {
+		return
+	}
+	h.stoppedByCondition.Store(true)
+}
+
+// ClearStoppedByCondition resets the stop condition flag before a new run.
+func (h *ExtensionHost) ClearStoppedByCondition() {
+	if h == nil {
+		return
+	}
+	h.stoppedByCondition.Store(false)
+}
+
+// WasStoppedByCondition reports whether a stop condition terminated the run.
+func (h *ExtensionHost) WasStoppedByCondition() bool {
+	if h == nil {
+		return false
+	}
+	return h.stoppedByCondition.Load()
 }
 
 type hostContext struct {

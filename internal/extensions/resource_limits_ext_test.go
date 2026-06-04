@@ -262,3 +262,69 @@ func makeTextExceedingTokens(tokens int) string {
 	}
 	return string(result)
 }
+
+func TestResourceLimitsExtension_RunHooksPerRunReset(t *testing.T) {
+	t.Parallel()
+
+	e := &ResourceLimitsExtension{}
+	host := &resourceMockHost{cfg: &config.Config{}}
+	require.NoError(t, e.Init(context.Background(), host))
+	t.Cleanup(func() { _ = e.Shutdown(context.Background()) })
+
+	stepHooks := e.StepHooks()
+	require.Len(t, stepHooks, 1)
+
+	limits := e.limits
+	for range int(limits.MaxSteps.Hard) + 1 {
+		require.NoError(t, stepHooks[0].OnStepFinish(context.Background(), "s1", fantasy.StepResult{}))
+	}
+
+	require.True(t, stepHooks[0].StopCondition(context.Background(), nil),
+		"should stop when limits exceeded")
+
+	runHooks := e.RunHooks()
+	require.Len(t, runHooks, 1)
+	require.NoError(t, runHooks[0].OnRunStart(context.Background(), "s1", "test"))
+
+	require.False(t, stepHooks[0].StopCondition(context.Background(), nil),
+		"should not stop after OnRunStart reset counters")
+}
+
+func TestResourceLimitsExtension_RunHooksResetsAllCounters(t *testing.T) {
+	t.Parallel()
+
+	e := &ResourceLimitsExtension{}
+	host := &resourceMockHost{cfg: &config.Config{}}
+	require.NoError(t, e.Init(context.Background(), host))
+	t.Cleanup(func() { _ = e.Shutdown(context.Background()) })
+
+	stepHooks := e.StepHooks()
+	step := fantasy.StepResult{
+		Response: fantasy.Response{
+			Content: fantasy.ResponseContent{
+				fantasy.TextContent{Text: "some content"},
+			},
+		},
+	}
+	require.NoError(t, stepHooks[0].OnStepFinish(context.Background(), "s1", step))
+	require.Equal(t, int32(1), e.usage.StepsTaken.Load())
+	require.True(t, e.usage.TokensUsed.Load() > 0)
+
+	runHooks := e.RunHooks()
+	require.NoError(t, runHooks[0].OnRunStart(context.Background(), "s1", "test"))
+
+	require.Equal(t, int32(0), e.usage.StepsTaken.Load())
+	require.Equal(t, int64(0), e.usage.TokensUsed.Load())
+}
+
+func TestResourceLimitsExtension_RunHooksInactive(t *testing.T) {
+	t.Parallel()
+
+	e := &ResourceLimitsExtension{}
+	require.Nil(t, e.RunHooks())
+}
+
+func TestResourceLimitsExtension_ImplementsRunHookProvider(t *testing.T) {
+	t.Parallel()
+	var _ ext.RunHookProvider = (*ResourceLimitsExtension)(nil)
+}

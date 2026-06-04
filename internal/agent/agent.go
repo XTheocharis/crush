@@ -126,6 +126,8 @@ type sessionAgent struct {
 	messageQueue   *csync.Map[string, []SessionAgentCall]
 	activeRequests *csync.Map[string, context.CancelFunc]
 
+	streamTimeout time.Duration
+
 	extHost *ext.ExtensionHost // XRUSH: extension host
 	hooks   agentHookMediator  // XRUSH: hook mediator for extension lifecycle
 }
@@ -142,6 +144,7 @@ type SessionAgentOptions struct {
 	Messages             message.Service
 	Tools                []fantasy.AgentTool
 	Notify               pubsub.Publisher[notify.Notification]
+	StreamTimeout        time.Duration
 	ExtHost              *ext.ExtensionHost // XRUSH: extension host option
 }
 
@@ -160,6 +163,7 @@ func NewSessionAgent(
 		tools:                csync.NewSliceFrom(opts.Tools),
 		isYolo:               opts.IsYolo,
 		notify:               opts.Notify,
+		streamTimeout:        opts.StreamTimeout,
 		extHost:              opts.ExtHost,                          // XRUSH: extension host
 		hooks:                agentHookMediator{host: opts.ExtHost}, // XRUSH: hook mediator init
 		messageQueue:         csync.NewMap[string, []SessionAgentCall](),
@@ -250,7 +254,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, call.SessionID)
 	ctx = repomap.WithRunInjectionKey(ctx, repomap.RunInjectionKey{RootUserMessageID: userMsg.ID})
 
-	genCtx, cancel := context.WithCancel(ctx)
+	timeout := a.streamTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, timeout)
+	genCtx, cancel := context.WithCancel(timeoutCtx)
+	defer timeoutCancel()
 	a.activeRequests.Set(call.SessionID, cancel)
 
 	defer cancel()
@@ -270,6 +280,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	startTime := time.Now()
 	sentToLLMAt := startTime.Unix()
 	a.eventPromptSent(call.SessionID)
+
+	if a.hooks.host != nil {
+		a.hooks.host.ClearStoppedByCondition()
+	}
 
 	a.hooks.invokeRunStart(ctx, call.SessionID, call.Prompt)
 
@@ -534,6 +548,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	}
 
 	a.eventPromptResponded(call.SessionID, time.Since(startTime).Truncate(time.Second))
+
+	stopped := a.hooks.host != nil && a.hooks.host.WasStoppedByCondition()
+	ctx = ext.WithStopCondition(ctx, stopped)
 
 	a.hooks.invokeRunEnd(ctx, call.SessionID, result, err) // XRUSH: hook lifecycle - run end
 

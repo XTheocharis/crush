@@ -1,4 +1,4 @@
-package extensions
+package agent
 
 import (
 	"context"
@@ -7,32 +7,32 @@ import (
 
 	"charm.land/fantasy"
 
-	"github.com/charmbracelet/crush/internal/agent"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 )
 
-// ResourceLimitsExtension wraps the resource usage tracker as a StepHookProvider.
-// It monitors per-step token consumption, step count, and duration, signalling
-// when soft or hard limits are exceeded.
-type ResourceLimitsExtension struct {
+// subAgentLimitsExt implements a lightweight extension that enforces resource
+// limits (tokens, steps, duration) on sub-agents. It lives in the agent
+// package to avoid an import cycle with the extensions package.
+type subAgentLimitsExt struct {
 	mu     sync.RWMutex
 	host   ext.HostContext
-	usage  *agent.ResourceUsage
+	usage  *ResourceUsage
 	active bool
-	limits agent.SubagentLimits
+	limits SubagentLimits
 }
 
-func (e *ResourceLimitsExtension) Name() string { return "resource-limits" }
+func (e *subAgentLimitsExt) Name() string { return "sub-agent-resource-limits" }
 
-func (e *ResourceLimitsExtension) Init(_ context.Context, host ext.HostContext) error {
+func (e *subAgentLimitsExt) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
-	e.usage = agent.NewResourceUsage()
+	e.usage = NewResourceUsage()
 	e.active = true
-	e.limits = agent.DefaultLimitsProfile().Get("task")
+	e.limits = DefaultLimitsProfile().Get("task")
 	return nil
 }
 
-func (e *ResourceLimitsExtension) Shutdown(_ context.Context) error {
+func (e *subAgentLimitsExt) Shutdown(_ context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.usage = nil
@@ -40,13 +40,13 @@ func (e *ResourceLimitsExtension) Shutdown(_ context.Context) error {
 	return nil
 }
 
-func (e *ResourceLimitsExtension) StepHooks() []ext.StepHook {
+func (e *subAgentLimitsExt) StepHooks() []ext.StepHook {
 	if !e.active {
 		return nil
 	}
 	return []ext.StepHook{
 		{
-			Name: "resource-limits-check",
+			Name: "sub-agent-resource-limits-check",
 			OnStepFinish: func(_ context.Context, _ string, step fantasy.StepResult) error {
 				e.mu.Lock()
 				defer e.mu.Unlock()
@@ -60,7 +60,6 @@ func (e *ResourceLimitsExtension) StepHooks() []ext.StepHook {
 					e.usage.AddTokens(text)
 				}
 
-				// Soft-limit warnings only (no stop).
 				e.usage.WarnTokensOnce(e.limits.MaxTokens)
 				e.usage.WarnStepsOnce(e.limits.MaxSteps)
 				e.usage.WarnDurationOnce(e.limits)
@@ -77,21 +76,21 @@ func (e *ResourceLimitsExtension) StepHooks() []ext.StepHook {
 				snapshot := e.usage.Snapshot()
 
 				if e.limits.MaxTokens.Exceeded(int(snapshot.TokensUsed)) {
-					slog.Warn("Hard token limit exceeded, stopping agent",
+					slog.Warn("Hard token limit exceeded, stopping sub-agent",
 						"tokens_used", snapshot.TokensUsed,
 						"hard_limit", e.limits.MaxTokens.Hard,
 					)
 					return true
 				}
 				if e.limits.MaxSteps.Exceeded(int(snapshot.StepsTaken)) {
-					slog.Warn("Hard step limit exceeded, stopping agent",
+					slog.Warn("Hard step limit exceeded, stopping sub-agent",
 						"steps_taken", snapshot.StepsTaken,
 						"hard_limit", e.limits.MaxSteps.Hard,
 					)
 					return true
 				}
 				if e.limits.DurationExceeded(snapshot.Elapsed) {
-					slog.Warn("Hard duration limit exceeded, stopping agent",
+					slog.Warn("Hard duration limit exceeded, stopping sub-agent",
 						"elapsed", snapshot.Elapsed,
 						"hard_limit", e.limits.MaxDuration,
 					)
@@ -104,23 +103,20 @@ func (e *ResourceLimitsExtension) StepHooks() []ext.StepHook {
 	}
 }
 
-// RunHooks returns a run hook that resets usage counters at the start of each
-// agent run, preventing cumulative limits from bleeding across runs.
-func (e *ResourceLimitsExtension) RunHooks() []ext.RunHook {
+func (e *subAgentLimitsExt) RunHooks() []ext.RunHook {
 	if !e.active {
 		return nil
 	}
 	return []ext.RunHook{
 		{
-			Name: "resource-limits-per-run-reset",
+			Name: "sub-agent-resource-limits-per-run-reset",
 			OnRunStart: func(_ context.Context, _ string, _ string) error {
 				e.mu.Lock()
 				defer e.mu.Unlock()
 				if !e.active {
 					return nil
 				}
-				e.usage = agent.NewResourceUsage()
-				slog.Debug("Resource limits reset for new run")
+				e.usage = NewResourceUsage()
 				return nil
 			},
 		},
@@ -128,7 +124,20 @@ func (e *ResourceLimitsExtension) RunHooks() []ext.RunHook {
 }
 
 var (
-	_ ext.Extension        = (*ResourceLimitsExtension)(nil)
-	_ ext.StepHookProvider = (*ResourceLimitsExtension)(nil)
-	_ ext.RunHookProvider  = (*ResourceLimitsExtension)(nil)
+	_ ext.Extension        = (*subAgentLimitsExt)(nil)
+	_ ext.StepHookProvider = (*subAgentLimitsExt)(nil)
+	_ ext.RunHookProvider  = (*subAgentLimitsExt)(nil)
 )
+
+// newSubAgentHost creates a lightweight ExtensionHost for sub-agents with only
+// resource-limits enforcement.
+func newSubAgentHost(cfg *config.ConfigStore) (*ext.ExtensionHost, error) {
+	host := ext.NewLightweightHost(ext.HostDeps{
+		Config:     cfg,
+		WorkingDir: cfg.WorkingDir(),
+	}, []ext.Extension{&subAgentLimitsExt{}})
+	if err := host.Bootstrap(context.Background()); err != nil {
+		return nil, err
+	}
+	return host, nil
+}

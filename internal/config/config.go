@@ -323,6 +323,12 @@ type Options struct {
 	// BetaTools enables tools marked with the MarkerBeta marker. When false
 	// (default), beta tools are hidden from the tool surface.
 	BetaTools bool `json:"beta_tools,omitempty" jsonschema:"description=Enable beta tools that are hidden by default,default=false"`
+
+	// StreamTimeout is the maximum duration for a single LLM Stream()
+	// call before it is cancelled. When zero, a default of 10 minutes is
+	// used. This prevents indefinite blocking if the provider becomes
+	// unresponsive.
+	StreamTimeout time.Duration `json:"stream_timeout,omitempty" jsonschema:"description=Maximum duration for a single LLM stream call. Default: 10m,example=10m,example=15m"`
 	// [XRUSH: end]
 }
 

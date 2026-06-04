@@ -119,6 +119,7 @@ func (m agentHookMediator) checkStopCondition(ctx context.Context, steps []fanta
 				continue
 			}
 			if shouldStop {
+				m.host.MarkStoppedByCondition()
 				return true
 			}
 		}

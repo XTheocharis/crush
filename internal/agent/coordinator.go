@@ -760,15 +760,22 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 		SystemPrompt:         "",
 		IsSubAgent:           isSubAgent,
 		DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
+		StreamTimeout:        c.cfg.Config().Options.StreamTimeout,
 		IsYolo:               c.permissions.SkipRequests(),
 		Sessions:             c.sessions,
 		Messages:             c.messages,
 		Tools:                nil,
 		Notify:               c.notify,
-		// XRUSH: pass extension host to main agent only
+		// XRUSH: main agent gets the full host; sub-agents get a
+		// lightweight host with only resource-limits enforcement.
 		ExtHost: func() *ext.ExtensionHost {
 			if isSubAgent {
-				return nil
+				subHost, hostErr := newSubAgentHost(c.cfg)
+				if hostErr != nil {
+					slog.Warn("Failed to create sub-agent extension host", "error", hostErr)
+					return nil
+				}
+				return subHost
 			}
 			return c.extHost
 		}(),

@@ -379,8 +379,8 @@ func PhaseFilteredTools(allTools []string, phase AgentPhase) []string {
 }
 
 // ClassifyPhase determines the current agent phase from the prompt content.
-// It reuses the prompt classification logic: plan keywords → PhasePlanning,
-// edit keywords → PhaseEditing, else PhaseReviewing.
+// It reuses the prompt classification logic: edit keywords → PhaseEditing,
+// plan keywords → PhasePlanning, ties → PhaseEditing, else PhaseReviewing.
 func ClassifyPhase(prompt string) AgentPhase {
 	lower := strings.ToLower(prompt)
 
@@ -403,7 +403,7 @@ func ClassifyPhase(prompt string) AgentPhase {
 		return PhaseReviewing
 	}
 
-	if editCount > planCount {
+	if editCount >= planCount {
 		return PhaseEditing
 	}
 	return PhasePlanning

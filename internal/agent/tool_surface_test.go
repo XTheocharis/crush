@@ -322,3 +322,106 @@ func (e *testSurfaceExt) Name() string                                { return "
 func (e *testSurfaceExt) Init(context.Context, ext.HostContext) error { return nil }
 func (e *testSurfaceExt) Shutdown(context.Context) error              { return nil }
 func (e *testSurfaceExt) GetSurface() any                             { return e.surface }
+
+func TestClassifyPhase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		prompt   string
+		expected AgentPhase
+	}{
+		{
+			name:     "tie_goes_to_editing",
+			prompt:   "fix the code and analyze it",
+			expected: PhaseEditing,
+		},
+		{
+			name:     "no_keywords_is_reviewing",
+			prompt:   "what is this?",
+			expected: PhaseReviewing,
+		},
+		{
+			name:     "clear_editing",
+			prompt:   "implement the feature",
+			expected: PhaseEditing,
+		},
+		{
+			name:     "clear_planning",
+			prompt:   "plan the architecture and design the system",
+			expected: PhasePlanning,
+		},
+		{
+			name:     "tie_plan_and_fix",
+			prompt:   "plan and fix",
+			expected: PhaseEditing,
+		},
+		{
+			name:     "multiple_edit_tie_plan",
+			prompt:   "fix and update the code, then analyze",
+			expected: PhaseEditing,
+		},
+		{
+			name:     "multiple_plan_overrides",
+			prompt:   "plan, design, and review the system",
+			expected: PhasePlanning,
+		},
+		{
+			name:     "edit_keyword_write",
+			prompt:   "write the tests",
+			expected: PhaseEditing,
+		},
+		{
+			name:     "plan_keyword_explore",
+			prompt:   "explore the codebase",
+			expected: PhasePlanning,
+		},
+		{
+			name:     "empty_prompt",
+			prompt:   "",
+			expected: PhaseReviewing,
+		},
+		{
+			name:     "case_insensitive",
+			prompt:   "FIX AND ANALYZE",
+			expected: PhaseEditing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := ClassifyPhase(tt.prompt)
+			require.Equal(t, tt.expected, result, "ClassifyPhase(%q)", tt.prompt)
+		})
+	}
+}
+
+func TestPhaseFilteredTools(t *testing.T) {
+	t.Parallel()
+
+	allTools := []string{"bash", "view", "edit", "multiedit", "write", "grep"}
+
+	t.Run("planning_hides_edit_tools", func(t *testing.T) {
+		t.Parallel()
+		filtered := PhaseFilteredTools(allTools, PhasePlanning)
+		for _, name := range filtered {
+			require.NotEqual(t, "edit", name)
+			require.NotEqual(t, "multiedit", name)
+			require.NotEqual(t, "write", name)
+		}
+		require.Len(t, filtered, 3)
+	})
+
+	t.Run("editing_shows_all", func(t *testing.T) {
+		t.Parallel()
+		filtered := PhaseFilteredTools(allTools, PhaseEditing)
+		require.Len(t, filtered, len(allTools))
+	})
+
+	t.Run("reviewing_shows_all", func(t *testing.T) {
+		t.Parallel()
+		filtered := PhaseFilteredTools(allTools, PhaseReviewing)
+		require.Len(t, filtered, len(allTools))
+	})
+}
