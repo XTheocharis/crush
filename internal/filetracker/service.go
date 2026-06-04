@@ -29,6 +29,10 @@ type Service interface {
 
 	// XRUSH: LCM recent files method
 	ListRecentReadFiles(ctx context.Context, since time.Duration) ([]string, error)
+
+	// HasWritesSince reports whether any file was written in the session
+	// after the given time.
+	HasWritesSince(ctx context.Context, sessionID string, since time.Time) bool
 }
 
 type service struct {
@@ -85,6 +89,22 @@ func relpath(path string) string {
 		return path
 	}
 	return relpath
+}
+
+// HasWritesSince reports whether any file was written in the session
+// after the given time.
+func (s *service) HasWritesSince(ctx context.Context, sessionID string, since time.Time) bool {
+	files, err := s.q.ListSessionWrittenFiles(ctx, sessionID)
+	if err != nil {
+		return false
+	}
+	sinceUnix := since.Unix()
+	for _, f := range files {
+		if f.WrittenAt >= sinceUnix {
+			return true
+		}
+	}
+	return false
 }
 
 // ListReadFiles returns the paths of all files read in a session.

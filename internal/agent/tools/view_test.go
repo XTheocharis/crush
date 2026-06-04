@@ -256,6 +256,10 @@ func (m mockFileTracker) ListRecentReadFiles(ctx context.Context, since time.Dur
 	return nil, nil
 }
 
+func (m mockFileTracker) HasWritesSince(ctx context.Context, sessionID string, since time.Time) bool {
+	return false
+}
+
 func newViewToolForTest(workingDir string) fantasy.AgentTool {
 	permissions := &mockViewPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
 	return NewViewTool(nil, permissions, mockFileTracker{}, nil, workingDir, nil)

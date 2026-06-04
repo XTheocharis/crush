@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
+	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/processor"
@@ -36,7 +37,8 @@ func (m *mockHostContext) LSP() *lsp.Manager               { return nil }
 func (m *mockHostContext) DB() *sql.DB                     { return nil }
 func (m *mockHostContext) Sessions() session.Service       { return nil }
 func (m *mockHostContext) Messages() message.Service       { return nil }
-func (m *mockHostContext) RewindService() rewind.Service   { return nil }
+func (m *mockHostContext) RewindService() rewind.Service      { return nil }
+func (m *mockHostContext) FileTracker() filetracker.Service   { return nil }
 func (m *mockHostContext) ToolDefs() []processor.ToolDef   { return nil }
 func (m *mockHostContext) SkillDefs() []processor.SkillDef { return nil }
 

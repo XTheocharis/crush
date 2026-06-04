@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"charm.land/fantasy"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
+	"github.com/charmbracelet/crush/internal/filetracker"
 )
 
 // defaultMaxAutoFixIterations is the fallback when
@@ -35,6 +37,9 @@ type AutofixExtension struct {
 	mu     sync.RWMutex
 	host   ext.HostContext
 	active bool
+
+	filetracker   filetracker.Service
+	runStartTime  time.Time
 
 	// loopEnabled caches the AutoFixLoopEnabled config value read during
 	// Init. When false (default), the extension runs the existing
@@ -55,6 +60,7 @@ func (e *AutofixExtension) Name() string { return "autofix" }
 func (e *AutofixExtension) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
 	e.active = true
+	e.filetracker = host.FileTracker()
 	cfg := host.Config()
 	e.loopEnabled = autofixLoopEnabled(cfg)
 	e.maxIterations = autofixMaxRetries(cfg)
@@ -106,7 +112,7 @@ func (e *AutofixExtension) RunHooks() []ext.RunHook {
 	return []ext.RunHook{
 		{
 			Name:       "autofix-pre-commit",
-			OnRunStart: func(_ context.Context, _ string, _ string) error { return nil },
+			OnRunStart: func(_ context.Context, _ string, _ string) error { e.runStartTime = time.Now(); return nil },
 			OnRunEnd:   e.onRunEnd,
 		},
 	}
@@ -119,7 +125,7 @@ func (e *AutofixExtension) RunHooks() []ext.RunHook {
 //     convergence detection and rollback on exhaustion.
 func (e *AutofixExtension) onRunEnd(
 	ctx context.Context,
-	_ string,
+	sessionID string,
 	_ *fantasy.AgentResult,
 	runErr error,
 ) error {
@@ -138,13 +144,22 @@ func (e *AutofixExtension) onRunEnd(
 		return nil
 	}
 
+	if e.filetracker != nil && !e.filetracker.HasWritesSince(ctx, sessionID, e.runStartTime) {
+		slog.Debug("Autofix extension: skipping, no files written this turn")
+		return nil
+	}
+
 	workingDir := e.host.WorkingDir()
 	filePaths := collectGoFilePaths(ctx, workingDir)
 	if len(filePaths) == 0 {
 		return nil
 	}
 
-	linter := &agent.GoLinter{WorkingDir: workingDir}
+	timeout := agent.DefaultLintTimeout
+	if cfg := e.host.Config(); cfg != nil && cfg.Options != nil && cfg.Options.AutofixTimeout > 0 {
+		timeout = cfg.Options.AutofixTimeout
+	}
+	linter := &agent.GoLinter{WorkingDir: workingDir, Timeout: timeout}
 	rollback := tools.NewRollbackManager()
 
 	if e.loopEnabled {

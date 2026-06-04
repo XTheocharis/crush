@@ -329,6 +329,8 @@ type Options struct {
 	// used. This prevents indefinite blocking if the provider becomes
 	// unresponsive.
 	StreamTimeout time.Duration `json:"stream_timeout,omitempty" jsonschema:"description=Maximum duration for a single LLM stream call. Default: 10m,example=10m,example=15m"`
+
+	AutofixTimeout time.Duration `json:"autofix_timeout,omitempty" jsonschema:"description=Timeout for autofix lint/format cycle. Default: 60s,example=30s,example=2m"`
 	// [XRUSH: end]
 }
 

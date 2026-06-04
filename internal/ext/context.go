@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/processor"
@@ -36,6 +37,7 @@ type HostContext interface {
 	Sessions() session.Service
 	Messages() message.Service
 	RewindService() rewind.Service
+	FileTracker() filetracker.Service
 }
 
 // HostDeps carries concrete service references from app.New().
@@ -49,6 +51,7 @@ type HostDeps struct {
 	WorkingDir    string
 	Completer     TextCompleter
 	ToolDefsFn    func() []processor.ToolDef
-	SkillDefsFn   func() []processor.SkillDef
+	SkillDefsFn    func() []processor.SkillDef
 	RewindService rewind.Service
+	FileTracker   filetracker.Service
 }

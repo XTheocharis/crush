@@ -13,6 +13,7 @@ import (
 	"charm.land/fantasy"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/processor"
@@ -359,6 +360,10 @@ func (hc *hostContext) Messages() message.Service {
 
 func (hc *hostContext) RewindService() rewind.Service {
 	return hc.deps.RewindService
+}
+
+func (hc *hostContext) FileTracker() filetracker.Service {
+	return hc.deps.FileTracker
 }
 
 func (hc *hostContext) ToolDefs() []processor.ToolDef {

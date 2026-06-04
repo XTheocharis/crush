@@ -297,6 +297,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		})
 	}
 	var shouldSummarize bool
+	var pendingFinishReason message.FinishReason
 	// Don't send MaxOutputTokens if 0 — some providers (e.g. LM Studio) reject it
 	var maxOutputTokens *int64
 	if call.MaxOutputTokens > 0 {
@@ -483,15 +484,19 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			// permission denial), the step ends on FinishReasonToolCalls but
 			// the model will not be called again. Treat it as the end of the
 			// turn so the UI can render the assistant footer.
-			if finishReason == message.FinishReasonToolUse {
-				for _, tr := range stepResult.Content.ToolResults() {
-					if tr.StopTurn {
-						finishReason = message.FinishReasonEndTurn
-						break
-					}
+		if finishReason == message.FinishReasonToolUse {
+			for _, tr := range stepResult.Content.ToolResults() {
+				if tr.StopTurn {
+					finishReason = message.FinishReasonEndTurn
+					break
 				}
 			}
+		}
+		if finishReason == message.FinishReasonEndTurn || finishReason == message.FinishReasonMaxTokens {
+			pendingFinishReason = finishReason
+		} else if finishReason != "" {
 			currentAssistant.AddFinish(finishReason, "", "")
+		}
 			currentAssistant.SentToLLMAt = sentToLLMAt
 			currentAssistant.FirstTokenAt = firstTokenAt
 			sessionLock.Lock()
@@ -553,6 +558,14 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	ctx = ext.WithStopCondition(ctx, stopped)
 
 	a.hooks.invokeRunEnd(ctx, call.SessionID, result, err) // XRUSH: hook lifecycle - run end
+
+	if pendingFinishReason != "" && currentAssistant != nil {
+		currentAssistant.AddFinish(pendingFinishReason, "", "")
+		currentAssistant.CompletedAt = time.Now().Unix()
+		if updateErr := a.messages.Update(genCtx, *currentAssistant); updateErr != nil {
+			slog.Error("Failed to finalize assistant message", "error", updateErr)
+		}
+	}
 
 	if err != nil {
 		isHyper := largeModel.ModelCfg.Provider == hyper.Name

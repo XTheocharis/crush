@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const defaultLintTimeout = 60 * time.Second
+const DefaultLintTimeout = 60 * time.Second
 
 // lintLineRe matches output in the form "file:line:col: message" or
 // "file:line: message" (go vet omits the column).
@@ -21,6 +21,14 @@ var lintLineRe = regexp.MustCompile(`^[^:]+\.go:\d+(:\d+)?: `)
 // is not available on the system PATH.
 type GoLinter struct {
 	WorkingDir string
+	Timeout    time.Duration
+}
+
+func (g *GoLinter) lintTimeout() time.Duration {
+	if g.Timeout > 0 {
+		return g.Timeout
+	}
+	return DefaultLintTimeout
 }
 
 var _ Linter = (*GoLinter)(nil)
@@ -30,7 +38,7 @@ func (g *GoLinter) RunLint(ctx context.Context, filePaths []string) ([]string, e
 		return nil, nil
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, defaultLintTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, g.lintTimeout())
 	defer cancel()
 
 	output, err := g.runGolangciLint(timeoutCtx, filePaths)
@@ -100,7 +108,7 @@ type GoTester struct {
 var _ Tester = (*GoTester)(nil)
 
 func (t *GoTester) RunTests(ctx context.Context) ([]string, error) {
-	timeoutCtx, cancel := context.WithTimeout(ctx, defaultLintTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, DefaultLintTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(timeoutCtx, "go", "test", "./...")

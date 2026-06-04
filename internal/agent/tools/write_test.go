@@ -32,6 +32,10 @@ func (m mockFileTrackerService) ListReadFiles(ctx context.Context, sessionID str
 	return nil, nil
 }
 
+func (m mockFileTrackerService) HasWritesSince(ctx context.Context, sessionID string, since time.Time) bool {
+	return false
+}
+
 func TestWriteToolWritesEmptyNewFile(t *testing.T) {
 	t.Parallel()
 

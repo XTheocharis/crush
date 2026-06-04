@@ -37,6 +37,7 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 		ToolDefsFn:    newToolDefsProvider(store.WorkingDir()),
 		SkillDefsFn:   newSkillDefsProvider(app.Skills),
 		RewindService: rewindSvc,
+		FileTracker:   app.FileTracker,
 	})
 	if err := extHost.Bootstrap(ctx); err != nil {
 		slog.Warn("Extension host bootstrap failed", "error", err)
