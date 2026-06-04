@@ -1,6 +1,6 @@
 ---
 name: crush-hooks
-description: Use when the user wants to add, write, debug, or configure a Crush hook — gating or blocking tool calls, approving or rewriting tool input before execution, injecting context into tool results, or troubleshooting hook behavior in crush.json.
+description: Use when the user wants to add, write, debug, or configure a Crush hook — gating or blocking tool calls, approving or rewriting tool input before execution, injecting context into tool results, output rewriting after tool execution, or troubleshooting hook behavior in crush.json.
 ---
 
 # Crush Hooks
@@ -16,8 +16,15 @@ need to author correct hooks.
 
 ## Supported Events
 
-Only `PreToolUse` is currently supported. Event names are case-insensitive and
-accept snake_case (`PreToolUse`, `pretooluse`, `pre_tool_use` all work).
+| Event | Description |
+|---|---|
+| `PreToolUse` | Fires before every tool call. Can block, allow, or rewrite tool input. |
+| `PostToolUse` | Fires after every tool call. Non-blocking; primary use is output rewriting/sanitization. |
+| `PreCompact` | Fires before LCM compaction. |
+| `PostCompact` | Fires after LCM compaction. |
+
+Event names are case-insensitive and accept snake_case (`PreToolUse`,
+`pretooluse`, `pre_tool_use` all work).
 
 ## Configuration
 
@@ -30,7 +37,15 @@ accept snake_case (`PreToolUse`, `pretooluse`, `pre_tool_use` all work).
         "command": "./hooks/my-hook.sh",   // required: shell command to run
         "timeout": 10                     // optional: seconds, default 30
       }
-    ]
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "bash",
+        "command": "./hooks/sanitize-output.sh"
+      }
+    ],
+    "PreCompact": [],
+    "PostCompact": []
   }
 }
 ```
@@ -45,7 +60,9 @@ invoking the interpreter: `node ./hooks/h.js`, `python3 ./hooks/h.py`,
 `./hooks/h.sh`, inline `echo '…'`, etc. The rest of this skill shows bash, but
 the input/output contract is identical regardless of language.
 
-## Input
+## PreToolUse Hooks
+
+### Input
 
 **Environment variables:**
 
@@ -71,7 +88,7 @@ the input/output contract is identical regardless of language.
 }
 ```
 
-## Output
+### Output
 
 Communicate back via exit code (+ stderr) or JSON on stdout.
 
@@ -112,6 +129,71 @@ policy violation).
   replacement. Keys you include overwrite; keys you don't are preserved.
   Nested objects are replaced wholesale, not deep-merged. Ignored on deny/halt.
 
+## PostToolUse Hooks
+
+PostToolUse hooks fire **after** a tool has completed. They are always
+non-blocking — exit codes 2 and 49 do **not** halt or deny (the tool already
+ran). The primary use case is output rewriting or sanitization.
+
+### Input
+
+**Additional environment variables** (extends PreToolUse set):
+
+| Variable                   | Description                          |
+| -------------------------- | ------------------------------------ |
+| `CRUSH_TOOL_OUTPUT`        | The tool's output text               |
+| `CRUSH_TOOL_DURATION_MS`   | Execution time in milliseconds       |
+
+**JSON on stdin** (extends base payload):
+
+```json
+{
+  "event": "PostToolUse",
+  "session_id": "313909e",
+  "cwd": "/home/user/project",
+  "tool_name": "bash",
+  "tool_input": {"command": "ls -la"},
+  "tool_output": "file1.txt\nfile2.txt",
+  "duration_ms": 150
+}
+```
+
+### Output
+
+Exit code 0 with JSON stdout. The key field for PostToolUse is
+`modified_output`:
+
+```json
+{"modified_output": "sanitized version of the output"}
+```
+
+- If stdout is valid JSON with a `modified_output` field, that text replaces
+  the tool's original output.
+- If stdout is valid JSON without the field, no replacement occurs.
+- If stdout is not valid JSON, it is used as-is (plain text replacement).
+
+### PostToolUse Exit Codes
+
+| Exit Code | Meaning                                                       |
+| --------- | ------------------------------------------------------------- |
+| 0         | Success. Stdout parsed for `modified_output`.                  |
+| 2         | **Non-blocking**. Stderr logged. Tool already ran.            |
+| 49        | **Non-blocking**. Stderr logged. Tool already ran.            |
+| Other     | Non-blocking error. Logged and ignored.                       |
+
+Unlike PreToolUse, exit codes 2 and 49 do NOT block or halt — the tool has
+already executed. They are logged as warnings.
+
+## Compaction Hooks (PreCompact / PostCompact)
+
+`PreCompact` and `PostCompact` fire during LCM compaction events, separate
+from the tool-call path. They use the same hook configuration format
+(`matcher`, `command`, `timeout`) and receive the same base environment
+variables (`CRUSH_EVENT`, `CRUSH_SESSION_ID`, `CRUSH_CWD`, `CRUSH_PROJECT_DIR`).
+
+These hooks are useful for logging, notification, or triggering side effects
+around context compaction.
+
 ## Aggregation (Multiple Hooks)
 
 Composed in **config order**:
@@ -120,10 +202,11 @@ Composed in **config order**:
 - `halt` is sticky: any hook halting ends the turn.
 - `reason` and `context` concatenate in config order (newline-joined).
 - `updated_input` patches shallow-merge sequentially; later patches win on colliding keys.
+- `modified_output` (PostToolUse) uses last-writer-wins semantics.
 
 ## Canonical Examples
 
-### Block destructive commands
+### Block destructive commands (PreToolUse)
 
 ```bash
 #!/usr/bin/env bash
@@ -183,15 +266,32 @@ If the original call was `{"command": "npm test", "timeout": 60000}`, the
 tool runs with `{"command": "<rewritten>", "timeout": 60000}` — `timeout` is
 preserved.
 
+### Sanitize tool output (PostToolUse)
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Strip sensitive paths from any tool output
+sanitized=$(echo "$CRUSH_TOOL_OUTPUT" | sed 's|/home/[^ ]*|<redacted>|g')
+echo "{\"modified_output\": \"$sanitized\"}"
+```
+
+Config: `{"matcher": "", "command": "./hooks/sanitize-output.sh"}`
+
 ## Authoring Checklist
 
 1. Add `#!/usr/bin/env bash` and `set -euo pipefail` (for shell scripts).
 2. `chmod +x` the script.
-3. Add the entry under `hooks.PreToolUse` in `crush.json` with the right matcher.
-4. Decide intent: inject context (omit `decision`), auto-approve (`"allow"`),
-   block (`exit 2`), or halt (`exit 49`).
+3. Add the entry under the correct event in `hooks` in `crush.json` with the right matcher.
+4. Decide intent:
+   - **PreToolUse**: inject context (omit `decision`), auto-approve (`"allow"`),
+     block (`exit 2`), or halt (`exit 49`).
+   - **PostToolUse**: rewrite output (`modified_output`), log, or sanitize.
+   - **PreCompact/PostCompact**: log or trigger side effects.
 5. If rewriting input, remember `updated_input` is a shallow merge — only
    include the keys you want to change.
+6. If rewriting output, use `modified_output` in the JSON stdout response.
 
 ## Debugging
 
@@ -200,6 +300,7 @@ preserved.
 - Use `echo "debug info" >&2` for logging without corrupting stdout JSON.
 - `matcher` is a regex against the tool name. Use `^bash$` (not `bash`) if you
   don't also want to match `mcp_something_bash`.
+- PostToolUse exit codes 2 and 49 are non-blocking — the tool already ran.
 
 ## Claude Code Compatibility
 
