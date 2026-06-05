@@ -26,12 +26,19 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 
 	cfg := host.Config()
 	if cfg == nil || cfg.Options == nil || cfg.Options.RepoMap == nil || cfg.Options.RepoMap.Disabled {
-		slog.Debug("RepomapExtension: repo map disabled in config")
+		slog.Info("RepomapExtension: repo map disabled in config",
+			"cfg_nil", cfg == nil,
+			"options_nil", cfg != nil && cfg.Options == nil,
+			"repomap_nil", cfg != nil && cfg.Options != nil && cfg.Options.RepoMap == nil,
+			"disabled", cfg != nil && cfg.Options != nil && cfg.Options.RepoMap != nil && cfg.Options.RepoMap.Disabled,
+		)
 		return baseRepomapTools(nil, nil, nil)
 	}
 
 	q := db.New(rawDB)
 	svc := repomap.NewService(cfg, q, rawDB, host.WorkingDir(), ctx)
+
+	slog.Info("RepomapExtension: service created", "working_dir", host.WorkingDir())
 
 	go svc.PreIndex()
 

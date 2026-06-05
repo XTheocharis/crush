@@ -538,6 +538,13 @@ func (s *Service) ShouldInject(sessionID string, runKey RunInjectionKey) bool {
 	if _, exists := runs[runKey]; exists {
 		return false
 	}
+	// Only mark as injected if a cached map exists. If the map hasn't
+	// been generated yet (async refresh still running), returning true
+	// without a cached map would burn the one-shot injection slot and
+	// the map would never appear in context.
+	if s.LastTokenCount(sessionID) <= 0 {
+		return false
+	}
 	runs[runKey] = struct{}{}
 	return true
 }
