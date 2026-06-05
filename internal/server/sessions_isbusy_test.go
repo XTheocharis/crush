@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/backend"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/session"
@@ -48,6 +49,9 @@ func (s *stubCoordinator) RecoverSession(context.Context, string) error         
 func (s *stubCoordinator) RepoMapRefresh(context.Context, string) error                  { return nil } // XRUSH: repomap refresh
 func (s *stubCoordinator) RestoreAgentConfig(context.Context, map[string][]string) error { return nil } // XRUSH: agent config restore
 func (s *stubCoordinator) StructuredSubagentFactory() agent.StructuredSubagentFactory    { return nil } // XRUSH: swarm factory accessor
+func (s *stubCoordinator) ResolveLCMModel(context.Context, config.SelectedModel, config.ProviderConfig) (agent.Model, error) {
+	return agent.Model{}, nil
+}
 
 // stubSessions is a minimal session.Service that returns a fixed list
 // (and supports Get by ID). All other methods return zero values; the

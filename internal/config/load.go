@@ -445,6 +445,24 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Apply defaults to LSP configurations
 	c.applyLSPDefaults()
 
+	// Apply default repo map options when not explicitly configured.
+	if c.Options.RepoMap == nil {
+		defaults := DefaultRepoMapOptions()
+		c.Options.RepoMap = &defaults
+	}
+
+	// Apply default LCM options when not explicitly configured.
+	if c.Options.LCM == nil {
+		defaults := DefaultLCMOptions()
+		c.Options.LCM = &defaults
+	}
+
+	// Apply default validation options so extensions can read sub-fields
+	// without nil guards. All booleans default to false (disabled).
+	if c.Options.Validation == nil {
+		c.Options.Validation = &ValidationOptions{}
+	}
+
 	// Add the default context paths if they are not already present
 	c.Options.ContextPaths = append(defaultContextPaths, c.Options.ContextPaths...)
 	slices.Sort(c.Options.ContextPaths)

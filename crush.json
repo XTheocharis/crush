@@ -3,6 +3,7 @@
   "lsp": {
     "gopls": {
       "options": {
+        "buildFlags": ["-tags=treesitter"],
         "gofumpt": true,
         "codelenses": {
           "gc_details": true,
