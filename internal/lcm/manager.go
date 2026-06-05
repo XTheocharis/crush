@@ -939,6 +939,8 @@ func (m *compactionManager) CompactUntilUnderLimit(ctx context.Context, sessionI
 	}
 	defer mu.Unlock()
 
+	detachedCtx := context.WithoutCancel(ctx)
+
 	budget, _ := m.GetBudget(ctx, sessionID)
 	tokenCount, _ := m.GetContextTokenCount(ctx, sessionID)
 	hookInput := buildPreCompactInput(sessionID, tokenCount, budget, true)
@@ -984,7 +986,7 @@ func (m *compactionManager) CompactUntilUnderLimit(ctx context.Context, sessionI
 			slog.Warn("LCM: PostCompact hook requested halt after blocking compaction",
 				"session_id", sessionID, "reason", postHookDecision.Reason)
 		}
-		go m.PostCompactionHook(ctx, sessionID)
+		go m.PostCompactionHook(detachedCtx, sessionID)
 	}
 	return err
 }
@@ -1005,6 +1007,8 @@ func (m *compactionManager) Compact(ctx context.Context, sessionID string, opts 
 		return fmt.Errorf("acquiring session lock: %w", err)
 	}
 	defer mu.Unlock()
+
+	detachedCtx := context.WithoutCancel(ctx)
 
 	budget, _ := m.GetBudget(ctx, sessionID)
 	tokenCount, _ := m.GetContextTokenCount(ctx, sessionID)
@@ -1047,7 +1051,7 @@ func (m *compactionManager) Compact(ctx context.Context, sessionID string, opts 
 			"session_id", sessionID, "reason", postHookDecision.Reason)
 	}
 
-	go m.PostCompactionHook(ctx, sessionID)
+	go m.PostCompactionHook(detachedCtx, sessionID)
 
 	return nil
 }
@@ -1262,7 +1266,7 @@ func (m *compactionManager) ScheduleCompaction(ctx context.Context, sessionID st
 				"session_id", sessionID, "reason", postHookDecision.Reason)
 		}
 
-		go m.PostCompactionHook(ctx, sessionID)
+		go m.PostCompactionHook(detachedCtx, sessionID)
 
 		resultCh <- result
 	}()
