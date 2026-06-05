@@ -704,9 +704,9 @@
         "enabled": {
           "type": "boolean",
           "description": "Enable the message processing pipeline",
-          "default": false
-        },
-        "list": {
+          "default": true
+         },
+         "list": {
           "items": {
             "type": "string"
           },

@@ -260,9 +260,10 @@ func buildProcessorRunner(
 	var inputProcessors []processor.Processor
 	var outputProcessors []processor.Processor
 
-	for _, name := range list {
+	for _, raw := range list {
+		name := normalizeProcessorName(raw)
 		if _, ok := safeProcessorNames[name]; !ok {
-			slog.Debug("Skipping unknown or unsafe processor", "name", name)
+			slog.Debug("Skipping unknown or unsafe processor", "name", raw, "normalized", name)
 			continue
 		}
 		switch name {
@@ -382,6 +383,30 @@ func buildProcessorRunner(
 	}
 
 	return processor.NewRunner(opts...)
+}
+
+// normalizeProcessorName converts PascalCase, camelCase, and kebab-case to
+// snake_case so that user config is resilient against style mismatches.
+func normalizeProcessorName(name string) string {
+	if !strings.ContainsFunc(name, func(r rune) bool {
+		return r >= 'A' && r <= 'Z'
+	}) {
+		return strings.ReplaceAll(name, "-", "_")
+	}
+	var b strings.Builder
+	for i, r := range name {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + 'a' - 'A')
+		} else if r == '-' {
+			b.WriteByte('_')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // enforceOrdering ensures "skills" appears before "skill_search" in the list.
