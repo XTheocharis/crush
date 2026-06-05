@@ -5,8 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"charm.land/fantasy"
 )
@@ -163,11 +161,4 @@ func resolveContentForOp(p BatchEditOpParams) (string, error) {
 	return "", fmt.Errorf("content is required")
 }
 
-func parseAnchorHashHex(hexStr string) (uint64, error) {
-	if hexStr == "" {
-		return 0, fmt.Errorf("empty hash string")
-	}
-	clean := strings.TrimPrefix(hexStr, "0x")
-	clean = strings.TrimPrefix(clean, "0X")
-	return strconv.ParseUint(clean, 16, 64)
-}
+

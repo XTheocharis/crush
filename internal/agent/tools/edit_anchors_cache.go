@@ -68,11 +68,13 @@ func stripAnchorMarkers(s string) string {
 	return anchorMarkerRE.ReplaceAllString(s, "")
 }
 
-// injectAnchorsIntoOutput appends anchor markers (as comments) to the
-// appropriate lines in the already-line-numbered output. startLine is
-// 1-indexed (first display line number). am's LineNum values are 0-indexed
-// relative to the displayed content.
-func injectAnchorsIntoOutput(numberedContent string, startLine int, am *AnchorMap) string {
+// injectAnchorMarkers appends <hash:XXXXXXXX> anchor markers as inline
+// comments to the numbered output lines. numberedContent is the output of
+// addLineNumbers ("  42|code"). am's LineNum values are 0-indexed relative to
+// the file content. startLine is the 1-indexed first display line number
+// (matches the offset parameter from the view call). Only lines that carry an
+// anchor get the marker appended.
+func injectAnchorMarkers(numberedContent string, startLine int, am *AnchorMap) string {
 	if am == nil || len(am.Anchors) == 0 {
 		return numberedContent
 	}
@@ -81,17 +83,17 @@ func injectAnchorsIntoOutput(numberedContent string, startLine int, am *AnchorMa
 
 	anchorSet := make(map[int]string, len(am.Anchors))
 	for _, a := range am.Anchors {
-		anchorSet[a.LineNum] = a.FormatAnchor()
+		displayLine := a.LineNum + 1
+		anchorSet[displayLine] = a.FormatAnchor()
 	}
 
 	var b strings.Builder
 	for i, line := range lines {
-		if marker, ok := anchorSet[i]; ok {
-			b.WriteString(line)
+		displayLine := i + startLine
+		b.WriteString(line)
+		if marker, ok := anchorSet[displayLine]; ok {
 			b.WriteString("  // ")
 			b.WriteString(marker)
-		} else {
-			b.WriteString(line)
 		}
 		if i < len(lines)-1 {
 			b.WriteByte('\n')
@@ -100,18 +102,13 @@ func injectAnchorsIntoOutput(numberedContent string, startLine int, am *AnchorMa
 	return b.String()
 }
 
-// shiftAnchorMap adjusts all anchor positions by delta (positive or negative)
-// and rebuilds the Lookup table.
-func shiftAnchorMap(am *AnchorMap, delta int) {
-	if am == nil || delta == 0 {
+func reconcileAnchorMap(filePath string, content string) {
+	if content == "" {
+		deleteAnchorMap(filePath)
 		return
 	}
-	newLookup := make(map[uint64]int, len(am.Lookup))
-	for i := range am.Anchors {
-		am.Anchors[i].LineNum += delta
-		newLookup[am.Anchors[i].Hash] = am.Anchors[i].LineNum
-	}
-	am.Lookup = newLookup
+	am := BuildAnchorMap(content, 0)
+	storeAnchorMap(filePath, am)
 }
 
 // tryAnchorReplace attempts to use anchor resolution for content replacement.

@@ -80,7 +80,11 @@ func handleBatchRead(
 			fmt.Fprintf(&b, "<file path=\"%s\">\nError: content is not valid UTF-8\n</file>\n\n", rel)
 			continue
 		}
-		fmt.Fprintf(&b, "<file path=\"%s\">\n%s\n</file>\n\n", rel, addLineNumbers(content, params.Offset+1))
+		numbered := addLineNumbers(content, params.Offset+1)
+		am := BuildAnchorMap(content, 0)
+		storeAnchorMap(absPath, am)
+		numbered = injectAnchorMarkers(numbered, params.Offset+1, am)
+		fmt.Fprintf(&b, "<file path=\"%s\">\n%s\n</file>\n\n", rel, numbered)
 		paths = append(paths, absPath)
 	}
 

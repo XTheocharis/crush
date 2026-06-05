@@ -268,7 +268,11 @@ func NewViewTool(
 			openInLSPs(ctx, lspManager, filePath)
 			waitForLSPDiagnostics(ctx, lspManager, filePath, 300*time.Millisecond)
 			output := "<file>\n"
-			output += addLineNumbers(content, params.Offset+1)
+			numbered := addLineNumbers(content, params.Offset+1)
+			am := BuildAnchorMap(content, 0)
+			storeAnchorMap(filePath, am)
+			numbered = injectAnchorMarkers(numbered, params.Offset+1, am)
+			output += numbered
 
 			if hasMore {
 				output += fmt.Sprintf("\n\n(File has more lines. Use 'offset' parameter to read beyond line %d)",

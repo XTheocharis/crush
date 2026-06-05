@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"regexp"
 	"sort"
 	"strings"
@@ -10,37 +9,6 @@ import (
 
 	"github.com/charmbracelet/crush/internal/fsext"
 )
-
-const (
-	errOldStringNotFound     = "old_string not found in file. Make sure it matches exactly, including whitespace and line breaks"
-	errOldStringMultipleHits = "old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true"
-)
-
-var (
-	errFuzzyNotFound     = errors.New(errOldStringNotFound)
-	errFuzzyMultipleHits = errors.New(errOldStringMultipleHits)
-)
-
-// fuzzyReplace finds oldString in content using fuzzy matching and replaces it
-// with newString. For replaceAll, all occurrences are replaced.
-func fuzzyReplace(content, oldString, newString string, replaceAll bool) (string, error) {
-	if replaceAll {
-		replaced, found := replaceAllWithBestMatch(content, oldString, newString)
-		if !found {
-			return "", errFuzzyNotFound
-		}
-		return replaced, nil
-	}
-	matchedString, found, isMultiple := findBestMatch(content, oldString)
-	if !found {
-		return "", errFuzzyNotFound
-	}
-	if isMultiple {
-		return "", errFuzzyMultipleHits
-	}
-	before, after, _ := strings.Cut(content, matchedString)
-	return before + newString + after, nil
-}
 
 var (
 	viewLinePrefixRE     = regexp.MustCompile(`^\s*\d+\|\s?`)
@@ -209,54 +177,6 @@ func trimSurroundingBlankLines(s string) string {
 	}
 
 	return strings.Join(lines[start:end], "\n")
-}
-
-// replaceAllWithBestMatch replaces all occurrences of oldString in content
-// with newString, using fuzzy matching strategies if an exact match fails.
-func replaceAllWithBestMatch(content, oldString, newString string) (string, bool) {
-	oldString = normalizeOldStringForMatching(oldString)
-	if oldString == "" {
-		return "", false
-	}
-
-	if strings.Contains(content, oldString) {
-		return strings.ReplaceAll(content, oldString, newString), true
-	}
-
-	newContent, ok := tryReplaceAllWithFlexibleMultilineRegexp(content, oldString, newString)
-	if ok {
-		return newContent, true
-	}
-
-	collapsedOld := collapseBlankLines(oldString)
-	if collapsedOld != oldString {
-		newContent, ok := tryReplaceAllWithFlexibleMultilineRegexp(content, collapsedOld, newString)
-		if ok {
-			return newContent, true
-		}
-	}
-
-	matchedString, found, _ := findBestMatch(content, oldString)
-	if !found || matchedString == "" {
-		return "", false
-	}
-	return strings.ReplaceAll(content, matchedString, newString), true
-}
-
-func tryReplaceAllWithFlexibleMultilineRegexp(content, oldString, newString string) (string, bool) {
-	re := buildFlexibleMultilineRegexp(oldString)
-	if re == nil {
-		return "", false
-	}
-
-	if !re.MatchString(content) {
-		return "", false
-	}
-
-	newContent := re.ReplaceAllStringFunc(content, func(string) string {
-		return newString
-	})
-	return newContent, true
 }
 
 func buildFlexibleMultilineRegexp(oldString string) *regexp.Regexp {

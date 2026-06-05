@@ -67,6 +67,7 @@ type PipelineConfig struct {
 	StageTimeout any
 }
 
+//nolint:unused
 func (c *PipelineConfig) shouldSkip(name string) bool {
 	return slices.Contains(c.SkipStages, name)
 }
