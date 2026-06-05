@@ -889,7 +889,7 @@ func (m *compactionManager) IsOverSoftThreshold(ctx context.Context, sessionID s
 		return ThresholdCheck{}, err
 	}
 
-	tokenCount, err := m.store.GetContextTokenCount(ctx, sessionID)
+	tokenCount, err := m.GetContextTokenCount(ctx, sessionID)
 	if err != nil {
 		return ThresholdCheck{}, err
 	}
@@ -910,7 +910,7 @@ func (m *compactionManager) IsOverHardLimit(ctx context.Context, sessionID strin
 		return ThresholdCheck{}, err
 	}
 
-	tokenCount, err := m.store.GetContextTokenCount(ctx, sessionID)
+	tokenCount, err := m.GetContextTokenCount(ctx, sessionID)
 	if err != nil {
 		return ThresholdCheck{}, err
 	}
@@ -940,7 +940,7 @@ func (m *compactionManager) CompactUntilUnderLimit(ctx context.Context, sessionI
 	defer mu.Unlock()
 
 	budget, _ := m.GetBudget(ctx, sessionID)
-	tokenCount, _ := m.store.GetContextTokenCount(ctx, sessionID)
+	tokenCount, _ := m.GetContextTokenCount(ctx, sessionID)
 	hookInput := buildPreCompactInput(sessionID, tokenCount, budget, true)
 	hookDecision := runPreCompactHooks(ctx, m.preCompactRunner, sessionID, hookInput)
 
@@ -1007,7 +1007,7 @@ func (m *compactionManager) Compact(ctx context.Context, sessionID string, opts 
 	defer mu.Unlock()
 
 	budget, _ := m.GetBudget(ctx, sessionID)
-	tokenCount, _ := m.store.GetContextTokenCount(ctx, sessionID)
+	tokenCount, _ := m.GetContextTokenCount(ctx, sessionID)
 	hookInput := buildPreCompactInput(sessionID, tokenCount, budget, false)
 	hookDecision := runPreCompactHooks(ctx, m.preCompactRunner, sessionID, hookInput)
 
@@ -1084,7 +1084,7 @@ func (m *compactionManager) compactLocked(ctx context.Context, sessionID string,
 
 	// Phase 2: If still over soft threshold, fall back to LLM summarization.
 	budget, budgetErr := m.GetBudget(ctx, sessionID)
-	tokensAfter, tokenErr := m.store.GetContextTokenCount(ctx, sessionID)
+	tokensAfter, tokenErr := m.GetContextTokenCount(ctx, sessionID)
 	softThreshold := budget.SoftThreshold
 	if cfg.TargetTokens > 0 {
 		softThreshold = cfg.TargetTokens
@@ -1200,7 +1200,7 @@ func (m *compactionManager) ScheduleCompaction(ctx context.Context, sessionID st
 		defer mu.Unlock()
 
 		budget, budgetErr := m.GetBudget(detachedCtx, sessionID)
-		tokenCount, tokenErr := m.store.GetContextTokenCount(detachedCtx, sessionID)
+		tokenCount, tokenErr := m.GetContextTokenCount(detachedCtx, sessionID)
 
 		// Check soft threshold before running compaction (force=false behavior).
 		if budgetErr == nil && tokenErr == nil && tokenCount <= budget.SoftThreshold {

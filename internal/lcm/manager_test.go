@@ -166,6 +166,55 @@ func TestManager_IsOverSoftThreshold_WhenOverBudget(t *testing.T) {
 	require.True(t, check.OverSoft)
 }
 
+// TestIsOverSoftThreshold_IncludesPendingTokens verifies that IsOverSoftThreshold
+// includes pending item tokens in its threshold calculation, not just the DB
+// token count. Without this fix, the method called m.store.GetContextTokenCount
+// directly, missing pending tokens from providerState.
+func TestIsOverSoftThreshold_IncludesPendingTokens(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-soft-pending"
+	createTestSession(t, queries, sessionID)
+	err := mgr.InitSession(ctx, sessionID)
+	require.NoError(t, err)
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+
+	// Set DB token count to well below soft threshold.
+	msgID := "msg-below"
+	createTestMessage(t, queries, sessionID, msgID, "user", "small message")
+	err = queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID, Valid: true},
+		TokenCount: 100,
+	})
+	require.NoError(t, err)
+
+	// Verify DB-only count is below soft threshold.
+	cm := mgr.(*compactionManager)
+	dbCount, err := cm.store.GetContextTokenCount(ctx, sessionID)
+	require.NoError(t, err)
+	require.Less(t, dbCount, budget.SoftThreshold, "DB token count should be below soft threshold")
+
+	// Set provider state so promptTokens + pendingItemTokens exceeds soft
+	// threshold. Use promptTokens = 100 (matching DB), pendingItemTokens =
+	// enough to exceed soft threshold.
+	mgr.SetActualPromptTokens(sessionID, 100)
+	mgr.AddPendingItemTokens(sessionID, budget.SoftThreshold+500)
+
+	// Now IsOverSoftThreshold should see the total (100 + softThreshold+500)
+	// and report over soft threshold.
+	check, err := mgr.IsOverSoftThreshold(ctx, sessionID)
+	require.NoError(t, err)
+	require.True(t, check.OverSoft, "should be over soft threshold when pending tokens push total over limit")
+}
+
 func TestManager_IsOverHardLimit(t *testing.T) {
 	t.Parallel()
 	queries, sqlDB := setupTestDB(t)
@@ -194,6 +243,49 @@ func TestManager_IsOverHardLimit(t *testing.T) {
 	check, err := mgr.IsOverHardLimit(ctx, sessionID)
 	require.NoError(t, err)
 	require.True(t, check.OverHard)
+}
+
+// TestIsOverHardLimit_IncludesPendingTokens verifies that IsOverHardLimit
+// includes pending item tokens, preventing compaction from being skipped
+// when pending tokens push the total over the hard limit.
+func TestIsOverHardLimit_IncludesPendingTokens(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-hard-pending"
+	createTestSession(t, queries, sessionID)
+	err := mgr.InitSession(ctx, sessionID)
+	require.NoError(t, err)
+
+	budget, err := mgr.GetBudget(ctx, sessionID)
+	require.NoError(t, err)
+
+	// Set DB token count below hard limit.
+	msgID := "msg-below-hard"
+	createTestMessage(t, queries, sessionID, msgID, "user", "small message")
+	err = queries.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  sessionID,
+		Position:   0,
+		ItemType:   "message",
+		MessageID:  sql.NullString{String: msgID, Valid: true},
+		TokenCount: 100,
+	})
+	require.NoError(t, err)
+
+	cm := mgr.(*compactionManager)
+	dbCount, err := cm.store.GetContextTokenCount(ctx, sessionID)
+	require.NoError(t, err)
+	require.Less(t, dbCount, budget.HardLimit, "DB token count should be below hard limit")
+
+	// Set provider state so total exceeds hard limit.
+	mgr.SetActualPromptTokens(sessionID, 100)
+	mgr.AddPendingItemTokens(sessionID, budget.HardLimit+500)
+
+	check, err := mgr.IsOverHardLimit(ctx, sessionID)
+	require.NoError(t, err)
+	require.True(t, check.OverHard, "should be over hard limit when pending tokens push total over limit")
 }
 
 func TestIsOverHardLimitNotEqualToIsOverSoftThreshold(t *testing.T) {
