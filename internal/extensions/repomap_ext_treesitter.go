@@ -65,6 +65,8 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 
 	e.asyncRefresh = refreshAsync
 
+	e.closeSvc = func() { svc.Close() }
+
 	e.mu.Lock()
 	e.loadCachedMap = func(sessionID string) (string, int) {
 		return svc.LastGoodMap(sessionID), svc.LastTokenCount(sessionID)

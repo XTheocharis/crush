@@ -25,6 +25,7 @@ type RepomapExtension struct {
 	loadCachedMap   func(sessionID string) (string, int)
 	shouldInjectMap func(ctx context.Context, sessionID string) bool
 	fileScores      func(ctx context.Context, sessionID string) map[string]float64
+	closeSvc        func()
 }
 
 func (e *RepomapExtension) Name() string { return "repomap" }
@@ -50,6 +51,10 @@ func (e *RepomapExtension) Init(ctx context.Context, host ext.HostContext) error
 func (e *RepomapExtension) Shutdown(_ context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.closeSvc != nil {
+		e.closeSvc()
+		e.closeSvc = nil
+	}
 	e.tools = nil
 	e.names = nil
 	e.active = false
