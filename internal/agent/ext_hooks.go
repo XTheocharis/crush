@@ -23,10 +23,12 @@ func (m agentHookMediator) invokeRunStart(ctx context.Context, sessionID, prompt
 		return
 	}
 	for _, hook := range m.host.RunHooks() {
-		if err := safeCall("OnRunStart:"+hook.Name, func() error {
-			return hook.OnRunStart(ctx, sessionID, prompt)
-		}); err != nil {
-			slog.Warn("Extension run hook failed", "hook", hook.Name, "error", err)
+		if hook.OnRunStart != nil {
+			if err := safeCall("OnRunStart:"+hook.Name, func() error {
+				return hook.OnRunStart(ctx, sessionID, prompt)
+			}); err != nil {
+				slog.Warn("Extension run hook failed", "hook", hook.Name, "error", err)
+			}
 		}
 	}
 }
@@ -159,10 +161,12 @@ func (m agentHookMediator) invokeRunEnd(ctx context.Context, sessionID string, r
 		return
 	}
 	for _, hook := range m.host.RunHooks() {
-		if err := safeCall("OnRunEnd:"+hook.Name, func() error {
-			return hook.OnRunEnd(ctx, sessionID, result, err)
-		}); err != nil {
-			slog.Warn("Extension run-end hook failed", "hook", hook.Name, "error", err)
+		if hook.OnRunEnd != nil {
+			if err := safeCall("OnRunEnd:"+hook.Name, func() error {
+				return hook.OnRunEnd(ctx, sessionID, result, err)
+			}); err != nil {
+				slog.Warn("Extension run-end hook failed", "hook", hook.Name, "error", err)
+			}
 		}
 	}
 }

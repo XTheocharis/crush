@@ -83,6 +83,7 @@ type App struct {
 	// global context and cleanup functions
 	globalCtx          context.Context
 	cleanupFuncs       []func(context.Context) error
+	dbRelease          func()
 	agentNotifications *pubsub.Broker[notify.Notification]
 }
 
@@ -132,12 +133,15 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 
 	// Release the shared database connection on shutdown. The pool
 	// closes the underlying *sql.DB when the last reference is released.
+	// This must be the very last cleanup step so that in-flight agent
+	// hooks (e.g. LCM compaction) can finish their SQL queries before the
+	// connection is torn down.
 	dataDir := cfg.Options.DataDirectory
 	app.cleanupFuncs = append(
 		app.cleanupFuncs,
-		func(context.Context) error { return db.Release(dataDir) },
-		func(ctx context.Context) error { return mcp.Close(ctx) },
+		func(context.Context) error { return mcp.Close(ctx) },
 	)
+	app.dbRelease = func() { db.Release(dataDir) }
 
 	setupExtensions(ctx, app, conn, q, sessions, messages, store) // XRUSH: extension host + rewind setup
 
@@ -677,6 +681,12 @@ func (app *App) Shutdown() {
 		}
 	}
 	wg.Wait()
+
+	// Release the database connection last so that any in-flight
+	// agent hooks still running SQL queries complete first.
+	if app.dbRelease != nil {
+		app.dbRelease()
+	}
 }
 
 // checkForUpdates checks for available updates.
