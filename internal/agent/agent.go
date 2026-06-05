@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -258,9 +259,31 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
-	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, timeout)
-	genCtx, cancel := context.WithCancel(timeoutCtx)
-	defer timeoutCancel()
+
+	// Idle timer: only counts time waiting for LLM responses.
+	// Tool execution time does NOT count towards the timeout.
+	// The timer is reset on every LLM streaming event (tokens,
+	// reasoning, tool input) and stopped while tools execute.
+	var idleMu sync.Mutex
+	var pendingTools atomic.Int32
+	genCtx, cancel := context.WithCancel(ctx)
+	idleTimer := time.AfterFunc(timeout, func() {
+		slog.Warn("Stream idle timeout exceeded, cancelling", "timeout", timeout)
+		cancel()
+	})
+	defer idleTimer.Stop()
+
+	resetIdle := func() {
+		idleMu.Lock()
+		idleTimer.Reset(timeout)
+		idleMu.Unlock()
+	}
+	stopIdle := func() {
+		idleMu.Lock()
+		idleTimer.Stop()
+		idleMu.Unlock()
+	}
+
 	a.activeRequests.Set(call.SessionID, cancel)
 
 	defer cancel()
@@ -315,6 +338,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		TopK:             call.TopK,
 		FrequencyPenalty: call.FrequencyPenalty,
 		PrepareStep: func(callContext context.Context, options fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
+			resetIdle()
 			prepared.Messages = options.Messages
 			for i := range prepared.Messages {
 				prepared.Messages[i].ProviderOptions = nil
@@ -393,11 +417,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return callContext, prepared, err
 		},
 		OnReasoningStart: func(id string, reasoning fantasy.ReasoningContent) error {
+			resetIdle()
 			setFirstToken()
 			currentAssistant.AppendReasoningContent(reasoning.Text)
 			return a.messages.Update(genCtx, *currentAssistant)
 		},
 		OnReasoningDelta: func(id string, text string) error {
+			resetIdle()
 			currentAssistant.AppendReasoningContent(text)
 			return a.messages.Update(genCtx, *currentAssistant)
 		},
@@ -422,6 +448,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(genCtx, *currentAssistant)
 		},
 		OnTextDelta: func(id string, text string) error {
+			resetIdle()
 			setFirstToken()
 			if len(currentAssistant.Parts) == 0 {
 				text = strings.TrimPrefix(text, "\n")
@@ -431,6 +458,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(genCtx, *currentAssistant)
 		},
 		OnToolInputStart: func(id string, toolName string) error {
+			resetIdle()
 			toolCall := message.ToolCall{
 				ID:               id,
 				Name:             toolName,
@@ -443,9 +471,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(ctx, *currentAssistant)
 		},
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
+			resetIdle()
 			slog.Warn("Provider request failed, retrying", providerRetryLogFields(err, delay)...)
 		},
 		OnToolCall: func(tc fantasy.ToolCallContent) error {
+			if pendingTools.Add(1) == 1 {
+				stopIdle()
+			}
 			toolCall := message.ToolCall{
 				ID:               tc.ToolCallID,
 				Name:             tc.ToolName,
@@ -468,6 +500,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 					toolResult,
 				},
 			})
+			if pendingTools.Add(-1) == 0 {
+				resetIdle()
+			}
 			return createMsgErr
 		},
 		OnStepFinish: func(stepResult fantasy.StepResult) error {
@@ -484,19 +519,19 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			// permission denial), the step ends on FinishReasonToolCalls but
 			// the model will not be called again. Treat it as the end of the
 			// turn so the UI can render the assistant footer.
-		if finishReason == message.FinishReasonToolUse {
-			for _, tr := range stepResult.Content.ToolResults() {
-				if tr.StopTurn {
-					finishReason = message.FinishReasonEndTurn
-					break
+			if finishReason == message.FinishReasonToolUse {
+				for _, tr := range stepResult.Content.ToolResults() {
+					if tr.StopTurn {
+						finishReason = message.FinishReasonEndTurn
+						break
+					}
 				}
 			}
-		}
-		if finishReason == message.FinishReasonEndTurn || finishReason == message.FinishReasonMaxTokens {
-			pendingFinishReason = finishReason
-		} else if finishReason != "" {
-			currentAssistant.AddFinish(finishReason, "", "")
-		}
+			if finishReason == message.FinishReasonEndTurn || finishReason == message.FinishReasonMaxTokens {
+				pendingFinishReason = finishReason
+			} else if finishReason != "" {
+				currentAssistant.AddFinish(finishReason, "", "")
+			}
 			currentAssistant.SentToLLMAt = sentToLLMAt
 			currentAssistant.FirstTokenAt = firstTokenAt
 			sessionLock.Lock()
