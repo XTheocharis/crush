@@ -103,13 +103,12 @@ func extractJSON(s string) string {
 			depth--
 			if depth == 0 {
 				end = i + 1
-				break
+				goto done
 			}
 		}
-		if end >= 0 {
-			break
-		}
 	}
+
+done:
 
 	if end >= 0 {
 		return s[start:end]
