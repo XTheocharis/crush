@@ -2,8 +2,12 @@ package lcm
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/crush/internal/db"
 )
 
 // KindSessionMemory is the summary kind for session memory compaction.
@@ -164,10 +168,67 @@ func (s *SessionCompactor) Compact(ctx context.Context, budget Budget) (*Compact
 		return &CompactionLayerResult{LayerName: s.Name()}, nil
 	}
 
-	// Compute tokens freed: all original context tokens minus the new summary.
+	// Compute tokens freed before we modify the store.
 	originalTokens, err := s.cfg.Store.GetContextTokenCount(ctx, s.cfg.SessionID)
 	if err != nil {
 		return nil, fmt.Errorf("computing original token count: %w", err)
+	}
+
+	messageIDs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.ItemType == "message" && entry.MessageID != "" {
+			messageIDs = append(messageIDs, entry.MessageID)
+		}
+	}
+
+	summaryID, _ := GenerateSummaryID(s.cfg.SessionID)
+
+	tx, err := s.cfg.Store.rawDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txQ := s.cfg.Store.queries.WithTx(tx)
+
+	fileIDsJSON, _ := json.Marshal([]string{})
+	if err := txQ.InsertLcmSummary(ctx, db.InsertLcmSummaryParams{
+		SummaryID:  summaryID,
+		SessionID:  s.cfg.SessionID,
+		Kind:       KindSessionMemory,
+		Content:    result,
+		TokenCount: resultTokens,
+		FileIds:    string(fileIDsJSON),
+	}); err != nil {
+		return nil, fmt.Errorf("inserting session summary: %w", err)
+	}
+
+	for i, msgID := range messageIDs {
+		if err := txQ.InsertLcmSummaryMessage(ctx, db.InsertLcmSummaryMessageParams{
+			SummaryID: summaryID,
+			MessageID: msgID,
+			Ord:       int64(i),
+		}); err != nil {
+			return nil, fmt.Errorf("linking summary message: %w", err)
+		}
+	}
+
+	if err := txQ.DeleteAllLcmContextItems(ctx, s.cfg.SessionID); err != nil {
+		return nil, fmt.Errorf("deleting context items: %w", err)
+	}
+
+	if err := txQ.InsertLcmContextItem(ctx, db.InsertLcmContextItemParams{
+		SessionID:  s.cfg.SessionID,
+		Position:   0,
+		ItemType:   "summary",
+		SummaryID:  sql.NullString{String: summaryID, Valid: true},
+		TokenCount: resultTokens,
+	}); err != nil {
+		return nil, fmt.Errorf("inserting summary context item: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	freed := max(originalTokens-resultTokens, 0)

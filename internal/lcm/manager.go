@@ -364,9 +364,9 @@ type providerTokenState struct {
 }
 
 // sessionMutex returns the per-session mutex, creating it lazily.
-func (m *compactionManager) sessionMutex(sessionID string) *sync.Mutex {
-	actual, _ := m.sessionMu.LoadOrStore(sessionID, &sync.Mutex{})
-	return actual.(*sync.Mutex)
+func (m *compactionManager) sessionMutex(sessionID string) *ctxMutex {
+	actual, _ := m.sessionMu.LoadOrStore(sessionID, &ctxMutex{})
+	return actual.(*ctxMutex)
 }
 
 // NewManager creates a new LCM manager.
@@ -706,7 +706,9 @@ func (m *compactionManager) SetRepoMapTokens(ctx context.Context, sessionID stri
 	}
 
 	mu := m.sessionMutex(sessionID)
-	mu.Lock()
+	if err := mu.LockContext(ctx); err != nil {
+		return fmt.Errorf("acquiring session lock: %w", err)
+	}
 	defer mu.Unlock()
 
 	return m.setRepoMapTokensLocked(ctx, sessionID, tokens)
@@ -932,7 +934,9 @@ func (m *compactionManager) GetContextFiles() []ContextFile {
 // publishes compaction events for the UI.
 func (m *compactionManager) CompactUntilUnderLimit(ctx context.Context, sessionID string) error {
 	mu := m.sessionMutex(sessionID)
-	mu.Lock()
+	if err := mu.LockContext(ctx); err != nil {
+		return fmt.Errorf("acquiring session lock: %w", err)
+	}
 	defer mu.Unlock()
 
 	budget, _ := m.GetBudget(ctx, sessionID)
@@ -997,7 +1001,9 @@ func (m *compactionManager) Compact(ctx context.Context, sessionID string, opts 
 	}
 
 	mu := m.sessionMutex(sessionID)
-	mu.Lock()
+	if err := mu.LockContext(ctx); err != nil {
+		return fmt.Errorf("acquiring session lock: %w", err)
+	}
 	defer mu.Unlock()
 
 	budget, _ := m.GetBudget(ctx, sessionID)
@@ -1187,7 +1193,10 @@ func (m *compactionManager) ScheduleCompaction(ctx context.Context, sessionID st
 		defer close(resultCh)
 
 		mu := m.sessionMutex(sessionID)
-		mu.Lock()
+		if err := mu.LockContext(detachedCtx); err != nil {
+			resultCh <- CompactionResult{}
+			return
+		}
 		defer mu.Unlock()
 
 		budget, budgetErr := m.GetBudget(detachedCtx, sessionID)

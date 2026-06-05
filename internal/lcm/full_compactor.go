@@ -175,9 +175,20 @@ func (f *FullCompactor) compactWithFork(ctx context.Context, entries []ContextEn
 func (f *FullCompactor) compactDirect(ctx context.Context, entries []ContextEntry) (*CompactionLayerResult, error) {
 	var originalTokens int64
 	var itemsToCompact int
+	var messageIDs []string
+	var position int64
+	positionSet := false
+
 	for _, entry := range entries {
 		originalTokens += entry.TokenCount
 		itemsToCompact++
+		if entry.ItemType == "message" && entry.MessageID != "" {
+			messageIDs = append(messageIDs, entry.MessageID)
+		}
+		if !positionSet {
+			position = entry.Position
+			positionSet = true
+		}
 	}
 
 	userPrompt := f.formatEntriesForFullSummary(entries)
@@ -194,6 +205,26 @@ func (f *FullCompactor) compactDirect(ctx context.Context, entries []ContextEntr
 			summaryText = summaryText[:maxChars]
 		}
 		summaryTokens = EstimateTokens(summaryText)
+	}
+
+	summaryID, _ := GenerateSummaryID(f.cfg.SessionID)
+	if err := f.cfg.Store.InsertLeafSummaryAtomically(
+		ctx,
+		f.cfg.SessionID,
+		summaryID,
+		summaryText,
+		summaryTokens,
+		[]string{}, // fileIDs not available in this context.
+		messageIDs,
+		position,
+		messageIDs,
+	); err != nil {
+		slog.Warn("Full-compactor: failed to persist summary",
+			slog.String("session_id", f.cfg.SessionID),
+			slog.String("summary_id", summaryID),
+			slog.String("error", err.Error()),
+		)
+		return nil, fmt.Errorf("persisting full compaction summary: %w", err)
 	}
 
 	tokensFreed := max(originalTokens-summaryTokens, 0)
