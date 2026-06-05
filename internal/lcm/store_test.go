@@ -549,6 +549,30 @@ func TestCreateArchiveStub(t *testing.T) {
 	require.Equal(t, int64(100), summaries[0].TokenCount) // 1000 / 10.
 }
 
+func TestCreateArchiveStub_SourceID(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	store := newStore(queries, sqlDB)
+	ctx := context.Background()
+
+	sessionID := "sess-source-id"
+	createTestSession(t, queries, sessionID)
+
+	sourceID := "msg_abc123def456"
+	err := store.CreateArchiveStub(ctx, sourceID, sessionID, "original text for the source ID test", 5000)
+	require.NoError(t, err)
+
+	summaries, err := queries.ListLcmSummariesBySession(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+
+	// Stub content must reference the source ID.
+	require.Contains(t, summaries[0].Content, "[Archived from "+sourceID+"]")
+	require.Contains(t, summaries[0].Content, "original text for the source ID test")
+	require.Equal(t, KindArchiveStub, summaries[0].Kind)
+	require.Equal(t, int64(500), summaries[0].TokenCount) // 5000 / 10.
+}
+
 func BenchmarkStore_InsertAndRetrieve(b *testing.B) {
 	queries, sqlDB := setupBenchDB(b)
 	store := newStore(queries, sqlDB)

@@ -729,10 +729,10 @@ func (s *Store) InsertLcmSummaryWithBlock(ctx context.Context, summaryID, sessio
 // CreateArchiveStub creates a stub summary entry that preserves a reference
 // to the original summary for archive retrieval. It uses the existing
 // lcm_summaries schema with kind set to KindArchiveStub.
-func (s *Store) CreateArchiveStub(ctx context.Context, summaryID, sessionID, originalContent string, originalTokenCount int64) error {
+func (s *Store) CreateArchiveStub(ctx context.Context, sourceID, sessionID, originalContent string, originalTokenCount int64) error {
 	stubID, _ := GenerateSummaryID(sessionID)
 	truncated := truncateString(originalContent, 200)
-	stubContent := "[Archived from " + summaryID + "] " + truncated
+	stubContent := "[Archived from " + sourceID + "] " + truncated
 	return s.q.InsertLcmSummary(ctx, db.InsertLcmSummaryParams{
 		SummaryID:  stubID,
 		SessionID:  sessionID,
