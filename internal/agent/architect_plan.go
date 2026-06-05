@@ -50,16 +50,71 @@ type ArchitectPlan struct {
 }
 
 // ParseArchitectPlan deserialises a JSON string into an ArchitectPlan. It
-// returns an error if the input cannot be unmarshalled.
+// strips markdown code fences and leading/trailing whitespace before parsing.
 func ParseArchitectPlan(data string) (ArchitectPlan, error) {
+	cleaned := extractJSON(data)
 	var plan ArchitectPlan
-	if err := json.Unmarshal([]byte(data), &plan); err != nil {
+	if err := json.Unmarshal([]byte(cleaned), &plan); err != nil {
 		return ArchitectPlan{}, fmt.Errorf("parse architect plan: %w", err)
 	}
 	if plan.CreatedAt.IsZero() {
 		plan.CreatedAt = time.Now()
 	}
 	return plan, nil
+}
+
+// extractJSON strips markdown code fences and surrounding text, returning
+// only the JSON payload. If the LLM wraps its output in ```json ... ``` or
+// adds commentary before/after, this recovers the JSON object.
+func extractJSON(s string) string {
+	s = strings.TrimSpace(s)
+
+	// Strip opening code fence.
+	if after, ok := strings.CutPrefix(s, "```"); ok {
+		after = strings.TrimLeft(after, "\r\n")
+		// Skip optional language tag line (e.g. "json\n") only if
+		// the remaining text does not start with '{'.
+		if len(after) > 0 && after[0] != '{' {
+			if idx := strings.Index(after, "\n"); idx >= 0 {
+				after = after[idx+1:]
+			}
+		}
+		// Strip closing code fence.
+		if idx := strings.LastIndex(after, "```"); idx >= 0 {
+			after = after[:idx]
+		}
+		s = strings.TrimSpace(after)
+	}
+
+	// Find the first '{'.
+	start := strings.Index(s, "{")
+	if start < 0 {
+		return s
+	}
+
+	// Walk to the matching '}' using brace depth.
+	depth := 0
+	end := -1
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				end = i + 1
+				break
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
+
+	if end >= 0 {
+		return s[start:end]
+	}
+	return s[start:]
 }
 
 // String returns a human-readable summary of the plan.

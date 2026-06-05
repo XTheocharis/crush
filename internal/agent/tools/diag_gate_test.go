@@ -225,7 +225,7 @@ func TestClassifyAddedDiagnostics(t *testing.T) {
 
 	diff := computeDiff(baseline, post)
 
-	result := GateResult{Pass: true, Diff: diff}
+	result := GateResult{Pass: true}
 	for _, di := range diff.Added {
 		switch di.Severity {
 		case SeverityError:
@@ -257,14 +257,13 @@ func TestPreExistingErrors_Pass(t *testing.T) {
 	}
 
 	diff := computeDiff(baseline, post)
-	result := GateResult{Pass: true, Diff: diff}
+	result := GateResult{Pass: true}
 	for _, di := range diff.Added {
 		if di.Severity == SeverityError {
 			result.NewErrors = append(result.NewErrors, di)
 			result.Pass = false
 		}
 	}
-
 	require.True(t, result.Pass, "pre-existing errors should not fail the gate")
 	require.Empty(t, result.NewErrors)
 	require.Len(t, diff.Unchanged, 1)
@@ -279,7 +278,7 @@ func TestNewWarningsOnly_PassWithWarning(t *testing.T) {
 	}
 
 	diff := computeDiff(baseline, post)
-	result := GateResult{Pass: true, Diff: diff}
+	result := GateResult{Pass: true}
 	for _, di := range diff.Added {
 		switch di.Severity {
 		case SeverityError:
@@ -534,7 +533,7 @@ func TestSeverityFilter(t *testing.T) {
 			}
 
 			diff := computeDiff(baseline, post)
-			result := GateResult{Pass: true, Diff: diff}
+			result := GateResult{Pass: true}
 			for _, di := range diff.Added {
 				if di.Severity > gate.SeverityFilter() {
 					continue

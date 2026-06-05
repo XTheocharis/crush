@@ -67,6 +67,36 @@ func TestArchitectPlanParsingInvalid(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestParseArchitectPlanMarkdownFenced(t *testing.T) {
+	t.Parallel()
+
+	input := "```json\n{\"steps\":[{\"description\":\"Do something\",\"status\":\"pending\"}],\"rationale\":\"test\"}\n```"
+	plan, err := ParseArchitectPlan(input)
+	require.NoError(t, err)
+	require.Len(t, plan.Steps, 1)
+	require.Equal(t, "Do something", plan.Steps[0].Description)
+}
+
+func TestParseArchitectPlanWithCommentary(t *testing.T) {
+	t.Parallel()
+
+	input := "Here is the plan:\n{\"steps\":[{\"description\":\"Fix bug\",\"status\":\"pending\"}],\"rationale\":\"critical fix\"}\nEnd."
+	plan, err := ParseArchitectPlan(input)
+	require.NoError(t, err)
+	require.Len(t, plan.Steps, 1)
+	require.Equal(t, "Fix bug", plan.Steps[0].Description)
+}
+
+func TestParseArchitectPlanBareFence(t *testing.T) {
+	t.Parallel()
+
+	input := "```\n{\"steps\":[{\"description\":\"Refactor\",\"status\":\"pending\"}],\"rationale\":\"cleanup\"}\n```"
+	plan, err := ParseArchitectPlan(input)
+	require.NoError(t, err)
+	require.Len(t, plan.Steps, 1)
+	require.Equal(t, "Refactor", plan.Steps[0].Description)
+}
+
 func TestArchitectPlanStepStatusTransitions(t *testing.T) {
 	t.Parallel()
 
@@ -429,7 +459,7 @@ func TestArchitectTemplateLoaded(t *testing.T) {
 
 	require.Contains(t, built, "You are the Architect agent", "built prompt should contain architect role definition")
 	require.Contains(t, built, "output_schema", "built prompt should contain JSON output schema")
-	require.Contains(t, built, `"step"`, "built prompt should reference step field")
+	require.Contains(t, built, `"steps"`, "built prompt should reference steps field")
 	require.Contains(t, built, `/tmp/test-project`, "built prompt should contain working directory")
 	require.Contains(t, built, "6/1/2025", "built prompt should contain the injected date")
 }
