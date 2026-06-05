@@ -1707,21 +1707,34 @@ func (m *compactionManager) OnSessionStart(ctx context.Context, sessionID string
 }
 
 func (m *compactionManager) OnSessionEnd(ctx context.Context, sessionID string) error {
-	if m.opMemory == nil || !m.operationalMemEnabled {
-		return nil
-	}
-	entries, err := m.opMemory.List(ctx, sessionID)
-	if err != nil {
-		slog.Warn("LCM lifecycle: failed to list OM entries for session end",
-			"session_id", sessionID, "error", err)
-		return nil
-	}
-	if len(entries) > 0 {
-		if err := m.opMemory.Set(ctx, sessionID, "session_ended_at", time.Now().Format(time.RFC3339)); err != nil {
-			slog.Warn("LCM lifecycle: failed to set session end marker",
+	if m.opMemory != nil && m.operationalMemEnabled {
+		entries, err := m.opMemory.List(ctx, sessionID)
+		if err != nil {
+			slog.Warn("LCM lifecycle: failed to list OM entries for session end",
 				"session_id", sessionID, "error", err)
+		} else if len(entries) > 0 {
+			if err := m.opMemory.Set(ctx, sessionID, "session_ended_at", time.Now().Format(time.RFC3339)); err != nil {
+				slog.Warn("LCM lifecycle: failed to set session end marker",
+					"session_id", sessionID, "error", err)
+			}
 		}
 	}
+
+	// Clean up per-session entries from sync.Maps to prevent memory leaks.
+	// Skip cleanup if compaction is currently in-flight for this session.
+	if _, inflight := m.inFlight.Load(sessionID); inflight {
+		slog.Debug("LCM lifecycle: skipping sync.Map cleanup, compaction in-flight",
+			"session_id", sessionID)
+		return nil
+	}
+	m.inFlight.Delete(sessionID)
+	m.budgetCache.Delete(sessionID)
+	m.repoMapTokens.Delete(sessionID)
+	m.sessionMu.Delete(sessionID)
+	m.providerState.Delete(sessionID)
+	m.turnCounter.Delete(sessionID)
+	m.iterationCounter.Delete(sessionID)
+
 	return nil
 }
 

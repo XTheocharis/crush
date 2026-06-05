@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/session"
@@ -255,4 +256,108 @@ func TestBuildObservationContextPrompt_WithEntries(t *testing.T) {
 		"- **mid_key**: value_m\n" +
 		"- **zeta_key**: value_z\n"
 	require.Equal(t, expected, result)
+}
+
+func populateAllSyncMaps(cm *compactionManager, sessionID string) {
+	cm.inFlight.Store(sessionID, struct{}{})
+	cm.inFlight.Delete(sessionID)
+	cm.budgetCache.Store(sessionID, Budget{SoftThreshold: 1000})
+	cm.repoMapTokens.Store(sessionID, int64(500))
+	cm.sessionMu.Store(sessionID, &ctxMutex{})
+	cm.providerState.Store(sessionID, &providerTokenState{promptTokens: 42})
+	cm.turnCounter.Store(sessionID, &atomic.Int64{})
+	cm.iterationCounter.Store(sessionID, &atomic.Int64{})
+}
+
+func assertMapHasEntry(t *testing.T, m *sync.Map, sessionID, label string) {
+	t.Helper()
+	_, ok := m.Load(sessionID)
+	require.True(t, ok, "expected %s entry for session %s", label, sessionID)
+}
+
+func assertMapNoEntry(t *testing.T, m *sync.Map, sessionID, label string) {
+	t.Helper()
+	_, ok := m.Load(sessionID)
+	require.False(t, ok, "expected no %s entry for session %s", label, sessionID)
+}
+
+func TestOnSessionEnd_CleansUpSyncMaps(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	cm := mgr.(*compactionManager)
+
+	sessionID := "sess-cleanup"
+	ctx := context.Background()
+
+	populateAllSyncMaps(cm, sessionID)
+
+	assertMapHasEntry(t, &cm.budgetCache, sessionID, "budgetCache")
+	assertMapHasEntry(t, &cm.repoMapTokens, sessionID, "repoMapTokens")
+	assertMapHasEntry(t, &cm.sessionMu, sessionID, "sessionMu")
+	assertMapHasEntry(t, &cm.providerState, sessionID, "providerState")
+	assertMapHasEntry(t, &cm.turnCounter, sessionID, "turnCounter")
+	assertMapHasEntry(t, &cm.iterationCounter, sessionID, "iterationCounter")
+
+	err := cm.OnSessionEnd(ctx, sessionID)
+	require.NoError(t, err)
+
+	assertMapNoEntry(t, &cm.inFlight, sessionID, "inFlight")
+	assertMapNoEntry(t, &cm.budgetCache, sessionID, "budgetCache")
+	assertMapNoEntry(t, &cm.repoMapTokens, sessionID, "repoMapTokens")
+	assertMapNoEntry(t, &cm.sessionMu, sessionID, "sessionMu")
+	assertMapNoEntry(t, &cm.providerState, sessionID, "providerState")
+	assertMapNoEntry(t, &cm.turnCounter, sessionID, "turnCounter")
+	assertMapNoEntry(t, &cm.iterationCounter, sessionID, "iterationCounter")
+}
+
+func TestOnSessionEnd_PreservesOtherSessions(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	cm := mgr.(*compactionManager)
+
+	sessionA := "sess-preserve-a"
+	sessionB := "sess-preserve-b"
+	ctx := context.Background()
+
+	populateAllSyncMaps(cm, sessionA)
+	populateAllSyncMaps(cm, sessionB)
+
+	err := cm.OnSessionEnd(ctx, sessionA)
+	require.NoError(t, err)
+
+	assertMapNoEntry(t, &cm.budgetCache, sessionA, "budgetCache")
+	assertMapNoEntry(t, &cm.providerState, sessionA, "providerState")
+
+	assertMapHasEntry(t, &cm.budgetCache, sessionB, "budgetCache")
+	assertMapHasEntry(t, &cm.repoMapTokens, sessionB, "repoMapTokens")
+	assertMapHasEntry(t, &cm.sessionMu, sessionB, "sessionMu")
+	assertMapHasEntry(t, &cm.providerState, sessionB, "providerState")
+	assertMapHasEntry(t, &cm.turnCounter, sessionB, "turnCounter")
+	assertMapHasEntry(t, &cm.iterationCounter, sessionB, "iterationCounter")
+}
+
+func TestOnSessionEnd_SkipsIfInFlight(t *testing.T) {
+	t.Parallel()
+	queries, sqlDB := setupTestDB(t)
+	mgr := NewManager(queries, sqlDB)
+	cm := mgr.(*compactionManager)
+
+	sessionID := "sess-inflight"
+	ctx := context.Background()
+
+	populateAllSyncMaps(cm, sessionID)
+
+	cm.inFlight.Store(sessionID, struct{}{})
+
+	err := cm.OnSessionEnd(ctx, sessionID)
+	require.NoError(t, err)
+
+	assertMapHasEntry(t, &cm.budgetCache, sessionID, "budgetCache")
+	assertMapHasEntry(t, &cm.repoMapTokens, sessionID, "repoMapTokens")
+	assertMapHasEntry(t, &cm.sessionMu, sessionID, "sessionMu")
+	assertMapHasEntry(t, &cm.providerState, sessionID, "providerState")
+	assertMapHasEntry(t, &cm.turnCounter, sessionID, "turnCounter")
+	assertMapHasEntry(t, &cm.iterationCounter, sessionID, "iterationCounter")
 }
