@@ -1066,6 +1066,7 @@ func (m *compactionManager) compactLocked(ctx context.Context, sessionID string,
 	var actionTaken bool
 	var rounds int
 
+	var tokensFreed int64
 	var overrideTier *PressureTier
 	if cfg.Pressure != "" {
 		if tier, ok := parsePressureTier(cfg.Pressure); ok {
@@ -1084,11 +1085,26 @@ func (m *compactionManager) compactLocked(ctx context.Context, sessionID string,
 		if actionTaken {
 			rounds = 1
 		}
+		if layerResult != nil {
+			tokensFreed = layerResult.TokensFreed
+		}
 	}
 
 	// Phase 2: If still over soft threshold, fall back to LLM summarization.
 	budget, budgetErr := m.GetBudget(ctx, sessionID)
 	tokensAfter, tokenErr := m.GetContextTokenCount(ctx, sessionID)
+	// Subtract Phase 1 delta from DB count for Phase 2 threshold check.
+	if tokensFreed > 0 {
+		slog.Debug("LCM compactLocked: applying Phase 1 token delta",
+			"session_id", sessionID,
+			"tokens_before", tokensAfter,
+			"tokens_freed", tokensFreed,
+		)
+		tokensAfter -= tokensFreed
+		if tokensAfter < 0 {
+			tokensAfter = 0
+		}
+	}
 	softThreshold := budget.SoftThreshold
 	if cfg.TargetTokens > 0 {
 		softThreshold = cfg.TargetTokens
