@@ -60,3 +60,4 @@ completions/crush.*sh
 
 # XRUSH: OpenCode working data
 .opencode/
+CRUSH.memory.md
