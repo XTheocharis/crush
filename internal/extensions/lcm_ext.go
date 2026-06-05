@@ -177,11 +177,22 @@ func (e *LCMExtension) RunHooks() []ext.RunHook {
 			OnRunEnd: func(ctx context.Context, sessionID string, _ *fantasy.AgentResult, _ error) error {
 				e.mu.RLock()
 				mgr := e.manager
+				workingDir := e.host.WorkingDir()
 				e.mu.RUnlock()
 				if mgr == nil {
 					return nil
 				}
 				mgr.PostTurnHook(ctx, sessionID)
+				memories, err := mgr.ListMemories(ctx, sessionID)
+				if err != nil {
+					slog.Debug("LCM ListMemories for file write failed", "session_id", sessionID, "error", err)
+					return nil
+				}
+				if len(memories) > 0 {
+					if _, writeErr := lcm.WriteMemoryFile(ctx, memories, workingDir, lcm.MemoryFileConfig{}); writeErr != nil {
+						slog.Debug("LCM WriteMemoryFile failed", "session_id", sessionID, "error", writeErr)
+					}
+				}
 				return nil
 			},
 		},
