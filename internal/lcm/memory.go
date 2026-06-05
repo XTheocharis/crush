@@ -70,11 +70,11 @@ type AutoMemoryExtractor struct {
 	// pending tracks session IDs with an in-flight extraction to prevent
 	// stacking duplicate goroutines.
 	pending map[string]struct{}
-	// lastProcessedIndex is a cursor tracking how many messages have been
-	// examined by extractCycle. Only messages after this index are considered
-	// in subsequent extractions, preventing redundant LLM calls on already-
-	// processed conversation turns.
-	lastProcessedIndex int
+	// lastProcessedIndex tracks per-session cursors: how many messages have
+	// been examined by extractCycle for each session. Only messages after
+	// this index are considered in subsequent extractions, preventing
+	// redundant LLM calls on already-processed conversation turns.
+	lastProcessedIndex map[string]int
 }
 
 // NewAutoMemoryExtractor creates a new extractor. If llm is nil, Extract is a
@@ -84,10 +84,11 @@ func NewAutoMemoryExtractor(store *Store, llm LLMClient, interval int) *AutoMemo
 		interval = DefaultMemoryInterval
 	}
 	return &AutoMemoryExtractor{
-		store:    store,
-		llm:      llm,
-		interval: interval,
-		pending:  make(map[string]struct{}),
+		store:              store,
+		llm:                llm,
+		interval:           interval,
+		pending:            make(map[string]struct{}),
+		lastProcessedIndex: make(map[string]int),
 	}
 }
 
@@ -116,11 +117,20 @@ func (e *AutoMemoryExtractor) Interval() int {
 	return e.interval
 }
 
-// LastProcessedIndex returns the cursor position for incremental extraction.
-func (e *AutoMemoryExtractor) LastProcessedIndex() int {
+// LastProcessedIndex returns the cursor position for incremental extraction
+// for the given session.
+func (e *AutoMemoryExtractor) LastProcessedIndex(sessionID string) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.lastProcessedIndex
+	return e.lastProcessedIndex[sessionID]
+}
+
+// Reset clears the per-session cursor and pending state for the given session.
+func (e *AutoMemoryExtractor) Reset(sessionID string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.lastProcessedIndex, sessionID)
+	delete(e.pending, sessionID)
 }
 
 // ExtractResult is the output of an asynchronous extraction cycle.
@@ -198,7 +208,7 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 	}
 
 	e.mu.Lock()
-	cursor := e.lastProcessedIndex
+	cursor := e.lastProcessedIndex[sessionID]
 	e.mu.Unlock()
 
 	if cursor >= len(messages) {
@@ -219,7 +229,7 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 	}
 
 	e.mu.Lock()
-	e.lastProcessedIndex = len(messages)
+	e.lastProcessedIndex[sessionID] = len(messages)
 	e.mu.Unlock()
 
 	// Parse the LLM response.

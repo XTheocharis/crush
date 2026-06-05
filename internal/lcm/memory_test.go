@@ -563,7 +563,7 @@ func TestAutoMemoryCursorIncremental(t *testing.T) {
 			result := extractor.ExtractSync(context.Background(), sessionID)
 			require.NoError(t, result.Error)
 			require.Equal(t, 1, mock.callCount)
-			require.Equal(t, tc.initialMessages, extractor.LastProcessedIndex())
+			require.Equal(t, tc.initialMessages, extractor.LastProcessedIndex(sessionID))
 
 			// Add second batch of messages.
 			for i := range tc.secondBatch {
@@ -575,7 +575,7 @@ func TestAutoMemoryCursorIncremental(t *testing.T) {
 			result = extractor.ExtractSync(context.Background(), sessionID)
 			require.NoError(t, result.Error)
 			require.Equal(t, tc.expectLLMCalls, mock.callCount)
-			require.Equal(t, tc.initialMessages+tc.secondBatch, extractor.LastProcessedIndex())
+			require.Equal(t, tc.initialMessages+tc.secondBatch, extractor.LastProcessedIndex(sessionID))
 
 			// Third extraction with no new messages: LLM should not be called.
 			mock.callCount = 0
@@ -591,7 +591,77 @@ func TestAutoMemoryCursorStartsAtZero(t *testing.T) {
 	t.Parallel()
 
 	extractor := NewAutoMemoryExtractor(nil, nil, 5)
-	require.Equal(t, 0, extractor.LastProcessedIndex())
+	require.Equal(t, 0, extractor.LastProcessedIndex(""))
+}
+
+func TestAutoMemory_MultiSessionCursor(t *testing.T) {
+	t.Parallel()
+
+	queries, rawDB := setupTestDB(t)
+	store := newStore(queries, rawDB)
+
+	sessionA := "sess_multi_a"
+	sessionB := "sess_multi_b"
+	createTestSession(t, queries, sessionA)
+	createTestSession(t, queries, sessionB)
+
+	for i := range 10 {
+		createTestMessage(t, queries, sessionA, "msg_a_"+itoa(i), "user", "session A message "+itoa(i))
+	}
+	for i := range 5 {
+		createTestMessage(t, queries, sessionB, "msg_b_"+itoa(i), "user", "session B message "+itoa(i))
+	}
+
+	memories := []map[string]any{
+		{"type": "fact", "content": "test fact", "confidence": 0.9},
+	}
+	respBytes, err := json.Marshal(memories)
+	require.NoError(t, err)
+
+	mock := &mockLLMClient{response: string(respBytes)}
+	extractor := NewAutoMemoryExtractor(store, mock, 5)
+
+	resultA := extractor.ExtractSync(context.Background(), sessionA)
+	require.NoError(t, resultA.Error)
+	require.Equal(t, 10, extractor.LastProcessedIndex(sessionA))
+
+	mock.callCount = 0
+	resultB := extractor.ExtractSync(context.Background(), sessionB)
+	require.NoError(t, resultB.Error)
+	require.Equal(t, 1, mock.callCount, "session B should trigger LLM call despite session A cursor being 10")
+	require.Equal(t, 5, extractor.LastProcessedIndex(sessionB))
+
+	require.Equal(t, 10, extractor.LastProcessedIndex(sessionA), "session A cursor should be unchanged")
+}
+
+func TestAutoMemory_ResetOnSessionEnd(t *testing.T) {
+	t.Parallel()
+
+	queries, rawDB := setupTestDB(t)
+	store := newStore(queries, rawDB)
+
+	sessionID := "sess_reset"
+	createTestSession(t, queries, sessionID)
+
+	for i := range 5 {
+		createTestMessage(t, queries, sessionID, "msg_reset_"+itoa(i), "user", "reset test "+itoa(i))
+	}
+
+	memories := []map[string]any{
+		{"type": "fact", "content": "test fact", "confidence": 0.9},
+	}
+	respBytes, err := json.Marshal(memories)
+	require.NoError(t, err)
+
+	mock := &mockLLMClient{response: string(respBytes)}
+	extractor := NewAutoMemoryExtractor(store, mock, 5)
+
+	result := extractor.ExtractSync(context.Background(), sessionID)
+	require.NoError(t, result.Error)
+	require.Equal(t, 5, extractor.LastProcessedIndex(sessionID))
+
+	extractor.Reset(sessionID)
+	require.Equal(t, 0, extractor.LastProcessedIndex(sessionID), "cursor should be 0 after Reset")
 }
 
 func TestAutoMemoryExtractSyncBadParse(t *testing.T) {

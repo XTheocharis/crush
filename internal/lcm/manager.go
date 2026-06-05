@@ -1735,6 +1735,10 @@ func (m *compactionManager) OnSessionEnd(ctx context.Context, sessionID string) 
 	m.turnCounter.Delete(sessionID)
 	m.iterationCounter.Delete(sessionID)
 
+	if m.autoMemoryExtractor != nil {
+		m.autoMemoryExtractor.Reset(sessionID)
+	}
+
 	return nil
 }
 
