@@ -57,9 +57,8 @@ type ForkResult struct {
 
 // EditResult holds the outcome of an edit-message operation.
 type EditResult struct {
-	MessagesDeleted int
-	NewMessageID    string
-	ExtractedText   string
+	NewMessageID  string
+	ExtractedText string
 }
 
 // Snapshotter captures and retrieves turn-level file snapshots.
@@ -95,10 +94,13 @@ type Forker interface {
 
 // Editor extracts and edits a previous user message.
 type Editor interface {
-	// EditMessage extracts the user message text at the given sequence,
-	// deletes subsequent messages, and returns the extracted text for
-	// re-submission.
-	EditMessage(ctx context.Context, sessionID string, seq int) (*EditResult, error)
+	// ExtractMessageText extracts the user message text at the given sequence
+	// for editing, without modifying the database.
+	ExtractMessageText(ctx context.Context, sessionID string, seq int) (*EditResult, error)
+
+	// UpdateMessageText updates the text of a user message at the given
+	// sequence in-place, without triggering an LLM response.
+	UpdateMessageText(ctx context.Context, sessionID string, seq int, newText string) error
 }
 
 // PostRewindHook is a callback invoked after messages are deleted during a

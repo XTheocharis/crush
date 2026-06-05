@@ -850,11 +850,15 @@ func (m *compactionManager) GetBudget(ctx context.Context, sessionID string) (Bu
 		return Budget{}, fmt.Errorf("getting session config: %w", err)
 	}
 
-	budget := Budget{
-		SoftThreshold: config.SoftThresholdTokens,
-		HardLimit:     config.HardThresholdTokens,
-		ContextWindow: config.ModelCtxMaxTokens,
-	}
+	repoMapTokens := m.repoMapTokensForSession(sessionID)
+	budget := ComputeBudget(BudgetConfig{
+		ContextWindow:      config.ModelCtxMaxTokens,
+		CutoffThreshold:    config.CtxCutoffThreshold,
+		RepoMapTokens:      repoMapTokens,
+		ModelOutputLimit:   m.defaultModelOutputLimit,
+		SystemPromptTokens: m.defaultSystemPromptTokens,
+		ToolTokens:         m.defaultToolTokens,
+	})
 	m.budgetCache.Store(sessionID, budget)
 	return budget, nil
 }

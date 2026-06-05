@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/crush/internal/db"
 )
 
+const maxSeqBound = 999999
+
 type rewinder struct {
 	q              db.Querier
 	workingDir     string
@@ -76,9 +78,19 @@ func (r *rewinder) rewindCode(ctx context.Context, sessionID string, seq int) (*
 		restored++
 	}
 
+	var extractedText string
+	msg, err := r.q.GetMessageBySessionAndSeq(ctx, db.GetMessageBySessionAndSeqParams{
+		SessionID: sessionID,
+		Seq:       int64(seq),
+	})
+	if err == nil {
+		extractedText, _ = extractTextFromParts(msg.Parts)
+	}
+
 	return &RewindResult{
 		FilesRestored: restored,
 		Snapshot:      snap,
+		ExtractedText: extractedText,
 	}, nil
 }
 
@@ -88,7 +100,7 @@ func (r *rewinder) rewindConvo(ctx context.Context, sessionID string, seq int) (
 		Seq:       int64(seq),
 	})
 	var extractedText string
-	if err == nil && msg.Role == "user" {
+	if err == nil {
 		extractedText, _ = extractTextFromParts(msg.Parts)
 	}
 

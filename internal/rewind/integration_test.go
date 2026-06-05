@@ -265,7 +265,7 @@ func TestIntegration_Fork(t *testing.T) {
 	require.Equal(t, 1, origMsgCount)
 }
 
-func TestIntegration_EditMessage(t *testing.T) {
+func TestIntegration_ExtractAndUpdateMessage(t *testing.T) {
 	t.Parallel()
 	env := integrationTestEnv(t)
 	ctx := context.Background()
@@ -275,17 +275,27 @@ func TestIntegration_EditMessage(t *testing.T) {
 	env.insertMessage(t, ctx, sid, "assistant", textParts("response"))
 	env.insertMessage(t, ctx, sid, "user", textParts("follow-up"))
 
-	result, err := env.svc.EditMessage(ctx, sid, 2)
+	// Extract text from the message at seq 2.
+	result, err := env.svc.ExtractMessageText(ctx, sid, 2)
 	require.NoError(t, err)
 	require.Equal(t, "follow-up", result.ExtractedText)
-	require.Equal(t, 1, result.MessagesDeleted)
 	require.NotEmpty(t, result.NewMessageID)
 
+	// Update the message text in-place.
+	err = env.svc.UpdateMessageText(ctx, sid, 2, "edited follow-up")
+	require.NoError(t, err)
+
+	// Verify the message was updated by extracting again.
+	result2, err := env.svc.ExtractMessageText(ctx, sid, 2)
+	require.NoError(t, err)
+	require.Equal(t, "edited follow-up", result2.ExtractedText)
+
+	// Verify no messages were deleted.
 	var count int
 	require.NoError(t, env.sqlDB.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM messages WHERE session_id = ?", sid,
 	).Scan(&count))
-	require.Equal(t, 2, count)
+	require.Equal(t, 3, count)
 }
 
 func TestIntegration_CleanupRetention(t *testing.T) {

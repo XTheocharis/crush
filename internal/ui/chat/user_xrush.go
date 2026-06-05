@@ -4,3 +4,7 @@ package chat
 func (m *UserMessageItem) Seq() int {
 	return m.message.Seq
 }
+
+func (a *AssistantMessageItem) Seq() int {
+	return a.message.Seq
+}

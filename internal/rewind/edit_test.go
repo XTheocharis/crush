@@ -420,7 +420,8 @@ func (m *editMockQuerier) UpdateLcmSessionConfig(ctx context.Context, arg db.Upd
 }
 
 func (m *editMockQuerier) UpdateMessage(ctx context.Context, arg db.UpdateMessageParams) error {
-	return nil
+	args := m.Called(ctx, arg)
+	return args.Error(0)
 }
 
 func (m *editMockQuerier) UpdateMessageTokenCount(ctx context.Context, arg db.UpdateMessageTokenCountParams) error {
@@ -518,7 +519,7 @@ func marshalTextParts(t *testing.T, texts ...string) string {
 	return string(b)
 }
 
-func TestEditMessage_Success(t *testing.T) {
+func TestExtractMessageText_Success(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -541,31 +542,15 @@ func TestEditMessage_Success(t *testing.T) {
 		Seq:       int64(seq),
 	}, nil)
 
-	mq.On("ListMessagesInSeqRange", ctx, db.ListMessagesInSeqRangeParams{
-		SessionID: sessionID,
-		Seq:       int64(seq),
-		Seq_2:     999999,
-	}).Return([]db.Message{
-		{ID: "msg-abc", Seq: 3},
-		{ID: "msg-def", Seq: 4},
-		{ID: "msg-ghi", Seq: 5},
-	}, nil)
-
-	mq.On("DeleteMessagesAfterSeq", ctx, db.DeleteMessagesAfterSeqParams{
-		SessionID: sessionID,
-		Seq:       int64(seq - 1),
-	}).Return(nil)
-
 	editor := NewEditor(mq)
-	result, err := editor.EditMessage(ctx, sessionID, seq)
+	result, err := editor.ExtractMessageText(ctx, sessionID, seq)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", result.ExtractedText)
-	require.Equal(t, 3, result.MessagesDeleted)
 	require.Equal(t, msgID, result.NewMessageID)
 	mq.AssertExpectations(t)
 }
 
-func TestEditMessage_MultipleTextParts(t *testing.T) {
+func TestExtractMessageText_MultipleTextParts(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -587,26 +572,14 @@ func TestEditMessage_MultipleTextParts(t *testing.T) {
 		Seq:       int64(seq),
 	}, nil)
 
-	mq.On("ListMessagesInSeqRange", ctx, db.ListMessagesInSeqRangeParams{
-		SessionID: sessionID,
-		Seq:       int64(seq),
-		Seq_2:     999999,
-	}).Return([]db.Message{{ID: msgID, Seq: 1}}, nil)
-
-	mq.On("DeleteMessagesAfterSeq", ctx, db.DeleteMessagesAfterSeqParams{
-		SessionID: sessionID,
-		Seq:       int64(seq - 1),
-	}).Return(nil)
-
 	editor := NewEditor(mq)
-	result, err := editor.EditMessage(ctx, sessionID, seq)
+	result, err := editor.ExtractMessageText(ctx, sessionID, seq)
 	require.NoError(t, err)
 	require.Equal(t, "part one part two", result.ExtractedText)
-	require.Equal(t, 1, result.MessagesDeleted)
 	require.Equal(t, msgID, result.NewMessageID)
 }
 
-func TestEditMessage_NoTextContent(t *testing.T) {
+func TestExtractMessageText_NoTextContent(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -635,52 +608,44 @@ func TestEditMessage_NoTextContent(t *testing.T) {
 		Seq:       int64(seq),
 	}, nil)
 
-	mq.On("ListMessagesInSeqRange", ctx, db.ListMessagesInSeqRangeParams{
-		SessionID: sessionID,
-		Seq:       int64(seq),
-		Seq_2:     999999,
-	}).Return([]db.Message{{ID: msgID, Seq: 2}}, nil)
-
-	mq.On("DeleteMessagesAfterSeq", ctx, db.DeleteMessagesAfterSeqParams{
-		SessionID: sessionID,
-		Seq:       int64(seq - 1),
-	}).Return(nil)
-
 	editor := NewEditor(mq)
-	result, err := editor.EditMessage(ctx, sessionID, seq)
+	result, err := editor.ExtractMessageText(ctx, sessionID, seq)
 	require.NoError(t, err)
 	require.Equal(t, "", result.ExtractedText)
-	require.Equal(t, 1, result.MessagesDeleted)
 	require.Equal(t, msgID, result.NewMessageID)
 }
 
-func TestEditMessage_NonUserMessage_ReturnsError(t *testing.T) {
+func TestExtractMessageText_AssistantMessage(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	sessionID := "sess-4"
+	sessionID := "sess-assistant"
 	seq := 4
+	msgID := "msg-assistant"
+
+	parts := marshalTextParts(t, "I am an assistant response")
 
 	mq := new(editMockQuerier)
 	mq.On("GetMessageBySessionAndSeq", ctx, db.GetMessageBySessionAndSeqParams{
 		SessionID: sessionID,
 		Seq:       int64(seq),
 	}).Return(db.Message{
-		ID:        "msg-assistant",
+		ID:        msgID,
 		SessionID: sessionID,
 		Role:      "assistant",
-		Parts:     `[{"type":"text","data":{"text":"hi"}}]`,
+		Parts:     parts,
 		Seq:       int64(seq),
 	}, nil)
 
 	editor := NewEditor(mq)
-	_, err := editor.EditMessage(ctx, sessionID, seq)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "not a user message")
+	result, err := editor.ExtractMessageText(ctx, sessionID, seq)
+	require.NoError(t, err)
+	require.Equal(t, "I am an assistant response", result.ExtractedText)
+	require.Equal(t, msgID, result.NewMessageID)
 	mq.AssertExpectations(t)
 }
 
-func TestEditMessage_MessageNotFound(t *testing.T) {
+func TestExtractMessageText_MessageNotFound(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -694,19 +659,18 @@ func TestEditMessage_MessageNotFound(t *testing.T) {
 	}).Return(db.Message{}, sql.ErrNoRows)
 
 	editor := NewEditor(mq)
-	_, err := editor.EditMessage(ctx, sessionID, seq)
+	_, err := editor.ExtractMessageText(ctx, sessionID, seq)
 	require.Error(t, err)
 }
 
-func TestEditMessage_DeleteFails(t *testing.T) {
+func TestUpdateMessageText_Success(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	sessionID := "sess-6"
-	seq := 1
-	msgID := "msg-dfail"
-
-	parts := marshalTextParts(t, "hello")
+	sessionID := "sess-1"
+	seq := 3
+	msgID := "msg-abc"
+	newText := "updated message"
 
 	mq := new(editMockQuerier)
 	mq.On("GetMessageBySessionAndSeq", ctx, db.GetMessageBySessionAndSeqParams{
@@ -716,23 +680,75 @@ func TestEditMessage_DeleteFails(t *testing.T) {
 		ID:        msgID,
 		SessionID: sessionID,
 		Role:      "user",
-		Parts:     parts,
+		Parts:     `[{"type":"text","data":{"text":"old"}}]`,
 		Seq:       int64(seq),
 	}, nil)
 
-	mq.On("ListMessagesInSeqRange", ctx, db.ListMessagesInSeqRangeParams{
-		SessionID: sessionID,
-		Seq:       int64(seq),
-		Seq_2:     999999,
-	}).Return([]db.Message{{ID: msgID, Seq: 1}}, nil)
-
-	mq.On("DeleteMessagesAfterSeq", ctx, db.DeleteMessagesAfterSeqParams{
-		SessionID: sessionID,
-		Seq:       int64(seq - 1),
-	}).Return(errors.New("db error"))
+	mq.On("UpdateMessage", ctx, mock.MatchedBy(func(arg db.UpdateMessageParams) bool {
+		return arg.ID == msgID && arg.Parts != ""
+	})).Return(nil)
 
 	editor := NewEditor(mq)
-	_, err := editor.EditMessage(ctx, sessionID, seq)
+	err := editor.UpdateMessageText(ctx, sessionID, seq, newText)
+	require.NoError(t, err)
+	mq.AssertExpectations(t)
+}
+
+func TestUpdateMessageText_AssistantMessage(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sessionID := "sess-assistant-update"
+	seq := 4
+	msgID := "msg-assistant-update"
+	newText := "revised assistant response"
+
+	mq := new(editMockQuerier)
+	mq.On("GetMessageBySessionAndSeq", ctx, db.GetMessageBySessionAndSeqParams{
+		SessionID: sessionID,
+		Seq:       int64(seq),
+	}).Return(db.Message{
+		ID:        msgID,
+		SessionID: sessionID,
+		Role:      "assistant",
+		Parts:     `[{"type":"text","data":{"text":"old response"}}]`,
+		Seq:       int64(seq),
+	}, nil)
+
+	mq.On("UpdateMessage", ctx, mock.MatchedBy(func(arg db.UpdateMessageParams) bool {
+		return arg.ID == msgID && arg.Parts != ""
+	})).Return(nil)
+
+	editor := NewEditor(mq)
+	err := editor.UpdateMessageText(ctx, sessionID, seq, newText)
+	require.NoError(t, err)
+	mq.AssertExpectations(t)
+}
+
+func TestUpdateMessageText_UpdateFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sessionID := "sess-3"
+	seq := 1
+	msgID := "msg-ufail"
+
+	mq := new(editMockQuerier)
+	mq.On("GetMessageBySessionAndSeq", ctx, db.GetMessageBySessionAndSeqParams{
+		SessionID: sessionID,
+		Seq:       int64(seq),
+	}).Return(db.Message{
+		ID:        msgID,
+		SessionID: sessionID,
+		Role:      "user",
+		Parts:     `[{"type":"text","data":{"text":"old"}}]`,
+		Seq:       int64(seq),
+	}, nil)
+
+	mq.On("UpdateMessage", ctx, mock.Anything).Return(errors.New("db error"))
+
+	editor := NewEditor(mq)
+	err := editor.UpdateMessageText(ctx, sessionID, seq, "new text")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "db error")
 }

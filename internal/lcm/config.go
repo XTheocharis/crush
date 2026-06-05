@@ -39,9 +39,13 @@ func ComputeBudget(cfg BudgetConfig) Budget {
 	softRaw := int64(float64(cfg.ContextWindow)*cfg.CutoffThreshold) - overhead
 	softThreshold := min(max(softRaw, 0), hardLimit)
 	return Budget{
-		SoftThreshold: softThreshold,
-		HardLimit:     hardLimit,
-		ContextWindow: cfg.ContextWindow,
+		SoftThreshold:    softThreshold,
+		HardLimit:        hardLimit,
+		ContextWindow:    cfg.ContextWindow,
+		ModelOutputLimit: cfg.ModelOutputLimit,
+		SystemPromptOver: cfg.SystemPromptTokens,
+		ToolOver:         cfg.ToolTokens,
+		RepoMapOver:      cfg.RepoMapTokens,
 	}
 }
 

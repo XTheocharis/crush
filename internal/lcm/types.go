@@ -23,6 +23,12 @@ const MinMessagesToSummarize = 3
 // FallbackMaxChars is the maximum character count for deterministic fallback summaries.
 const FallbackMaxChars = 2048
 
+// SummarizationSystemPromptOverhead is an estimate for the token cost of the
+// summarization system prompt and message framing sent to the summarization
+// LLM. This overhead must be subtracted from the summarization input budget
+// alongside the output token reservation.
+const SummarizationSystemPromptOverhead = 500
+
 // SummaryIDPrefix and FileIDPrefix are the prefixes for LCM identifiers.
 const (
 	SummaryIDPrefix = "sum_"
@@ -129,9 +135,13 @@ type TimeQueryMessage struct {
 
 // Budget holds the computed token budget for a session.
 type Budget struct {
-	SoftThreshold int64
-	HardLimit     int64
-	ContextWindow int64
+	SoftThreshold    int64
+	HardLimit        int64
+	ContextWindow    int64
+	ModelOutputLimit int64
+	SystemPromptOver int64
+	ToolOver         int64
+	RepoMapOver      int64
 }
 
 // ActiveContext holds the active context overview for a session.

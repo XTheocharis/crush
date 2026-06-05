@@ -64,6 +64,14 @@ func TestRewind_CodeOnly(t *testing.T) {
 	}
 
 	q := new(mockQuerier)
+	q.On("GetMessageBySessionAndSeq", mock.Anything, db.GetMessageBySessionAndSeqParams{
+		SessionID: "sess-1",
+		Seq:       int64(5),
+	}).Return(db.Message{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: `[{"type":"text","data":{"text":"original message"}}]`,
+	}, nil)
 	s := new(mockSnapshotter)
 
 	s.On("GetSnapshotAtOrBeforeSeq", mock.Anything, "sess-1", 5).
@@ -77,6 +85,7 @@ func TestRewind_CodeOnly(t *testing.T) {
 	require.Equal(t, 2, result.FilesRestored)
 	require.Equal(t, snap, result.Snapshot)
 	require.Equal(t, 0, result.MessagesDeleted)
+	require.Equal(t, "original message", result.ExtractedText)
 
 	content1, err := os.ReadFile(filepath.Join(tmpDir, "foo.txt"))
 	require.NoError(t, err)
@@ -86,6 +95,7 @@ func TestRewind_CodeOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "nested content", string(content2))
 
+	q.AssertExpectations(t)
 	s.AssertExpectations(t)
 }
 
@@ -241,6 +251,14 @@ func TestRewind_CodeOnly_EmptySnapshot(t *testing.T) {
 	}
 
 	q := new(mockQuerier)
+	q.On("GetMessageBySessionAndSeq", mock.Anything, db.GetMessageBySessionAndSeqParams{
+		SessionID: "sess-1",
+		Seq:       int64(1),
+	}).Return(db.Message{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: `[{"type":"text","data":{"text":"hello"}}]`,
+	}, nil)
 	s := new(mockSnapshotter)
 
 	s.On("GetSnapshotAtOrBeforeSeq", mock.Anything, "sess-1", 1).

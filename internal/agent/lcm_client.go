@@ -27,6 +27,15 @@ func NewLCMLLMClient(model Model, providerCfg config.ProviderConfig) *LCMLLMAdap
 	if model.ModelCfg.MaxTokens > 0 {
 		tokens = model.ModelCfg.MaxTokens
 	}
+	// Cap output tokens for summarization. The context window is shared
+	// between input and output, so large output budgets starve the input
+	// and cause "Prompt exceeds max length" errors from the provider.
+	// Allow at most 1/3 of the context window for output.
+	if cw := model.CatwalkCfg.ContextWindow; cw > 0 {
+		if maxCap := cw / 3; tokens > maxCap {
+			tokens = maxCap
+		}
+	}
 	if tokens > 0 {
 		maxOutputTokens = &tokens
 	}

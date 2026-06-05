@@ -58,8 +58,17 @@ func (m *compactionManager) trySummarize(ctx context.Context, sessionID string, 
 		return false, fmt.Errorf("getting context entries: %w", err)
 	}
 
-	// Select oldest messages (not summaries) up to 75% of context window.
-	tokenBudget := int64(float64(budget.ContextWindow) * 0.75)
+	// Select oldest messages (not summaries) up to 75% of context window,
+	// capped by the summarization input budget. The summarization LLM has a
+	// shared input+output context window, so the input must fit within
+	// contextWindow - outputReserve - summarizationOverhead.
+	summarizationOverhead := int64(SummarizationSystemPromptOverhead + PerStepInjectionOverhead)
+	outputReserve := budget.ModelOutputLimit
+	if outputReserve <= 0 {
+		outputReserve = int64(float64(budget.ContextWindow) * 0.25)
+	}
+	maxInput := budget.ContextWindow - outputReserve - summarizationOverhead
+	tokenBudget := min(int64(float64(budget.ContextWindow)*0.75), max(maxInput, 0))
 	var selectedEntries []ContextEntry
 	var selectedTokens int64
 

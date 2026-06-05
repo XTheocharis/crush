@@ -43,6 +43,9 @@ func (m *UI) handleXrushRoutingUpdate(msg tea.Msg) tea.Cmd {
 	case editMessageResult:
 		return m.handleEditMessageResult(msg)
 
+	case commitEditResult:
+		return m.handleCommitEditResult(msg)
+
 	case DelayedClickMsg:
 		if handled, cmd := m.chat.HandleDelayedClick(msg); handled {
 			return cmd
@@ -70,10 +73,27 @@ func (m *Chat) SelectedUserMessageItem() *chat.UserMessageItem {
 	return nil
 }
 
+// XRUSH: SelectedMessageItem returns the selected item if it is a user or
+// assistant message, or nil otherwise.
+func (m *Chat) SelectedMessageItem() (id string, seq int, ok bool) {
+	switch item := m.list.SelectedItem().(type) {
+	case *chat.UserMessageItem:
+		return item.ID(), item.Seq(), true
+	case *chat.AssistantMessageItem:
+		return item.ID(), item.Seq(), true
+	}
+	return "", 0, false
+}
+
 // XRUSH: dispatchForkMessageOptions handles fork-specific message options
 // dispatch on single-click of user messages.
 func (m *Chat) dispatchXrushMessageOptions(selectedItem list.Item) (bool, tea.Cmd) {
-	if item, ok := selectedItem.(*chat.UserMessageItem); ok {
+	switch item := selectedItem.(type) {
+	case *chat.UserMessageItem:
+		if m.OnMessageOptions != nil {
+			return true, m.OnMessageOptions(item.ID(), m.sessionID, item.Seq())
+		}
+	case *chat.AssistantMessageItem:
 		if m.OnMessageOptions != nil {
 			return true, m.OnMessageOptions(item.ID(), m.sessionID, item.Seq())
 		}
@@ -111,15 +131,15 @@ func (m *UI) handleXrushDialogMsg(action tea.Msg) tea.Cmd {
 		seq := msg.Seq
 		messageID := msg.MessageID
 		if seq == 0 && messageID == "" {
-			if item := m.chat.SelectedUserMessageItem(); item != nil {
-				seq = item.Seq()
-				messageID = item.ID()
+			if id, s, ok := m.chat.SelectedMessageItem(); ok {
+				seq = s
+				messageID = id
 			}
 			if seq == 0 && m.hasSession() {
 				msgs, err := m.com.Workspace.ListMessages(context.Background(), msg.SessionID)
 				if err == nil {
 					for _, msg := range slices.Backward(msgs) {
-						if msg.Role == message.User {
+						if msg.Role == message.User || msg.Role == message.Assistant {
 							seq = msg.Seq
 							messageID = msg.ID
 							break
@@ -159,9 +179,9 @@ func (m *UI) handleXrushKeyPress(msg tea.KeyPressMsg) tea.Cmd {
 				return util.InfoMsg{Type: util.InfoTypeWarn, Msg: "Rewind is not available"}
 			}
 		}
-		if item := m.chat.SelectedUserMessageItem(); item != nil {
+		if id, seq, ok := m.chat.SelectedMessageItem(); ok {
 			if m.chat.OnMessageOptions != nil {
-				return m.chat.OnMessageOptions(item.ID(), m.session.ID, item.Seq())
+				return m.chat.OnMessageOptions(id, m.session.ID, seq)
 			}
 		}
 	}

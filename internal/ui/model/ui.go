@@ -201,6 +201,13 @@ type UI struct {
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
 
+	// editMode tracks whether the editor is in "edit message" mode. When set,
+	// submitting the textarea updates the message at editSeq in-place instead
+	// of sending a new message to the LLM.
+	editMode  bool
+	editSeq   int
+	editMsgID string
+
 	header *header
 
 	// sendProgressBar instructs the TUI to send progress bar updates to the
@@ -959,7 +966,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyPressMsg:
-		if cmd := m.handleKeyPressMsg(msg); cmd != nil {
+		if m.dialog.HasDialogs() {
+			if cmd := m.handleDialogMsg(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		} else if cmd := m.handleKeyPressMsg(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case tea.PasteMsg:
@@ -1012,7 +1023,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"options", msg.Options)
 		}
 	default:
-		if m.dialog.HasDialogs() {
+		if isXrushDialogAction(msg) {
+			if cmd := m.handleXrushDialogMsg(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		} else if m.dialog.HasDialogs() {
 			if cmd := m.handleDialogMsg(msg); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -2036,6 +2051,25 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					break
 				}
 
+				// In edit mode, submit updates the existing message in-place.
+				if m.editMode {
+					m.textarea.Reset()
+					if cmd := m.handleTextareaHeightChange(prevHeight); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					value = strings.TrimSpace(value)
+					sessionID := m.editMsgID
+					seq := m.editSeq
+					m.editMode = false
+					m.editSeq = 0
+					m.editMsgID = ""
+					if value == "" {
+						break
+					}
+					cmds = append(cmds, m.commitEditMessage(sessionID, seq, value))
+					return tea.Batch(cmds...)
+				}
+
 				// Otherwise, send the message
 				m.textarea.Reset()
 				if cmd := m.handleTextareaHeightChange(prevHeight); cmd != nil {
@@ -2097,6 +2131,12 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					cmds = append(cmds, cmd)
 				}
 			case key.Matches(msg, m.keyMap.Editor.Escape):
+				if m.editMode {
+					m.editMode = false
+					m.editSeq = 0
+					m.editMsgID = ""
+					m.textarea.Reset()
+				}
 				cmd := m.handleHistoryEscape(msg)
 				if cmd != nil {
 					cmds = append(cmds, cmd)
@@ -2487,6 +2527,9 @@ func (m *UI) ShortHelp() []key.Binding {
 				k.Chat.PageDown,
 				k.Chat.Copy,
 			)
+			if _, _, ok := m.chat.SelectedMessageItem(); ok && m.com.Workspace.RewindService() != nil {
+				binds = append(binds, k.Chat.MessageOptions)
+			}
 			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
 				binds = append(binds, k.Chat.PillLeft)
 			}
@@ -2608,6 +2651,9 @@ func (m *UI) FullHelp() [][]key.Binding {
 			)
 			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
 				binds = append(binds, []key.Binding{k.Chat.PillLeft})
+			}
+			if _, _, ok := m.chat.SelectedMessageItem(); ok && m.com.Workspace.RewindService() != nil {
+				binds = append(binds, []key.Binding{k.Chat.MessageOptions})
 			}
 		}
 	default:

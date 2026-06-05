@@ -9,7 +9,29 @@ import (
 	"github.com/charmbracelet/crush/internal/db"
 )
 
-const maxSeqBound = 999999
+// editorStringParts builds the JSON parts string for a text-only user message.
+func editorStringParts(text string) string {
+	type pw struct {
+		Type string          `json:"type"`
+		Data json.RawMessage `json:"data"`
+	}
+	type td struct {
+		Text string `json:"text"`
+	}
+	data, _ := json.Marshal(td{Text: text})
+	// Preserve the finish part that message.Service always appends.
+	finishData, _ := json.Marshal(map[string]any{
+		"reason":  "stop",
+		"time":    float64(0),
+		"message": "",
+		"details": "",
+	})
+	parts, _ := json.Marshal([]pw{
+		{Type: "text", Data: data},
+		{Type: "finish", Data: finishData},
+	})
+	return string(parts)
+}
 
 type editor struct {
 	q db.Querier
@@ -20,7 +42,7 @@ func NewEditor(q db.Querier) Editor {
 	return &editor{q: q}
 }
 
-func (e *editor) EditMessage(ctx context.Context, sessionID string, seq int) (*EditResult, error) {
+func (e *editor) ExtractMessageText(ctx context.Context, sessionID string, seq int) (*EditResult, error) {
 	msg, err := e.q.GetMessageBySessionAndSeq(ctx, db.GetMessageBySessionAndSeqParams{
 		SessionID: sessionID,
 		Seq:       int64(seq),
@@ -29,37 +51,32 @@ func (e *editor) EditMessage(ctx context.Context, sessionID string, seq int) (*E
 		return nil, fmt.Errorf("get message at seq %d: %w", seq, err)
 	}
 
-	if msg.Role != "user" {
-		return nil, fmt.Errorf("not a user message: role=%q at seq %d", msg.Role, seq)
-	}
-
 	extractedText, err := extractTextFromParts(msg.Parts)
 	if err != nil {
 		return nil, fmt.Errorf("extract text from parts: %w", err)
 	}
 
-	toDelete, err := e.q.ListMessagesInSeqRange(ctx, db.ListMessagesInSeqRangeParams{
+	return &EditResult{
+		ExtractedText: extractedText,
+		NewMessageID:  msg.ID,
+	}, nil
+}
+
+func (e *editor) UpdateMessageText(ctx context.Context, sessionID string, seq int, newText string) error {
+	msg, err := e.q.GetMessageBySessionAndSeq(ctx, db.GetMessageBySessionAndSeqParams{
 		SessionID: sessionID,
 		Seq:       int64(seq),
-		Seq_2:     maxSeqBound,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("count messages in range: %w", err)
+		return fmt.Errorf("get message at seq %d: %w", seq, err)
 	}
 
-	err = e.q.DeleteMessagesAfterSeq(ctx, db.DeleteMessagesAfterSeqParams{
-		SessionID: sessionID,
-		Seq:       int64(seq - 1),
+	parts := editorStringParts(newText)
+
+	return e.q.UpdateMessage(ctx, db.UpdateMessageParams{
+		Parts:  parts,
+		ID:     msg.ID,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("delete messages after seq %d: %w", seq, err)
-	}
-
-	return &EditResult{
-		ExtractedText:   extractedText,
-		MessagesDeleted: len(toDelete),
-		NewMessageID:    msg.ID,
-	}, nil
 }
 
 // partWrapper matches the JSON shape stored in db.Message.Parts.
