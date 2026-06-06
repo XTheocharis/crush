@@ -4,34 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sync"
 	"testing"
 
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/require"
 )
 
-var mpTestGooseOnce sync.Once
-
-func mpTestInitGoose(t *testing.T) {
-	t.Helper()
-	mpTestGooseOnce.Do(func() {
-		goose.SetBaseFS(FS)
-		if err := goose.SetDialect("sqlite3"); err != nil {
-			t.Fatalf("goose.SetDialect: %v", err)
-		}
-	})
-}
-
 func mpTestOpenDB(t *testing.T) *sql.DB {
 	t.Helper()
-	mpTestInitGoose(t)
+	testInitGoose(t)
 
 	tmpDir := t.TempDir()
 	dbPath := fmt.Sprintf("file:%s/test.db?_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=recursive_triggers(ON)", tmpDir)
 	sqlDB, err := sql.Open("sqlite", dbPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { sqlDB.Close() })
+
+	sqlDB.SetMaxOpenConns(1)
 
 	err = sqlDB.PingContext(context.Background())
 	require.NoError(t, err)

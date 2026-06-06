@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/charmbracelet/crush/internal/fsext"
@@ -278,15 +279,22 @@ type symbolDef struct {
 // Set via SetSymbolParser; nil when tree-sitter is unavailable.
 var globalSymbolParser symbolParser
 
+// symbolParserMu protects globalSymbolParser for concurrent access.
+var symbolParserMu sync.RWMutex
+
 // SetSymbolParser sets the global tree-sitter parser used for symbol-level
 // fuzzy matching. Pass nil to disable symbol lookup.
 func SetSymbolParser(p symbolParser) {
+	symbolParserMu.Lock()
+	defer symbolParserMu.Unlock()
 	globalSymbolParser = p
 }
 
 // InitSymbolParser initializes the global symbol parser for fuzzy matching.
 // Pass a treesitter.Parser (real build) or nil (stub build / cleanup).
 func InitSymbolParser(parser any) {
+	symbolParserMu.Lock()
+	defer symbolParserMu.Unlock()
 	if parser != nil {
 		globalSymbolParser = newSymbolParserFromAny(parser)
 	} else {
@@ -299,11 +307,15 @@ func InitSymbolParser(parser any) {
 // Returns an empty slice (not an error) if tree-sitter is unavailable or the
 // file cannot be parsed.
 func fuzzySymbolLookup(ctx context.Context, query, filePath string, content []byte) ([]SymbolMatch, error) {
-	if globalSymbolParser == nil || query == "" {
+	symbolParserMu.RLock()
+	parser := globalSymbolParser
+	symbolParserMu.RUnlock()
+
+	if parser == nil || query == "" {
 		return nil, nil
 	}
 
-	analysis, err := globalSymbolParser.Analyze(ctx, filePath, content)
+	analysis, err := parser.Analyze(ctx, filePath, content)
 	if err != nil {
 		return nil, nil //nolint:nilerr // Graceful fallback on parse errors.
 	}

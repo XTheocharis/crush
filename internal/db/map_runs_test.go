@@ -4,29 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sync"
 	"testing"
 
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/require"
 )
 
-var mapTestGooseOnce sync.Once
-
-func mapTestInitGoose(t *testing.T) {
-	t.Helper()
-	mapTestGooseOnce.Do(func() {
-		goose.SetBaseFS(FS)
-		if err := goose.SetDialect("sqlite3"); err != nil {
-			t.Fatalf("goose.SetDialect: %v", err)
-		}
-	})
-}
-
 func mapTestOpenDB(t *testing.T) *sql.DB {
 	t.Helper()
-	mapTestInitGoose(t)
-
 	return dagTestOpenDB(t)
 }
 

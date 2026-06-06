@@ -12,11 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var dagTestGooseOnce sync.Once
+// testGooseOnce is the single shared sync.Once for all test files in this
+// package. Using one instance avoids data races on goose package-level
+// globals (SetBaseFS / SetDialect) when t.Parallel() tests run concurrently.
+var testGooseOnce sync.Once
 
-func dagTestInitGoose(t *testing.T) {
+func testInitGoose(t *testing.T) {
 	t.Helper()
-	dagTestGooseOnce.Do(func() {
+	testGooseOnce.Do(func() {
 		goose.SetBaseFS(FS)
 		if err := goose.SetDialect("sqlite3"); err != nil {
 			t.Fatalf("goose.SetDialect: %v", err)
@@ -26,7 +29,7 @@ func dagTestInitGoose(t *testing.T) {
 
 func dagTestOpenDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dagTestInitGoose(t)
+	testInitGoose(t)
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
@@ -34,6 +37,8 @@ func dagTestOpenDB(t *testing.T) *sql.DB {
 	sqlDB, err := sql.Open("sqlite", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { sqlDB.Close() })
+
+	sqlDB.SetMaxOpenConns(1)
 
 	err = sqlDB.PingContext(context.Background())
 	require.NoError(t, err)
