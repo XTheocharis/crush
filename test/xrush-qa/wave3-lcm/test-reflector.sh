@@ -110,16 +110,7 @@ test_reflector_post_compaction() {
       fail "Scenario 1: Observation buffer has no insight-type rows"
     fi
   else
-    # No observations — check logs for reflector activity before deciding.
-    local reflect_log_count
-    reflect_log_count=$(grep -ci "reflect" .crush/logs/crush.log 2>/dev/null || echo 0)
-
-    if [[ "$reflect_log_count" -gt 0 ]]; then
-      echo "INFO: Scenario 1: No observation_buffer rows but $reflect_log_count reflect log entries found"
-      pass "Scenario 1: Reflector activity detected in logs (observations may have been consumed)"
-    else
-      fail "Scenario 1: No observation_buffer rows and no reflector log entries"
-    fi
+    fail "Scenario 1: No observation_buffer rows for reflector output"
   fi
 
   # Also verify that compaction happened (prerequisite for reflector).
@@ -148,33 +139,21 @@ test_reflector_log_evidence() {
     return
   fi
 
-  # Search for reflector-related log entries (case-insensitive).
-  local reflect_entries
-  reflect_entries=$(grep -i "reflect" .crush/logs/crush.log 2>/dev/null || true)
-  local reflect_count
-  reflect_count=$(echo "$reflect_entries" | grep -c "." 2>/dev/null || echo 0)
+  local obs_count insight_count summary_count
+  obs_count=$(query_db "SELECT COUNT(*) as cnt FROM lcm_observation_buffer WHERE session_id = '$SID'" | jq '.[0].cnt // 0')
+  insight_count=$(query_db "SELECT COUNT(*) as cnt FROM lcm_observation_buffer WHERE session_id = '$SID' AND buffer_type = 'insight'" | jq '.[0].cnt // 0')
+  summary_count=$(query_db "SELECT COUNT(*) as cnt FROM lcm_summaries WHERE session_id = '$SID' AND lower(content) GLOB '*reflect*'" | jq '.[0].cnt // 0')
 
-  if [[ "$reflect_count" -gt 0 ]]; then
-    echo "INFO: Scenario 2: Found $reflect_count reflect-related log entries"
-    # Print up to 5 sample entries for evidence.
-    echo "$reflect_entries" | head -5 | while IFS= read -r line; do
-      echo "  LOG: $line"
-    done
-    pass "Scenario 2: Reflector activity present in logs ($reflect_count entries)"
+  if [[ "$obs_count" -gt 0 && "$insight_count" -gt 0 ]]; then
+    pass "Scenario 2: Observation buffer contains $obs_count row(s), including $insight_count insight row(s)"
   else
-    fail "Scenario 2: No reflect-related log entries found"
+    fail "Scenario 2: Observation buffer lacks required reflector insight rows"
   fi
 
-  # Also check for BufferingCoordinator activity (broader observation system).
-  local buffer_entries
-  buffer_entries=$(grep -i "buffer\|observation" .crush/logs/crush.log 2>/dev/null || true)
-  local buffer_count
-  buffer_count=$(echo "$buffer_entries" | grep -c "." 2>/dev/null || echo 0)
-  if [[ "$buffer_count" -gt 0 ]]; then
-    echo "INFO: Scenario 2: Found $buffer_count buffer/observation log entries"
-    pass "Scenario 2: Observation subsystem active ($buffer_count entries)"
+  if [[ "$summary_count" -gt 0 ]]; then
+    pass "Scenario 2: Reflector summary content persisted ($summary_count summary row(s))"
   else
-    fail "Scenario 2: No buffer/observation log entries found"
+    fail "Scenario 2: No reflector-related persisted summary content found"
   fi
 
   capture_evidence 15 "reflector-logs"

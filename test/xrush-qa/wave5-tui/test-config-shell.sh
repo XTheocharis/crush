@@ -103,7 +103,7 @@ EOF
 
   # Check for config-related log entries.
   local config_log_count
-  config_log_count=$(grep -ci "config\|include\|merge\|loaded config\|context.*file\|walking" "$PROJECT_DIR/.crush/logs/crush.log" 2>/dev/null || echo 0)
+  config_log_count=$(grep -ciE "test-include-config\.json|include.*\.crush/test-include-config\.json|loaded.*crush\.json|merged.*config" "$PROJECT_DIR/.crush/logs/crush.log" 2>/dev/null || echo 0)
   if [[ "$config_log_count" -ge 1 ]]; then
     pass "Scenario 1: Crush log contains config loading entries ($config_log_count matches)"
   else
@@ -112,7 +112,7 @@ EOF
 
   # Check that debug was enabled (set via our include config).
   local debug_log_count
-  debug_log_count=$(grep -ci "debug" "$PROJECT_DIR/.crush/logs/crush.log" 2>/dev/null || echo 0)
+  debug_log_count=$(grep -ciE "debug.*enabled|level=debug|DEBUG" "$PROJECT_DIR/.crush/logs/crush.log" 2>/dev/null || echo 0)
   if [[ "$debug_log_count" -ge 1 ]]; then
     pass "Scenario 1: Debug logging active (from include config)"
   else
