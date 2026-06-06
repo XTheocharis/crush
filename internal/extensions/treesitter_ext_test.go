@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
+	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/stretchr/testify/require"
 )
 
@@ -638,4 +639,69 @@ func TestSnapshotContent_ExtractsCorrectFile(t *testing.T) {
 	}
 	require.Equal(t, "package a", snapshotContent(snap, "/a.go"))
 	require.Equal(t, "package b", snapshotContent(snap, "/b.go"))
+}
+
+type mockRewindHostContext struct {
+	mockHostContext
+	rewindSvc rewind.Service
+}
+
+func (m *mockRewindHostContext) RewindService() rewind.Service { return m.rewindSvc }
+
+type mockSnapshotter struct {
+	captured bool
+}
+
+func (m *mockSnapshotter) CaptureSnapshot(_ context.Context, _ string, _ int) error {
+	m.captured = true
+	return nil
+}
+
+func (m *mockSnapshotter) GetSnapshotAtOrBeforeSeq(_ context.Context, _ string, _ int) (*rewind.TurnSnapshot, error) {
+	return nil, nil
+}
+
+func (m *mockSnapshotter) GetSnapshotFiles(_ context.Context, _ string) ([]rewind.SnapshotFile, error) {
+	return nil, nil
+}
+
+func (m *mockSnapshotter) DeleteSnapshotsAfterSeq(_ context.Context, _ string, _ int) error {
+	return nil
+}
+func (m *mockSnapshotter) CleanupOldSnapshots(_ context.Context, _ string) error { return nil }
+func (m *mockSnapshotter) Rewind(_ context.Context, _ string, _ int, _ rewind.RewindMode) (*rewind.RewindResult, error) {
+	return nil, nil
+}
+
+func (m *mockSnapshotter) Fork(_ context.Context, _ string, _ int) (*rewind.ForkResult, error) {
+	return nil, nil
+}
+
+func (m *mockSnapshotter) ExtractMessageText(_ context.Context, _ string, _ int) (*rewind.EditResult, error) {
+	return nil, nil
+}
+
+func (m *mockSnapshotter) UpdateMessageText(_ context.Context, _ string, _ int, _ string) error {
+	return nil
+}
+
+func TestTreesitterInit_SetsSnapshotter(t *testing.T) {
+	t.Parallel()
+
+	snap := &mockSnapshotter{}
+	host := &mockRewindHostContext{
+		mockHostContext: mockHostContext{cfg: &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{Enabled: true},
+			},
+		}},
+		rewindSvc: snap,
+	}
+
+	e := &TreesitterExtension{}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+	require.True(t, e.active)
+	require.True(t, e.snapshotterSet, "snapshotterSet should be true after Init with RewindService")
+	require.NotNil(t, e.rewindService, "rewindService should be stored")
 }

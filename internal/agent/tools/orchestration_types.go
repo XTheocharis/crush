@@ -45,6 +45,18 @@ type AgentRegistry interface {
 	List() []string
 }
 
+// TeamManager tracks team→agent membership for team creation and deletion.
+type TeamManager interface {
+	// CreateTeam persists a team→agents mapping. Overwrites any existing
+	// team with the same name.
+	CreateTeam(name string, agentIDs []string)
+	// DeleteTeam removes the team entry and returns the previously tracked
+	// agent IDs. Returns nil if the team does not exist.
+	DeleteTeam(name string) []string
+	// GetTeamAgents returns the agent IDs belonging to a team.
+	GetTeamAgents(name string) ([]string, bool)
+}
+
 // ForkedMessenger is the interface for sending messages from a forked agent.
 type ForkedMessenger interface {
 	SendMessage(ctx context.Context, to, content string) error

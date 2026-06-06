@@ -16,14 +16,15 @@ import (
 // escalates through soft/medium/hard levels to break loops. Loops that produce
 // diverse outputs (productive loops) are not escalated.
 type DoomExtension struct {
-	mu             sync.RWMutex
-	host           ext.HostContext
-	detector       *agent.ProductiveLoopDetector
-	active         bool
-	steps          []fantasy.StepResult
-	maxWindow      int
-	pendingWarning string
-	pendingLevel   agent.EscalationLevel
+	mu               sync.RWMutex
+	host             ext.HostContext
+	detector         *agent.ProductiveLoopDetector
+	active           bool
+	steps            []fantasy.StepResult
+	maxWindow        int
+	pendingWarning   string
+	pendingLevel     agent.EscalationLevel
+	lastDoomDetected bool
 }
 
 func (e *DoomExtension) Name() string { return "doom-loop" }
@@ -45,6 +46,7 @@ func (e *DoomExtension) Shutdown(_ context.Context) error {
 	e.detector = nil
 	e.steps = nil
 	e.active = false
+	e.lastDoomDetected = false
 	return nil
 }
 
@@ -92,20 +94,20 @@ func (e *DoomExtension) StepHooks() []ext.StepHook {
 					e.steps = e.steps[len(e.steps)-e.maxWindow:]
 				}
 				result := e.detector.Detect(e.steps)
+				e.lastDoomDetected = result.Level == agent.EscalationHard
 				if result.Level == agent.EscalationSoft || result.Level == agent.EscalationMedium {
 					e.pendingLevel = result.Level
 					e.pendingWarning = result.Message
 				}
 				return nil
 			},
-			StopCondition: func(_ context.Context, steps []fantasy.StepResult) bool {
+			StopCondition: func(_ context.Context, _ []fantasy.StepResult) bool {
 				e.mu.RLock()
 				defer e.mu.RUnlock()
 				if !e.active || e.detector == nil {
 					return false
 				}
-				result := e.detector.Detect(steps)
-				return result.Level == agent.EscalationHard
+				return e.lastDoomDetected
 			},
 		},
 	}

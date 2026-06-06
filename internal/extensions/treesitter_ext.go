@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/ext"
+	"github.com/charmbracelet/crush/internal/rewind"
 	"github.com/charmbracelet/crush/internal/treesitter"
 )
 
@@ -24,10 +25,12 @@ type TreesitterExtension struct {
 	mu               sync.RWMutex
 	host             ext.HostContext
 	handler          *tools.ValidationHandler
+	rewindService    rewind.Service
 	active           bool
 	pendingWarning   string
 	criticalFail     bool
 	pendingSnapshots map[string]*tools.Snapshot
+	snapshotterSet   bool
 }
 
 func (e *TreesitterExtension) Name() string { return "treesitter-validation" }
@@ -68,6 +71,13 @@ func (e *TreesitterExtension) Init(_ context.Context, host ext.HostContext) erro
 	tools.InitSymbolParser(parser)
 	e.pendingSnapshots = make(map[string]*tools.Snapshot)
 	e.active = true
+
+	if rs := host.RewindService(); rs != nil {
+		e.rewindService = rs
+		e.handler.SetSnapshotter(rs, "")
+		e.snapshotterSet = true
+	}
+
 	return nil
 }
 
@@ -76,10 +86,12 @@ func (e *TreesitterExtension) Shutdown(_ context.Context) error {
 	defer e.mu.Unlock()
 	tools.InitSymbolParser(nil)
 	e.handler = nil
+	e.rewindService = nil
 	e.active = false
 	e.pendingWarning = ""
 	e.criticalFail = false
 	e.pendingSnapshots = nil
+	e.snapshotterSet = false
 	return nil
 }
 
@@ -102,13 +114,22 @@ func (e *TreesitterExtension) StepHooks() []ext.StepHook {
 	return []ext.StepHook{
 		{
 			Name: "treesitter-validation",
-			OnPrepareStep: func(ctx context.Context, _ string, messages []fantasy.Message) ([]fantasy.Message, error) {
+			OnPrepareStep: func(ctx context.Context, sessionID string, messages []fantasy.Message) ([]fantasy.Message, error) {
 				e.mu.Lock()
 				e.criticalFail = false
 				warning := e.pendingWarning
 				e.pendingWarning = ""
 				handler := e.handler
+				rewindSvc := e.rewindService
+				snapshotterWasSet := e.snapshotterSet
 				e.mu.Unlock()
+
+				if handler != nil && rewindSvc != nil && !snapshotterWasSet && sessionID != "" {
+					handler.SetSnapshotter(rewindSvc, sessionID)
+					e.mu.Lock()
+					e.snapshotterSet = true
+					e.mu.Unlock()
+				}
 
 				// Capture baseline + snapshot pre-edit so rollback restores
 				// original content, not post-edit state.

@@ -24,7 +24,7 @@ type TeamDeleteResponseMetadata struct {
 	Deleted  bool   `json:"deleted"`
 }
 
-func NewTeamDeleteTool(registry AgentRegistry) fantasy.AgentTool {
+func NewTeamDeleteTool(registry AgentRegistry, teamManager TeamManager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		TeamDeleteToolName,
 		string(teamDeleteDescription),
@@ -37,25 +37,25 @@ func NewTeamDeleteTool(registry AgentRegistry) fantasy.AgentTool {
 				return fantasy.NewTextErrorResponse("agent registry not configured"), nil
 			}
 
-			// In the current implementation, teams are logical groupings.
-			// Deleting a team means unregistering its member agents.
-			agents := registry.List()
-			found := false
-			for _, name := range agents {
-				if a, ok := registry.Get(name); ok {
-					if a.Name() == params.TeamName {
-						a.Stop()
-						a.Close()
-						found = true
-					}
-				}
+			if teamManager == nil {
+				return fantasy.NewTextErrorResponse("team manager not configured"), nil
 			}
 
-			if !found {
+			agentIDs, ok := teamManager.GetTeamAgents(params.TeamName)
+			if !ok {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("team %q not found", params.TeamName)), nil
 			}
 
-			result := fmt.Sprintf("Team %q deleted", params.TeamName)
+			for _, id := range agentIDs {
+				if a, ok := registry.Get(id); ok {
+					a.Stop()
+					a.Close()
+				}
+			}
+
+			teamManager.DeleteTeam(params.TeamName)
+
+			result := fmt.Sprintf("Team %q deleted (%d agent(s) stopped)", params.TeamName, len(agentIDs))
 			metadata := TeamDeleteResponseMetadata{
 				TeamName: params.TeamName,
 				Deleted:  true,

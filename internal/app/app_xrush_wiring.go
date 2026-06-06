@@ -502,6 +502,7 @@ func wireOrchestration() {
 
 	orch.SetRegistry(registry)
 	orch.SetMailbox(mailbox)
+	orch.SetTeamManager(registry)
 	orch.RebuildTools()
 	slog.Info("Orchestration tools wired with registry and mailbox")
 }

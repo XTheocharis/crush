@@ -185,6 +185,10 @@ func (s *ToolSurface) registerDefaults() {
 
 	s.Register("productive_execute", CapabilityExecution)
 	s.Register("swarm_execute", CapabilityExecution)
+	s.Register("send_message", CapabilityExecution)
+	s.Register("task_stop", CapabilityExecution)
+	s.Register("team_create", CapabilityExecution)
+	s.Register("team_delete", CapabilityExecution)
 }
 
 // Register adds a tool to the surface with the given capability bitmask.

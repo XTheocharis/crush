@@ -21,6 +21,7 @@ type OrchestrationExtension struct {
 	host     ext.HostContext
 	registry tools.AgentRegistry
 	mailbox  tools.Mailbox
+	teams    tools.TeamManager
 	tools    []fantasy.AgentTool
 	names    []string
 	active   bool
@@ -31,7 +32,7 @@ func (e *OrchestrationExtension) Name() string { return "orchestration" }
 func (e *OrchestrationExtension) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
 
-	e.tools = buildOrchestrationTools(e.registry, e.mailbox)
+	e.tools = buildOrchestrationTools(e.registry, e.mailbox, e.teams)
 	e.names = make([]string, len(e.tools))
 	for i, t := range e.tools {
 		e.names[i] = t.Info().Name
@@ -84,24 +85,31 @@ func (e *OrchestrationExtension) SetMailbox(mailbox tools.Mailbox) {
 	e.mailbox = mailbox
 }
 
+// SetTeamManager sets the team manager for team tools.
+func (e *OrchestrationExtension) SetTeamManager(tm tools.TeamManager) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.teams = tm
+}
+
 // RebuildTools reconstructs the orchestration tools using the current
 // registry and mailbox. Call this after SetRegistry and SetMailbox to
 // ensure tools are wired with non-nil dependencies.
 func (e *OrchestrationExtension) RebuildTools() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.tools = buildOrchestrationTools(e.registry, e.mailbox)
+	e.tools = buildOrchestrationTools(e.registry, e.mailbox, e.teams)
 	e.names = make([]string, len(e.tools))
 	for i, t := range e.tools {
 		e.names[i] = t.Info().Name
 	}
 }
 
-func buildOrchestrationTools(registry tools.AgentRegistry, mailbox tools.Mailbox) []fantasy.AgentTool {
+func buildOrchestrationTools(registry tools.AgentRegistry, mailbox tools.Mailbox, tm tools.TeamManager) []fantasy.AgentTool {
 	return []fantasy.AgentTool{
 		tools.NewSendMessageTool(registry, mailbox),
-		tools.NewTeamCreateTool(registry, mailbox),
-		tools.NewTeamDeleteTool(registry),
+		tools.NewTeamCreateTool(registry, mailbox, tm),
+		tools.NewTeamDeleteTool(registry, tm),
 		tools.NewTaskStopTool(registry),
 	}
 }

@@ -165,6 +165,12 @@ func (vh *ValidationHandler) ValidateEdit(
 	return result, nil
 }
 
+// SetSnapshotter configures the PersistentSnapshotter on the internal
+// RollbackManager, enabling snapshot persistence via the Rewind system.
+func (vh *ValidationHandler) SetSnapshotter(s PersistentSnapshotter, sessionID string) {
+	vh.rollback.SetSnapshotter(s, sessionID)
+}
+
 func (vh *ValidationHandler) ReplaceStages(stages []ValidationStage) {
 	if vh.pipeline != nil {
 		vh.pipeline.stages = stages

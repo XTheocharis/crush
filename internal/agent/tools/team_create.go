@@ -47,7 +47,7 @@ func sortedRoleNames() []string {
 	return names
 }
 
-func NewTeamCreateTool(registry AgentRegistry, mailbox Mailbox) fantasy.AgentTool {
+func NewTeamCreateTool(registry AgentRegistry, mailbox Mailbox, teamManager TeamManager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		TeamCreateToolName,
 		string(teamCreateDescription),
@@ -82,6 +82,10 @@ func NewTeamCreateTool(registry AgentRegistry, mailbox Mailbox) fantasy.AgentToo
 					"no valid agents or roles found: %v (valid roles: %s)",
 					params.Agents, strings.Join(sortedRoleNames(), ", "),
 				)), nil
+			}
+
+			if teamManager != nil {
+				teamManager.CreateTeam(params.TeamName, found)
 			}
 
 			result := fmt.Sprintf("Team %q created with %d agent(s)", params.TeamName, len(found))

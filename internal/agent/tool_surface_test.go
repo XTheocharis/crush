@@ -148,6 +148,39 @@ func TestToolMarkerRegistration(t *testing.T) {
 	require.Equal(t, CapabilityExecution, s.GetToolCapabilities("plain_tool"))
 }
 
+func TestOrchestrationToolsRegistered(t *testing.T) {
+	t.Parallel()
+
+	s := NewToolSurface()
+
+	expectedTools := []struct {
+		name string
+		cap  Capability
+	}{
+		{"send_message", CapabilityExecution},
+		{"task_stop", CapabilityExecution},
+		{"team_create", CapabilityExecution},
+		{"team_delete", CapabilityExecution},
+	}
+
+	for _, tt := range expectedTools {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.True(t, s.HasCapability(tt.name, tt.cap),
+				"%s should have %s", tt.name, tt.cap)
+			require.True(t, s.IsVisible(tt.name),
+				"%s should be visible by default", tt.name)
+		})
+	}
+
+	// Verify they appear in GetVisibleTools.
+	visible := s.GetVisibleTools()
+	for _, tt := range expectedTools {
+		require.Contains(t, visible, tt.name,
+			"%s should be in visible tools list", tt.name)
+	}
+}
+
 func TestBetaToolVisibility(t *testing.T) {
 	t.Parallel()
 

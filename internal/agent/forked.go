@@ -107,11 +107,13 @@ func (m *Mailbox) Broadcast(msg MailboxMessage, exclude string) []error {
 type AgentRegistry struct {
 	mu     sync.RWMutex
 	agents map[string]*ForkedAgent
+	teams  map[string][]string
 }
 
 func NewAgentRegistry() *AgentRegistry {
 	return &AgentRegistry{
 		agents: make(map[string]*ForkedAgent),
+		teams:  make(map[string][]string),
 	}
 }
 
@@ -156,6 +158,37 @@ func (r *AgentRegistry) List() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+func (r *AgentRegistry) CreateTeam(name string, agentIDs []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, len(agentIDs))
+	copy(ids, agentIDs)
+	r.teams[name] = ids
+}
+
+func (r *AgentRegistry) DeleteTeam(name string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids, ok := r.teams[name]
+	if !ok {
+		return nil
+	}
+	delete(r.teams, name)
+	return ids
+}
+
+func (r *AgentRegistry) GetTeamAgents(name string) ([]string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ids, ok := r.teams[name]
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, len(ids))
+	copy(out, ids)
+	return out, true
 }
 
 // ForkedAgentParams controls per-turn execution behaviour for a ForkedAgent.
@@ -536,4 +569,5 @@ var (
 
 	_ tools.AgentHandle   = (*ForkedAgent)(nil)
 	_ tools.AgentRegistry = (*AgentRegistry)(nil)
+	_ tools.TeamManager   = (*AgentRegistry)(nil)
 )
