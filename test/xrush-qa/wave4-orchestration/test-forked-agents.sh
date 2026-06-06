@@ -86,6 +86,21 @@ test_forked_agent_child_session() {
     pass "Scenario 1: All child IDs contain '\$\$' separator"
   fi
 
+  local child_message_failures=0
+  while IFS= read -r cid; do
+    local child_role_counts child_user_count child_assistant_count
+    child_role_counts=$(query_db "SELECT role, COUNT(*) as count FROM messages WHERE session_id = '$cid' GROUP BY role")
+    child_user_count=$(echo "$child_role_counts" | jq '[.[] | select(.role == "user")][0].count // 0')
+    child_assistant_count=$(echo "$child_role_counts" | jq '[.[] | select(.role == "assistant")][0].count // 0')
+    if [[ "$child_user_count" -lt 1 ]] || [[ "$child_assistant_count" -lt 1 ]]; then
+      fail "Scenario 1: Child session $cid lacks user/assistant message exchange"
+      child_message_failures=$((child_message_failures + 1))
+    fi
+  done <<< "$child_ids"
+  if [[ "$child_message_failures" -eq 0 ]]; then
+    pass "Scenario 1: Every child session contains a user/assistant exchange"
+  fi
+
   # Verify main session messages reference sub-agent results.
   # Look for messages containing typical sub-agent result keywords.
   local messages
@@ -96,6 +111,14 @@ test_forked_agent_child_session() {
     pass "Scenario 1: Main session has $msg_count assistant message(s) (>= 1)"
   else
     fail "Scenario 1: Expected >= 1 assistant messages, got $msg_count"
+  fi
+
+  local synthesized_count
+  synthesized_count=$(query_db "SELECT COUNT(*) as count FROM message_parts mp JOIN messages m ON m.id = mp.message_id WHERE m.session_id = '$SID' AND m.role = 'assistant' AND mp.part_type = 'text' AND lower(mp.content_json) GLOB '*lcm*' AND lower(mp.content_json) GLOB '*repomap*'" | jq '.[0].count')
+  if [[ "$synthesized_count" -ge 1 ]]; then
+    pass "Scenario 1: Main assistant response synthesizes child lcm and repomap results"
+  else
+    fail "Scenario 1: Main assistant response did not synthesize child lcm and repomap results"
   fi
 
   capture_evidence 41 "forked-agents"

@@ -46,11 +46,11 @@ test_orchestration_attempted() {
 
   # Check logs for orchestration-related entries.
   local log_entries
-  log_entries=$(grep -ciE "operator|parallel|swarm|orchestrat" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "operator mode|operator.*subtask|parallel.*agent|swarm.*agent|orchestration.*task" .crush/logs/crush.log 2>/dev/null || echo 0)
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries orchestration log entry/entries (>= 1)"
     # Show sample of matched lines for evidence.
-    grep -iE "operator|parallel|swarm|orchestrat" .crush/logs/crush.log | head -20
+    grep -iE "operator mode|operator.*subtask|parallel.*agent|swarm.*agent|orchestration.*task" .crush/logs/crush.log | head -20
   else
     fail "Scenario 1: No orchestration evidence found in logs"
   fi
@@ -72,6 +72,14 @@ test_orchestration_attempted() {
     pass "Scenario 1: Session has $msg_count assistant message(s) (>= 1)"
   else
     fail "Scenario 1: Expected >= 1 assistant messages, got $msg_count"
+  fi
+
+  local orchestration_content_count
+  orchestration_content_count=$(query_db "SELECT COUNT(*) as cnt FROM messages WHERE session_id = '$SID' AND role = 'assistant' AND lower(content) GLOB '*internal/lcm*' AND lower(content) GLOB '*internal/repomap*' AND lower(content) GLOB '*internal/treesitter*'" | jq '.[0].cnt // 0')
+  if [[ "$orchestration_content_count" -ge 1 ]]; then
+    pass "Scenario 1: Assistant synthesized requested package analysis"
+  else
+    fail "Scenario 1: Assistant response did not synthesize requested package analysis"
   fi
 
   capture_evidence 42 "orchestration"

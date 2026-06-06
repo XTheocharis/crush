@@ -76,7 +76,7 @@ test_architect_parse_bug() {
 
   # The log file must exist from Scenario 1.
   if [[ ! -f .crush/logs/crush.log ]]; then
-    skip "Scenario 2: No crush.log found — Scenario 1 may not have run"
+    fail "Scenario 2: No crush.log found — Scenario 1 did not produce required evidence"
     return
   fi
 

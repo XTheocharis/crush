@@ -45,19 +45,19 @@ test_autofix_syntax_error() {
 
   # Check that the diagnostic pipeline ran by grepping logs.
   local diag_count
-  diag_count=$(grep -ciE "diag|autofix|vet|lint" .crush/logs/crush.log 2>/dev/null || echo 0)
+  diag_count=$(grep -ciE "diag_autofix|autofix.*loop|auto.?fix.*diagnostic|running.*go test|running.*go vet|validation.*auto.?fix" .crush/logs/crush.log 2>/dev/null || echo 0)
   if [[ "$diag_count" -gt 0 ]]; then
     pass "Scenario 1: Diagnostic pipeline ran ($diag_count log matches)"
   else
-    fail "Scenario 1: validation pipeline not triggered (0 log matches for diag/autofix/vet/lint)"
+    fail "Scenario 1: validation pipeline not triggered (0 specific autofix log matches)"
   fi
 
   if [[ ! -f /tmp/qa-broken.go ]]; then
     fail "Scenario 1: /tmp/qa-broken.go was not created"
-  elif go test /tmp/qa-broken.go >/tmp/qa-broken-go-test.log 2>&1; then
-    pass "Scenario 1: /tmp/qa-broken.go is valid Go after autofix"
+  elif gofmt -e /tmp/qa-broken.go >/tmp/qa-broken-go-test.log 2>&1; then
+    pass "Scenario 1: /tmp/qa-broken.go is syntactically valid Go after autofix"
   else
-    fail "Scenario 1: /tmp/qa-broken.go is still invalid after autofix"
+    fail "Scenario 1: /tmp/qa-broken.go is still syntactically invalid after autofix"
     cat /tmp/qa-broken-go-test.log
   fi
 
