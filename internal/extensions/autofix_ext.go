@@ -38,8 +38,8 @@ type AutofixExtension struct {
 	host   ext.HostContext
 	active bool
 
-	filetracker   filetracker.Service
-	runStartTime  time.Time
+	filetracker  filetracker.Service
+	runStartTime time.Time
 
 	// loopEnabled caches the AutoFixLoopEnabled config value read during
 	// Init. When false (default), the extension runs the existing

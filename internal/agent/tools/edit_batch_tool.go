@@ -160,5 +160,3 @@ func resolveContentForOp(p BatchEditOpParams) (string, error) {
 	}
 	return "", fmt.Errorf("content is required")
 }
-
-

@@ -157,7 +157,7 @@ func extractFilePathsFromStep(step fantasy.StepResult) []string {
 
 // editTools lists tool names whose inputs likely contain a file_path field.
 var editTools = map[string]bool{
-	"edit": true, "multiedit": true, "write": true,
+	"edit": true, "multiedit": true, "batch_edit": true, "write": true,
 }
 
 func filePathsFromPart(part fantasy.MessagePart) []string {

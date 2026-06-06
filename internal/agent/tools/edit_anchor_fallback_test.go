@@ -256,4 +256,3 @@ func TestAnchorRoundTrip(t *testing.T) {
 	require.True(t, ok2, "second edit should work against reconciled cache")
 	require.Contains(t, result2, "FINAL_LINE")
 }
-

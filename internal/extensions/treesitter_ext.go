@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 
 	"charm.land/fantasy"
@@ -20,12 +21,13 @@ import (
 // post-edit infrastructure. Only compiled when the "treesitter" build tag
 // is set.
 type TreesitterExtension struct {
-	mu             sync.RWMutex
-	host           ext.HostContext
-	handler        *tools.ValidationHandler
-	active         bool
-	pendingWarning string
-	criticalFail   bool
+	mu               sync.RWMutex
+	host             ext.HostContext
+	handler          *tools.ValidationHandler
+	active           bool
+	pendingWarning   string
+	criticalFail     bool
+	pendingSnapshots map[string]*tools.Snapshot
 }
 
 func (e *TreesitterExtension) Name() string { return "treesitter-validation" }
@@ -64,6 +66,7 @@ func (e *TreesitterExtension) Init(_ context.Context, host ext.HostContext) erro
 
 	e.handler = tools.NewValidationHandler(parser, diagGate, handlerCfg)
 	tools.InitSymbolParser(parser)
+	e.pendingSnapshots = make(map[string]*tools.Snapshot)
 	e.active = true
 	return nil
 }
@@ -76,6 +79,7 @@ func (e *TreesitterExtension) Shutdown(_ context.Context) error {
 	e.active = false
 	e.pendingWarning = ""
 	e.criticalFail = false
+	e.pendingSnapshots = nil
 	return nil
 }
 
@@ -98,11 +102,30 @@ func (e *TreesitterExtension) StepHooks() []ext.StepHook {
 	return []ext.StepHook{
 		{
 			Name: "treesitter-validation",
-			OnPrepareStep: func(_ context.Context, _ string, messages []fantasy.Message) ([]fantasy.Message, error) {
+			OnPrepareStep: func(ctx context.Context, _ string, messages []fantasy.Message) ([]fantasy.Message, error) {
 				e.mu.Lock()
+				e.criticalFail = false
 				warning := e.pendingWarning
 				e.pendingWarning = ""
+				handler := e.handler
 				e.mu.Unlock()
+
+				// Capture baseline + snapshot pre-edit so rollback restores
+				// original content, not post-edit state.
+				if handler != nil && handler.Enabled() {
+					filePaths := extractFilePathsFromMessages(messages)
+					if len(filePaths) > 0 {
+						handler.CaptureBaseline(ctx, filePaths)
+						snapshot, err := handler.CaptureSnapshot(filePaths)
+						if err == nil && snapshot != nil {
+							e.mu.Lock()
+							for _, fp := range filePaths {
+								e.pendingSnapshots[fp] = snapshot
+							}
+							e.mu.Unlock()
+						}
+					}
+				}
 
 				if warning == "" {
 					return messages, nil
@@ -131,8 +154,23 @@ func (e *TreesitterExtension) StepHooks() []ext.StepHook {
 				}
 
 				for _, info := range editInfos {
-					snapshot, _ := handler.CaptureSnapshot([]string{info.filePath})
-					result, err := handler.ValidateEdit(ctx, snapshot, info.filePath, info.oldContent, info.newContent, info.editSpec)
+					e.mu.Lock()
+					snapshot := e.pendingSnapshots[info.filePath]
+					delete(e.pendingSnapshots, info.filePath)
+					e.mu.Unlock()
+
+					if snapshot == nil {
+						snapshot, _ = handler.CaptureSnapshot([]string{info.filePath})
+					}
+
+					preEditContent := snapshotContent(snapshot, info.filePath)
+					if preEditContent == "" {
+						if content, err := os.ReadFile(info.filePath); err == nil {
+							preEditContent = string(content)
+						}
+					}
+
+					result, err := handler.ValidateEdit(ctx, snapshot, info.filePath, preEditContent, info.newContent, info.editSpec)
 					if err != nil {
 						slog.Debug("TreesitterExtension: ValidateEdit error",
 							"file", info.filePath,
@@ -172,10 +210,10 @@ func (e *TreesitterExtension) StepHooks() []ext.StepHook {
 }
 
 type editInfo struct {
-	filePath   string
-	oldContent string
-	newContent string
-	editSpec   tools.EditSpec
+	filePath       string
+	preEditContent string
+	newContent     string
+	editSpec       tools.EditSpec
 }
 
 func extractEditInfoFromStep(step fantasy.StepResult) []editInfo {
@@ -225,19 +263,22 @@ func parseEditInfoFromJSON(input string) (editInfo, bool) {
 		return editInfo{}, false
 	}
 
+	var oldStr, newStr string
 	if v, ok := raw["old_string"]; ok {
-		_ = json.Unmarshal(v, &info.oldContent)
+		_ = json.Unmarshal(v, &oldStr)
 	}
 	if v, ok := raw["new_string"]; ok {
-		_ = json.Unmarshal(v, &info.newContent)
+		_ = json.Unmarshal(v, &newStr)
 	}
 	if v, ok := raw["content"]; ok {
-		_ = json.Unmarshal(v, &info.newContent)
+		_ = json.Unmarshal(v, &newStr)
 	}
 
+	info.newContent = newStr
+
 	info.editSpec = tools.EditSpec{
-		OldString:  info.oldContent,
-		NewString:  info.newContent,
+		OldString:  oldStr,
+		NewString:  newStr,
 		ReplaceAll: false,
 	}
 
@@ -262,6 +303,18 @@ func formatPipelineWarning(result *tools.ValidationHandlerResult) string {
 		msg += fmt.Sprintf(" (failed stages: %v)", failed)
 	}
 	return msg
+}
+
+func snapshotContent(snap *tools.Snapshot, filePath string) string {
+	if snap == nil {
+		return ""
+	}
+	for _, f := range snap.Files {
+		if f.FilePath == filePath {
+			return f.Content
+		}
+	}
+	return ""
 }
 
 var (

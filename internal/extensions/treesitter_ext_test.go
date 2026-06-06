@@ -5,6 +5,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"charm.land/fantasy"
@@ -196,8 +197,9 @@ func TestExtractEditInfoFromStep_EditTool(t *testing.T) {
 	infos := extractEditInfoFromStep(step)
 	require.Len(t, infos, 1)
 	require.Equal(t, "/tmp/test.go", infos[0].filePath)
-	require.Equal(t, "func old()", infos[0].oldContent)
 	require.Equal(t, "func new()", infos[0].newContent)
+	require.Equal(t, "func old()", infos[0].editSpec.OldString)
+	require.Equal(t, "func new()", infos[0].editSpec.NewString)
 }
 
 func TestExtractEditInfoFromStep_WriteTool(t *testing.T) {
@@ -265,4 +267,375 @@ func TestFormatPipelineWarning_WithRollback(t *testing.T) {
 	}
 	warning := formatPipelineWarning(result)
 	require.Contains(t, warning, "rolled back")
+}
+
+func TestParseEditInfoFromJSON_ReadsFullFileFromDisk(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/test.go"
+
+	fullContent := `package main
+
+func old() {}
+func helper() {}
+`
+	require.NoError(t, os.WriteFile(filePath, []byte(fullContent), 0o644))
+
+	input := map[string]string{
+		"file_path":  filePath,
+		"old_string": "func old()",
+		"new_string": "func new()",
+	}
+	inputJSON, _ := json.Marshal(input)
+
+	info, ok := parseEditInfoFromJSON(string(inputJSON))
+	require.True(t, ok)
+	require.Equal(t, filePath, info.filePath)
+	require.Equal(t, "", info.preEditContent, "parseEditInfoFromJSON no longer reads from disk")
+	require.Equal(t, "func new()", info.newContent)
+	require.Equal(t, "func old()", info.editSpec.OldString)
+	require.Equal(t, "func new()", info.editSpec.NewString)
+}
+
+func TestParseEditInfoFromJSON_MissingFileReturnsEmptyOldContent(t *testing.T) {
+	input := map[string]string{
+		"file_path":  "/nonexistent/path/test.go",
+		"old_string": "func old()",
+		"new_string": "func new()",
+	}
+	inputJSON, _ := json.Marshal(input)
+
+	info, ok := parseEditInfoFromJSON(string(inputJSON))
+	require.True(t, ok)
+	require.Equal(t, "", info.preEditContent)
+	require.Equal(t, "func old()", info.editSpec.OldString)
+	require.Equal(t, "func new()", info.editSpec.NewString)
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests: full validation lifecycle through hook closures
+// ---------------------------------------------------------------------------
+
+// helperInitActiveExtension creates an initialised, active TreesitterExtension.
+func helperInitActiveExtension(t *testing.T) *TreesitterExtension {
+	t.Helper()
+	e := &TreesitterExtension{}
+	host := &mockHostContext{cfg: &config.Config{
+		Options: &config.Options{
+			Validation: &config.ValidationOptions{Enabled: true},
+		},
+	}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+	require.True(t, e.active)
+	return e
+}
+
+func TestTreesitterExtension_FullValidationLifecycle(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/lifecycle.go"
+
+	validGo := `package main
+
+func hello() string { return "hello" }
+`
+	require.NoError(t, os.WriteFile(filePath, []byte(validGo), 0o644))
+
+	e := helperInitActiveExtension(t)
+	hooks := e.StepHooks()
+	require.Len(t, hooks, 1)
+
+	// Step 1: OnPrepareStep — captures snapshot of the file.
+	msgs := []fantasy.Message{
+		{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+			&fantasy.TextPart{Text: "let me edit the file"},
+		}},
+	}
+	prepared, err := hooks[0].OnPrepareStep(context.Background(), "s1", msgs)
+	require.NoError(t, err)
+	require.Equal(t, msgs, prepared, "no pending warning, messages unchanged")
+
+	// Step 2: OnStepFinish — non-edit step, no validation triggered.
+	textStep := fantasy.StepResult{
+		Messages: []fantasy.Message{
+			{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+				&fantasy.TextPart{Text: "just thinking"},
+			}},
+		},
+	}
+	require.NoError(t, hooks[0].OnStepFinish(context.Background(), "s1", textStep))
+	require.False(t, e.criticalFail, "no edit tools, no critical failure")
+
+	// Step 3: StopCondition — should be false.
+	require.False(t, hooks[0].StopCondition(context.Background(), nil))
+
+	// Verify file untouched.
+	got, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	require.Equal(t, validGo, string(got))
+}
+
+func TestTreesitterExtension_ValidationFailure_WithBadSyntax(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/badsyntax.go"
+
+	validGo := `package main
+
+func greet() string { return "hi" }
+func farewell() string { return "bye" }
+`
+	require.NoError(t, os.WriteFile(filePath, []byte(validGo), 0o644))
+
+	e := helperInitActiveExtension(t)
+	hooks := e.StepHooks()
+	require.Len(t, hooks, 1)
+
+	msgs := []fantasy.Message{
+		{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+			&fantasy.TextPart{Text: "editing"},
+		}},
+	}
+	_, err := hooks[0].OnPrepareStep(context.Background(), "s1", msgs)
+	require.NoError(t, err)
+
+	// SymbolConsistency failure (duplicate symbol definitions).
+	inputJSON, _ := json.Marshal(map[string]string{
+		"file_path":  filePath,
+		"old_string": `func farewell() string { return "bye" }`,
+		"new_string": `func greet() string { return "bye" }`,
+	})
+	editStep := fantasy.StepResult{
+		Messages: []fantasy.Message{
+			{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+				&fantasy.ToolCallPart{ToolName: "edit", Input: string(inputJSON)},
+			}},
+		},
+	}
+
+	require.NoError(t, hooks[0].OnStepFinish(context.Background(), "s1", editStep))
+
+	e.mu.RLock()
+	critical := e.criticalFail
+	warning := e.pendingWarning
+	e.mu.RUnlock()
+	require.True(t, critical, "criticalFail should be set for duplicate symbol edit")
+	require.True(t, hooks[0].StopCondition(context.Background(), nil),
+		"StopCondition should return true after critical fail")
+	require.NotEmpty(t, warning, "pendingWarning should be set")
+	require.Contains(t, warning, "tree-sitter validation detected errors")
+
+	got, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	require.Equal(t, validGo, string(got),
+		"file should be rolled back to pre-edit snapshot")
+}
+
+func TestTreesitterExtension_ValidationPass_WithGoodEdit(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/goodedit.go"
+
+	originalGo := `package main
+
+func greet() string { return "hi" }
+`
+	require.NoError(t, os.WriteFile(filePath, []byte(originalGo), 0o644))
+
+	e := helperInitActiveExtension(t)
+	hooks := e.StepHooks()
+	require.Len(t, hooks, 1)
+
+	// OnPrepareStep — captures snapshot.
+	msgs := []fantasy.Message{
+		{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+			&fantasy.TextPart{Text: "editing"},
+		}},
+	}
+	_, err := hooks[0].OnPrepareStep(context.Background(), "s1", msgs)
+	require.NoError(t, err)
+
+	// Build edit step that produces valid Go.
+	inputJSON, _ := json.Marshal(map[string]string{
+		"file_path":  filePath,
+		"old_string": `func greet() string { return "hi" }`,
+		"new_string": `func greet() string { return "hello" }`,
+	})
+	editStep := fantasy.StepResult{
+		Messages: []fantasy.Message{
+			{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+				&fantasy.ToolCallPart{ToolName: "edit", Input: string(inputJSON)},
+			}},
+		},
+	}
+
+	require.NoError(t, hooks[0].OnStepFinish(context.Background(), "s1", editStep))
+
+	// Validation should pass — no critical fail, no stop.
+	e.mu.RLock()
+	critical := e.criticalFail
+	warning := e.pendingWarning
+	e.mu.RUnlock()
+	require.False(t, critical, "criticalFail should remain false for valid Go edit")
+	require.False(t, hooks[0].StopCondition(context.Background(), nil),
+		"StopCondition should return false when validation passes")
+	require.Empty(t, warning, "no pending warning for passing edit")
+}
+
+func TestTreesitterCriticalFailRecovery(t *testing.T) {
+	t.Parallel()
+
+	e := helperInitActiveExtension(t)
+	hooks := e.StepHooks()
+	require.Len(t, hooks, 1)
+	hook := hooks[0]
+
+	e.mu.Lock()
+	e.criticalFail = true
+	e.mu.Unlock()
+
+	require.True(t, hook.StopCondition(context.Background(), nil),
+		"StopCondition should return true when criticalFail is set")
+
+	_, err := hook.OnPrepareStep(context.Background(), "session", nil)
+	require.NoError(t, err)
+
+	require.False(t, hook.StopCondition(context.Background(), nil),
+		"criticalFail should reset at the start of OnPrepareStep")
+
+	e.mu.Lock()
+	e.criticalFail = true
+	e.mu.Unlock()
+	require.True(t, hook.StopCondition(context.Background(), nil))
+
+	_, err = hook.OnPrepareStep(context.Background(), "session", nil)
+	require.NoError(t, err)
+	require.False(t, hook.StopCondition(context.Background(), nil),
+		"criticalFail should reset again on second OnPrepareStep")
+}
+
+func TestTreesitterCriticalFailRecovery_AfterValidationFailure(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/fail_recovery.go"
+
+	validGo := `package main
+
+func greet() string { return "hi" }
+func farewell() string { return "bye" }
+`
+	require.NoError(t, os.WriteFile(filePath, []byte(validGo), 0o644))
+
+	e := helperInitActiveExtension(t)
+	hooks := e.StepHooks()
+	hook := hooks[0]
+
+	msgs := []fantasy.Message{
+		{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+			&fantasy.TextPart{Text: "editing"},
+		}},
+	}
+	_, err := hook.OnPrepareStep(context.Background(), "s1", msgs)
+	require.NoError(t, err)
+
+	inputJSON, _ := json.Marshal(map[string]string{
+		"file_path":  filePath,
+		"old_string": `func farewell() string { return "bye" }`,
+		"new_string": `func greet() string { return "bye" }`,
+	})
+	editStep := fantasy.StepResult{
+		Messages: []fantasy.Message{
+			{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+				&fantasy.ToolCallPart{ToolName: "edit", Input: string(inputJSON)},
+			}},
+		},
+	}
+	require.NoError(t, hook.OnStepFinish(context.Background(), "s1", editStep))
+	require.True(t, hook.StopCondition(context.Background(), nil),
+		"StopCondition should be true after validation failure")
+
+	_, err = hook.OnPrepareStep(context.Background(), "s1", msgs)
+	require.NoError(t, err)
+	require.False(t, hook.StopCondition(context.Background(), nil),
+		"criticalFail should reset on next OnPrepareStep, allowing agent to recover")
+}
+
+func TestTreesitterPreEditSnapshot(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/snapshot_test.go"
+
+	preEditContent := `package main
+
+func old() {}
+`
+	postEditContent := `package main
+
+func new() {}
+`
+	require.NoError(t, os.WriteFile(filePath, []byte(preEditContent), 0o644))
+
+	e := helperInitActiveExtension(t)
+	hooks := e.StepHooks()
+	hook := hooks[0]
+
+	editInputJSON, _ := json.Marshal(map[string]string{
+		"file_path":  filePath,
+		"old_string": "func old()",
+		"new_string": "func new()",
+	})
+	msgs := []fantasy.Message{
+		{Role: fantasy.MessageRoleAssistant, Content: []fantasy.MessagePart{
+			&fantasy.ToolCallPart{ToolName: "edit", Input: string(editInputJSON)},
+		}},
+	}
+	_, err := hook.OnPrepareStep(context.Background(), "s1", msgs)
+	require.NoError(t, err)
+
+	e.mu.RLock()
+	snap := e.pendingSnapshots[filePath]
+	e.mu.RUnlock()
+	require.NotNil(t, snap, "pendingSnapshots should contain entry for file")
+	require.Equal(t, preEditContent, snapshotContent(snap, filePath),
+		"snapshot should hold pre-edit content")
+
+	require.NoError(t, os.WriteFile(filePath, []byte(postEditContent), 0o644))
+
+	e.mu.RLock()
+	snapAfter := e.pendingSnapshots[filePath]
+	e.mu.RUnlock()
+	require.Equal(t, preEditContent, snapshotContent(snapAfter, filePath),
+		"snapshot should still hold pre-edit content after disk is overwritten")
+}
+
+func TestSnapshotContent_NilSnapshot(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "", snapshotContent(nil, "/some/file.go"))
+}
+
+func TestSnapshotContent_FileNotInSnapshot(t *testing.T) {
+	t.Parallel()
+	snap := &tools.Snapshot{
+		Files: []tools.FileSnapshot{
+			{FilePath: "/other/file.go", Content: "package other"},
+		},
+	}
+	require.Equal(t, "", snapshotContent(snap, "/some/other.go"))
+}
+
+func TestSnapshotContent_ExtractsCorrectFile(t *testing.T) {
+	t.Parallel()
+	snap := &tools.Snapshot{
+		Files: []tools.FileSnapshot{
+			{FilePath: "/a.go", Content: "package a"},
+			{FilePath: "/b.go", Content: "package b"},
+		},
+	}
+	require.Equal(t, "package a", snapshotContent(snap, "/a.go"))
+	require.Equal(t, "package b", snapshotContent(snap, "/b.go"))
 }

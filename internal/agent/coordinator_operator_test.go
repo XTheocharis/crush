@@ -61,7 +61,7 @@ func TestOperatorFallbackOnFailure(t *testing.T) {
 			{Description: "step three"},
 			{Description: "step four"},
 		},
-		Rationale: "plan that will fail",
+		Rationale: "plan that will fail", //nolint:unusedwrite
 	}
 
 	subtasks := planStepsToSubtasks(plan.Steps)
@@ -95,7 +95,7 @@ func TestOperatorSingleStepSkipped(t *testing.T) {
 			{Description: "second step"},
 			{Description: "third step"},
 		},
-		Rationale: "simple plan",
+		Rationale: "simple plan", //nolint:unusedwrite
 	}
 
 	subtasks := planStepsToSubtasks(plan.Steps)

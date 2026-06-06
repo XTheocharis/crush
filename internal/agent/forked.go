@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"runtime"
 	"sync"
 	"time"
 
@@ -385,14 +384,10 @@ func (fa *ForkedAgent) Run(ctx context.Context) error {
 			return nil
 		}
 
-		select {
-		case <-runCtx.Done():
-			return runCtx.Err()
-		default:
-		}
-
 		var turnPrompt string
 		if fa.inbox != nil {
+			// Block until a message arrives or the context is
+			// cancelled. No busy-spin.
 			select {
 			case msg, ok := <-fa.inbox:
 				if !ok {
@@ -401,14 +396,14 @@ func (fa *ForkedAgent) Run(ctx context.Context) error {
 				turnPrompt = msg.Content
 			case <-runCtx.Done():
 				return runCtx.Err()
-			default:
-				runtime.Gosched()
-				continue
 			}
+		} else {
+			// No inbox: block on context cancellation.
+			<-runCtx.Done()
+			return runCtx.Err()
 		}
 
 		if turnPrompt == "" {
-			runtime.Gosched()
 			continue
 		}
 
@@ -515,9 +510,10 @@ func (fa *ForkedAgent) Stop() {
 	}
 }
 
-// Close unregisters the agent from the mailbox and registry, releasing
-// resources.
+// Close stops the agent if running, then unregisters from the mailbox and
+// registry, releasing resources.
 func (fa *ForkedAgent) Close() {
+	fa.Stop()
 	if fa.mailbox != nil {
 		fa.mailbox.Unregister(fa.name)
 	}

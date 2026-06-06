@@ -46,9 +46,6 @@ func xrushStubExecutor(responses ...StructuredResponse) SubagentExecutor {
 	return rec.exec
 }
 
-//go:fix inline
-func xrushPtrBool(b bool) *bool { return new(b) }
-
 // Tests from operator_test.go
 
 func TestXrushOperatorLLMMapRunsInParallel(t *testing.T) {

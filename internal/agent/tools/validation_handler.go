@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/charmbracelet/crush/internal/treesitter"
 )
@@ -43,11 +42,10 @@ type ValidationHandlerResult struct {
 //
 // It is optional — when config.Enabled is false, ValidateEdit is a no-op.
 type ValidationHandler struct {
-	config    ValidationHandlerConfig
-	pipeline  *ValidationPipeline
-	rollback  *RollbackManager
-	autofixer *AutoFixer
-	diagGate  *DiagnosticGate
+	config   ValidationHandlerConfig
+	pipeline *ValidationPipeline
+	rollback *RollbackManager
+	diagGate *DiagnosticGate
 }
 
 // NewValidationHandler creates a new ValidationHandler. The parser may be nil
@@ -94,6 +92,16 @@ func NewValidationHandler(
 
 func (vh *ValidationHandler) Enabled() bool {
 	return vh.config.Enabled
+}
+
+// CaptureBaseline captures the current LSP diagnostic baseline for the given
+// file paths. Call this BEFORE edits execute so that post-edit Compare can
+// distinguish new errors from pre-existing ones.
+func (vh *ValidationHandler) CaptureBaseline(ctx context.Context, filePaths []string) {
+	if !vh.config.Enabled || vh.diagGate == nil {
+		return
+	}
+	vh.diagGate.CaptureBaseline(ctx, filePaths)
 }
 
 // CaptureSnapshot captures the pre-edit state of the given file paths via the
@@ -143,36 +151,6 @@ func (vh *ValidationHandler) ValidateEdit(
 		return result, nil
 	}
 
-	if vh.config.AutoFix && vh.autofixer != nil {
-		slog.Debug("ValidationHandler: pipeline failed, attempting auto-fix",
-			"file", filePath,
-			"failedStages", countFailedStages(pipelineResult),
-		)
-
-		if err := os.WriteFile(filePath, []byte(result.FinalContent), 0o644); err != nil {
-			return nil, fmt.Errorf("validation handler: write for auto-fix: %w", err)
-		}
-
-		autoFixResult, err := vh.autofixer.Run(ctx, filePath)
-		if err != nil {
-			slog.Debug("ValidationHandler: auto-fix error", "error", err)
-		}
-		result.AutoFixResult = &autoFixResult
-
-		if fixed, err := os.ReadFile(filePath); err == nil {
-			result.FinalContent = string(fixed)
-		}
-
-		if len(autoFixResult.RemainingErrors) == 0 && err == nil {
-			slog.Debug("ValidationHandler: auto-fix resolved all errors")
-			return result, nil
-		}
-
-		slog.Debug("ValidationHandler: auto-fix did not resolve all errors",
-			"remaining", len(autoFixResult.RemainingErrors),
-		)
-	}
-
 	if snapshot != nil {
 		slog.Debug("ValidationHandler: rolling back", "file", filePath)
 		if err := vh.rollback.Restore(snapshot); err != nil {
@@ -185,10 +163,6 @@ func (vh *ValidationHandler) ValidateEdit(
 	}
 
 	return result, nil
-}
-
-func (vh *ValidationHandler) SetAutoFixer(af *AutoFixer) {
-	vh.autofixer = af
 }
 
 func (vh *ValidationHandler) ReplaceStages(stages []ValidationStage) {

@@ -74,8 +74,8 @@ func (e *editor) UpdateMessageText(ctx context.Context, sessionID string, seq in
 	parts := editorStringParts(newText)
 
 	return e.q.UpdateMessage(ctx, db.UpdateMessageParams{
-		Parts:  parts,
-		ID:     msg.ID,
+		Parts: parts,
+		ID:    msg.ID,
 	})
 }
 

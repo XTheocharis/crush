@@ -51,7 +51,7 @@ type HostDeps struct {
 	WorkingDir    string
 	Completer     TextCompleter
 	ToolDefsFn    func() []processor.ToolDef
-	SkillDefsFn    func() []processor.SkillDef
+	SkillDefsFn   func() []processor.SkillDef
 	RewindService rewind.Service
 	FileTracker   filetracker.Service
 }

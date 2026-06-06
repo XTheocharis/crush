@@ -144,6 +144,8 @@ func NewValidationHandler(
 
 func (vh *ValidationHandler) Enabled() bool { return false }
 
+func (vh *ValidationHandler) CaptureBaseline(_ context.Context, _ []string) {}
+
 func (vh *ValidationHandler) CaptureSnapshot(filePaths []string) (*Snapshot, error) {
 	return nil, fmt.Errorf("validation handler not available: treesitter not enabled")
 }
@@ -158,7 +160,5 @@ func (vh *ValidationHandler) ValidateEdit(
 ) (*ValidationHandlerResult, error) {
 	return nil, fmt.Errorf("validation handler not available: treesitter not enabled")
 }
-
-func (vh *ValidationHandler) SetAutoFixer(_ *AutoFixer) {}
 
 func (vh *ValidationHandler) ReplaceStages(_ []ValidationStage) {}

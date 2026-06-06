@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -295,34 +296,81 @@ func (op *Operator) runAgenticMap(ctx context.Context, subtasks []Subtask, depth
 func (op *Operator) runParallel(ctx context.Context, subtasks []Subtask, depth int, contextFn func(Subtask) map[string]string) OperatorResult {
 	workers := min(len(subtasks), op.cfg.MaxWorkers)
 
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, workers)
+	// Compute depth levels for dependency-aware parallelism. Tasks with
+	// no dependencies are at depth 0; each task's depth is one more than
+	// the maximum depth of its dependencies. Tasks at the same depth run
+	// concurrently; we wait for all tasks at depth N before starting N+1.
+	levels := computeDepthLevels(subtasks)
+
 	results := make([]StructuredResponse, len(subtasks))
 	errs := make([]string, len(subtasks))
 
-	for i, st := range subtasks {
-		wg.Add(1)
-		go func(idx int, subtask Subtask) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+	for _, level := range levels {
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, workers)
 
-			req := StructuredRequest{
-				Task:    subtask.Task,
-				Context: contextFn(subtask),
-				Tools:   subtask.Tools,
-			}
-			resp, err := op.executor(ctx, req)
-			if err != nil {
-				errs[idx] = err.Error()
-				return
-			}
-			results[idx] = resp
-		}(i, st)
+		for _, idx := range level {
+			wg.Add(1)
+			go func(i int, subtask Subtask) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				req := StructuredRequest{
+					Task:    subtask.Task,
+					Context: contextFn(subtask),
+					Tools:   subtask.Tools,
+				}
+				resp, err := op.executor(ctx, req)
+				if err != nil {
+					errs[i] = err.Error()
+					return
+				}
+				results[i] = resp
+			}(idx, subtasks[idx])
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 
 	return op.aggregateResults(results, errs, depth)
+}
+
+// computeDepthLevels groups topologically-sorted subtasks by their dependency
+// depth. The returned slice contains one entry per depth level, where each
+// entry holds the indices of subtasks that can run concurrently. Tasks at
+// level 0 have no dependencies; level N+1 tasks depend only on tasks at
+// levels 0..N.
+func computeDepthLevels(subtasks []Subtask) [][]int {
+	idToIdx := make(map[string]int, len(subtasks))
+	for i, st := range subtasks {
+		idToIdx[st.ID] = i
+	}
+
+	depths := make([]int, len(subtasks))
+	for i, st := range subtasks {
+		maxDepDepth := -1
+		for _, depID := range st.DependsOn {
+			if depIdx, ok := idToIdx[depID]; ok {
+				if depths[depIdx] > maxDepDepth {
+					maxDepDepth = depths[depIdx]
+				}
+			}
+		}
+		depths[i] = maxDepDepth + 1
+	}
+
+	maxLevel := 0
+	for _, d := range depths {
+		if d > maxLevel {
+			maxLevel = d
+		}
+	}
+
+	levels := make([][]int, maxLevel+1)
+	for i, d := range depths {
+		levels[d] = append(levels[d], i)
+	}
+	return levels
 }
 
 func (op *Operator) runBatch(ctx context.Context, subtasks []Subtask, depth int) OperatorResult {
@@ -466,10 +514,10 @@ func taskSignature(task string, context map[string]string) string {
 	h := sha256.New()
 	io.WriteString(h, task)
 	io.WriteString(h, "\x00")
-	for k, v := range context {
+	for _, k := range slices.Sorted(maps.Keys(context)) {
 		io.WriteString(h, k)
 		io.WriteString(h, "=")
-		io.WriteString(h, v)
+		io.WriteString(h, context[k])
 		io.WriteString(h, "\x00")
 	}
 	return hex.EncodeToString(h.Sum(nil))

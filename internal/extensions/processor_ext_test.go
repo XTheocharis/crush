@@ -33,14 +33,14 @@ func (m *mockHostContext) RegisterPromptHook(ext.PromptHookProvider) {}
 func (m *mockHostContext) PublishEvent(_ context.Context, _ string, _ any) error {
 	return nil
 }
-func (m *mockHostContext) LSP() *lsp.Manager               { return nil }
-func (m *mockHostContext) DB() *sql.DB                     { return nil }
-func (m *mockHostContext) Sessions() session.Service       { return nil }
-func (m *mockHostContext) Messages() message.Service       { return nil }
-func (m *mockHostContext) RewindService() rewind.Service      { return nil }
-func (m *mockHostContext) FileTracker() filetracker.Service   { return nil }
-func (m *mockHostContext) ToolDefs() []processor.ToolDef   { return nil }
-func (m *mockHostContext) SkillDefs() []processor.SkillDef { return nil }
+func (m *mockHostContext) LSP() *lsp.Manager                { return nil }
+func (m *mockHostContext) DB() *sql.DB                      { return nil }
+func (m *mockHostContext) Sessions() session.Service        { return nil }
+func (m *mockHostContext) Messages() message.Service        { return nil }
+func (m *mockHostContext) RewindService() rewind.Service    { return nil }
+func (m *mockHostContext) FileTracker() filetracker.Service { return nil }
+func (m *mockHostContext) ToolDefs() []processor.ToolDef    { return nil }
+func (m *mockHostContext) SkillDefs() []processor.SkillDef  { return nil }
 
 func TestProcessorExtension_Name(t *testing.T) {
 	t.Parallel()

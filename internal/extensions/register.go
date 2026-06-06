@@ -8,6 +8,10 @@ import "github.com/charmbracelet/crush/internal/ext"
 
 func init() {
 	ext.RegisterExtension(&LSPToolsExtension{})
+	// TreesitterExtension must be registered BEFORE DiagGateExtension.
+	// The OnPrepareStep hook order matters: TreesitterExtension captures
+	// validation baseline first, then DiagGateExtension captures its own
+	// baseline for logging. Both operate on independent gate instances.
 	ext.RegisterExtension(&TreesitterExtension{})
 	ext.RegisterExtension(&AutofixExtension{})
 	ext.RegisterExtension(&DiagGateExtension{})

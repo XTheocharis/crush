@@ -33,14 +33,14 @@ func (m *resourceMockHost) RegisterPromptHook(ext.PromptHookProvider) {}
 func (m *resourceMockHost) PublishEvent(_ context.Context, _ string, _ any) error {
 	return nil
 }
-func (m *resourceMockHost) LSP() *lsp.Manager               { return nil }
-func (m *resourceMockHost) DB() *sql.DB                     { return nil }
-func (m *resourceMockHost) Sessions() session.Service       { return nil }
-func (m *resourceMockHost) Messages() message.Service       { return nil }
-func (m *resourceMockHost) RewindService() rewind.Service      { return nil }
-func (m *resourceMockHost) FileTracker() filetracker.Service   { return nil }
-func (m *resourceMockHost) ToolDefs() []processor.ToolDef   { return nil }
-func (m *resourceMockHost) SkillDefs() []processor.SkillDef { return nil }
+func (m *resourceMockHost) LSP() *lsp.Manager                { return nil }
+func (m *resourceMockHost) DB() *sql.DB                      { return nil }
+func (m *resourceMockHost) Sessions() session.Service        { return nil }
+func (m *resourceMockHost) Messages() message.Service        { return nil }
+func (m *resourceMockHost) RewindService() rewind.Service    { return nil }
+func (m *resourceMockHost) FileTracker() filetracker.Service { return nil }
+func (m *resourceMockHost) ToolDefs() []processor.ToolDef    { return nil }
+func (m *resourceMockHost) SkillDefs() []processor.SkillDef  { return nil }
 
 func TestResourceLimitsExtension_NameAndLifecycle(t *testing.T) {
 	t.Parallel()

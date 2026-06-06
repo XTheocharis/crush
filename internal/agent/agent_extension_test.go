@@ -175,7 +175,7 @@ func TestAgentExtHostHooksAccessible(t *testing.T) {
 		},
 	}
 
-	_ = &testExtension{name: "hook_ext"}
+	_ = &testExtension{} //nolint:unusedwrite
 	// We can't easily create RunHookProvider with the testExtension in this package,
 	// so test via the host directly.
 	host := ext.NewExtensionHost(ext.HostDeps{})
