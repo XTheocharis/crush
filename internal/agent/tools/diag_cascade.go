@@ -182,32 +182,9 @@ func (dc *DiagnosticCascade) findImporters(ctx context.Context, filePath string)
 	return importers
 }
 
-// resolveForwardImports runs ForwardImportResolution on each importing file
-// to discover which symbols they use from the edited package. Results are
-// logged at debug level; the analysis informs future cascade prioritization.
+// resolveForwardImports delegates to build-tagged implementation.
 func (dc *DiagnosticCascade) resolveForwardImports(ctx context.Context, importers []string) {
-	for _, importer := range importers {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		resolved, err := ForwardImportResolution(
-			ctx, dc.parser, importer, dc.projectRoot, dc.modulePath,
-		)
-		if err != nil {
-			slog.Debug("Cascade: ForwardImportResolution failed",
-				"file", importer, "error", err,
-			)
-			continue
-		}
-		if len(resolved) > 0 {
-			slog.Debug("Cascade: ForwardImportResolution resolved",
-				"file", importer, "imports", len(resolved),
-			)
-		}
-	}
+	dc.forwardResolve(ctx, importers)
 }
 
 // FormatCascadeResult formats a CascadeResult into a human-readable string
