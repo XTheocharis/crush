@@ -65,6 +65,8 @@ type AutoMemoryExtractor struct {
 	llm      LLMClient
 	mu       sync.Mutex
 	interval int // turns between extractions
+	// enabled controls whether extraction is active. Defaults to true.
+	enabled bool
 	// sessionBudget overrides MemorySessionMaxChars when > 0.
 	sessionBudget int
 	// pending tracks session IDs with an in-flight extraction to prevent
@@ -87,6 +89,7 @@ func NewAutoMemoryExtractor(store *Store, llm LLMClient, interval int) *AutoMemo
 		store:              store,
 		llm:                llm,
 		interval:           interval,
+		enabled:            true,
 		pending:            make(map[string]struct{}),
 		lastProcessedIndex: make(map[string]int),
 	}
@@ -103,6 +106,22 @@ func (e *AutoMemoryExtractor) SetSessionBudget(budget int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.sessionBudget = budget
+}
+
+// SetEnabled enables or disables auto-memory extraction.
+func (e *AutoMemoryExtractor) SetEnabled(enabled bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.enabled = enabled
+}
+
+// SetInterval updates the turn interval between extractions.
+func (e *AutoMemoryExtractor) SetInterval(interval int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if interval > 0 {
+		e.interval = interval
+	}
 }
 
 func (e *AutoMemoryExtractor) getSessionBudget() int {
@@ -140,8 +159,15 @@ type ExtractResult struct {
 }
 
 // ShouldExtract returns true when the given turn count is a multiple of the
-// configured interval (and is non-zero).
+// configured interval (and is non-zero). Returns false when extraction is
+// disabled.
 func (e *AutoMemoryExtractor) ShouldExtract(turnCount int) bool {
+	e.mu.Lock()
+	enabled := e.enabled
+	e.mu.Unlock()
+	if !enabled {
+		return false
+	}
 	return turnCount > 0 && turnCount%e.interval == 0
 }
 

@@ -175,7 +175,6 @@ Key types:
 - `ResourceUsage` — real-time resource consumption tracker.
 - `ResourceLimit` — soft/hard limit for a single resource dimension.
 - `SubagentLimits` — per-subagent-type resource limits.
-- `ResourceLimitedTask` — task wrapper with limit enforcement.
 
 ## Context and Caching
 

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -251,83 +250,4 @@ func (r ResourceLimitResult) Error() string {
 	return fmt.Sprintf("subagent terminated: %s exceeded (tokens=%d, steps=%d, elapsed=%s)",
 		r.HardLimit, r.Usage.TokensUsed, r.Usage.StepsTaken, r.Usage.Elapsed,
 	)
-}
-
-// ResourceLimitedTask wraps a Task with resource limit enforcement. It tracks
-// usage via a ResourceUsage instance and checks limits after each token
-// addition or step. On hard limit breach, the task's context is cancelled.
-type ResourceLimitedTask struct {
-	usage  *ResourceUsage
-	limits SubagentLimits
-	cancel context.CancelFunc
-}
-
-// NewResourceLimitedTask creates a wrapper that enforces the given limits. The
-// returned context is derived from parent and will be cancelled on hard limit
-// breach.
-func NewResourceLimitedTask(parent context.Context, limits SubagentLimits) (*ResourceLimitedTask, context.Context) {
-	ctx, cancel := context.WithCancel(parent)
-	return &ResourceLimitedTask{
-		usage:  NewResourceUsage(),
-		limits: limits,
-		cancel: cancel,
-	}, ctx
-}
-
-// Usage returns the underlying ResourceUsage tracker.
-func (t *ResourceLimitedTask) Usage() *ResourceUsage {
-	return t.usage
-}
-
-// Check evaluates all resource limits and returns a ResourceLimitResult if a
-// hard limit has been breached. On soft-limit breach, it logs a warning.
-func (t *ResourceLimitedTask) Check() *ResourceLimitResult {
-	snapshot := t.usage.Snapshot()
-
-	if t.limits.MaxTokens.Exceeded(int(snapshot.TokensUsed)) {
-		t.cancel()
-		return &ResourceLimitResult{
-			HardLimit: "tokens",
-			Usage:     snapshot,
-		}
-	}
-	t.usage.WarnTokensOnce(t.limits.MaxTokens)
-
-	if t.limits.MaxSteps.Exceeded(int(snapshot.StepsTaken)) {
-		t.cancel()
-		return &ResourceLimitResult{
-			HardLimit: "steps",
-			Usage:     snapshot,
-		}
-	}
-	t.usage.WarnStepsOnce(t.limits.MaxSteps)
-
-	if t.limits.DurationExceeded(snapshot.Elapsed) {
-		t.cancel()
-		return &ResourceLimitResult{
-			HardLimit: "duration",
-			Usage:     snapshot,
-		}
-	}
-	t.usage.WarnDurationOnce(t.limits)
-
-	return nil
-}
-
-// Cancel releases the context resources.
-func (t *ResourceLimitedTask) Cancel() {
-	t.cancel()
-}
-
-// TrackStep increments the step counter and checks limits.
-func (t *ResourceLimitedTask) TrackStep() *ResourceLimitResult {
-	t.usage.AddStep()
-	return t.Check()
-}
-
-// TrackTokens estimates tokens from text, increments the counter, and checks
-// limits.
-func (t *ResourceLimitedTask) TrackTokens(text string) *ResourceLimitResult {
-	t.usage.AddTokens(text)
-	return t.Check()
 }

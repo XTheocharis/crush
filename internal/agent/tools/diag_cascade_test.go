@@ -13,19 +13,19 @@ func TestDiagnosticCascade_NewDefaults(t *testing.T) {
 
 	t.Run("default max depth when zero", func(t *testing.T) {
 		t.Parallel()
-		c := NewDiagnosticCascade(nil, 0)
+		c := NewDiagnosticCascade(nil, 0, nil, "", "")
 		require.Equal(t, 3, c.maxDepth)
 	})
 
 	t.Run("default max depth when negative", func(t *testing.T) {
 		t.Parallel()
-		c := NewDiagnosticCascade(nil, -5)
+		c := NewDiagnosticCascade(nil, -5, nil, "", "")
 		require.Equal(t, 3, c.maxDepth)
 	})
 
 	t.Run("respects explicit depth", func(t *testing.T) {
 		t.Parallel()
-		c := NewDiagnosticCascade(nil, 5)
+		c := NewDiagnosticCascade(nil, 5, nil, "", "")
 		require.Equal(t, 5, c.maxDepth)
 	})
 }
@@ -33,7 +33,7 @@ func TestDiagnosticCascade_NewDefaults(t *testing.T) {
 func TestDiagnosticCascade_NilManager(t *testing.T) {
 	t.Parallel()
 
-	c := NewDiagnosticCascade(nil, 3)
+	c := NewDiagnosticCascade(nil, 3, nil, "", "")
 	result := c.RunCascade(context.Background(), "/some/file.go")
 	require.Empty(t, result.FilesChecked)
 	require.Empty(t, result.FileDiagnostics)
@@ -43,7 +43,7 @@ func TestDiagnosticCascade_NilManager(t *testing.T) {
 func TestDiagnosticCascade_EmptyFilePath(t *testing.T) {
 	t.Parallel()
 
-	c := NewDiagnosticCascade(nil, 3)
+	c := NewDiagnosticCascade(nil, 3, nil, "", "")
 	result := c.RunCascade(context.Background(), "")
 	require.Empty(t, result.FilesChecked)
 }
@@ -66,12 +66,12 @@ func TestDiagnosticCascadeDepthLimit(t *testing.T) {
 	t.Parallel()
 
 	// Verify depth limit is respected by checking the cascade config.
-	c := NewDiagnosticCascade(nil, 3)
+	c := NewDiagnosticCascade(nil, 3, nil, "", "")
 	require.Equal(t, 3, c.maxDepth)
 
 	// With nil manager, RunCascade returns empty — the depth limit itself
 	// is exercised when importers are found. We verify the struct honours it.
-	c2 := NewDiagnosticCascade(nil, 1)
+	c2 := NewDiagnosticCascade(nil, 1, nil, "", "")
 	require.Equal(t, 1, c2.maxDepth)
 }
 
@@ -183,7 +183,7 @@ func TestDiagnosticCascade_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	c := NewDiagnosticCascade(nil, 3)
+	c := NewDiagnosticCascade(nil, 3, nil, "", "")
 	result := c.RunCascade(ctx, "/some/file.go")
 	require.Empty(t, result.FilesChecked)
 }

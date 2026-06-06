@@ -95,6 +95,13 @@ type Manager interface {
 	// in characters. Values <= 0 keep the hardcoded default (60000).
 	SetSessionBudget(budget int)
 
+	// SetAutoMemoryEnabled enables or disables auto-memory extraction.
+	SetAutoMemoryEnabled(enabled bool)
+
+	// SetAutoMemoryInterval sets the turn interval between auto-memory
+	// extractions. Values <= 0 keep the current setting.
+	SetAutoMemoryInterval(interval int)
+
 	// SetModelOutputLimit sets the model's max output token limit for budget computation.
 	SetModelOutputLimit(limit int64)
 
@@ -592,6 +599,20 @@ func (m *compactionManager) SetSessionBudget(budget int) {
 		return
 	}
 	m.autoMemoryExtractor.SetSessionBudget(budget)
+}
+
+func (m *compactionManager) SetAutoMemoryEnabled(enabled bool) {
+	if m.autoMemoryExtractor == nil {
+		return
+	}
+	m.autoMemoryExtractor.SetEnabled(enabled)
+}
+
+func (m *compactionManager) SetAutoMemoryInterval(interval int) {
+	if interval <= 0 || m.autoMemoryExtractor == nil {
+		return
+	}
+	m.autoMemoryExtractor.SetInterval(interval)
 }
 
 // SetModelOutputLimit sets the model's max output token limit for budget computation.

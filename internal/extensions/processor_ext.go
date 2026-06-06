@@ -189,6 +189,10 @@ func (e *ProcessorExtension) processInput(ctx context.Context, _ string, message
 	return messages, nil
 }
 
+// processOutput invokes the output stream and output result processor phases.
+// OutputStreamPhase fires for each streaming chunk, enabling real-time
+// processing (e.g. system prompt leak detection). OutputResultPhase fires
+// once the full response is assembled.
 func (e *ProcessorExtension) processOutput(ctx context.Context, _ string, step fantasy.StepResult) {
 	e.mu.RLock()
 	runner := e.runner
@@ -205,6 +209,23 @@ func (e *ProcessorExtension) processOutput(ctx context.Context, _ string, step f
 	pmsgs := []processor.Message{
 		{Role: "assistant", Content: text},
 	}
+
+	// OutputStreamPhase: streaming chunk processing (e.g. PII redaction,
+	// system prompt scrubbing on partial output).
+	streamCtx := processor.ProcessorContext{
+		Phase:        processor.OutputStreamPhase,
+		OutputStream: text,
+		Messages:     pmsgs,
+		State:        make(map[string]any),
+		Metadata:     make(map[string]any),
+	}
+
+	_, err := runner.Execute(ctx, processor.OutputStreamPhase, streamCtx)
+	if err != nil {
+		slog.Debug("Processor output stream phase failed", "error", err)
+	}
+
+	// OutputResultPhase: final assembled output processing.
 	pctx := processor.ProcessorContext{
 		Phase:        processor.OutputResultPhase,
 		OutputResult: text,
@@ -213,9 +234,9 @@ func (e *ProcessorExtension) processOutput(ctx context.Context, _ string, step f
 		Metadata:     make(map[string]any),
 	}
 
-	_, err := runner.Execute(ctx, processor.OutputResultPhase, pctx)
+	_, err = runner.Execute(ctx, processor.OutputResultPhase, pctx)
 	if err != nil {
-		slog.Debug("Processor output phase failed", "error", err)
+		slog.Debug("Processor output result phase failed", "error", err)
 	}
 }
 

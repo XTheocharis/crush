@@ -1054,7 +1054,57 @@ func (e *testLLMError) Error() string { return "test LLM error" }
 
 var errTestLLM error = &testLLMError{}
 
-// itoa converts int to string without importing strconv.
+func TestAutoMemoryConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("disabled_returns_false", func(t *testing.T) {
+		t.Parallel()
+		extractor := NewAutoMemoryExtractor(nil, nil, 5)
+		require.True(t, extractor.ShouldExtract(5), "default should be enabled")
+
+		extractor.SetEnabled(false)
+		require.False(t, extractor.ShouldExtract(5), "disabled should not extract")
+		require.False(t, extractor.ShouldExtract(10), "disabled should not extract at any turn")
+	})
+
+	t.Run("nil_default_enabled", func(t *testing.T) {
+		t.Parallel()
+		extractor := NewAutoMemoryExtractor(nil, nil, 0)
+		require.True(t, extractor.ShouldExtract(5), "nil config (default interval) should trigger at turn 5")
+		require.False(t, extractor.ShouldExtract(3), "should not trigger at non-multiple turn")
+	})
+
+	t.Run("custom_interval", func(t *testing.T) {
+		t.Parallel()
+		extractor := NewAutoMemoryExtractor(nil, nil, 10)
+		require.False(t, extractor.ShouldExtract(5), "interval=10 should not trigger at 5")
+		require.True(t, extractor.ShouldExtract(10), "interval=10 should trigger at 10")
+
+		extractor.SetInterval(3)
+		require.True(t, extractor.ShouldExtract(3), "updated interval=3 should trigger at 3")
+		require.False(t, extractor.ShouldExtract(5), "updated interval=3 should not trigger at 5")
+		require.True(t, extractor.ShouldExtract(6), "updated interval=3 should trigger at 6")
+	})
+
+	t.Run("set_interval_ignores_invalid", func(t *testing.T) {
+		t.Parallel()
+		extractor := NewAutoMemoryExtractor(nil, nil, 5)
+		extractor.SetInterval(0)
+		require.True(t, extractor.ShouldExtract(5), "interval unchanged after SetInterval(0)")
+		extractor.SetInterval(-1)
+		require.True(t, extractor.ShouldExtract(5), "interval unchanged after SetInterval(-1)")
+	})
+
+	t.Run("re_enable_after_disable", func(t *testing.T) {
+		t.Parallel()
+		extractor := NewAutoMemoryExtractor(nil, nil, 5)
+		extractor.SetEnabled(false)
+		require.False(t, extractor.ShouldExtract(5))
+		extractor.SetEnabled(true)
+		require.True(t, extractor.ShouldExtract(5), "re-enabled should extract again")
+	})
+}
+
 func itoa(i int) string {
 	if i == 0 {
 		return "0"

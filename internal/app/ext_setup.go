@@ -63,6 +63,10 @@ func setupExtensions(ctx context.Context, app *App, conn *sql.DB, q db.Querier, 
 	wireLCMSessionBudget(store)
 	// [XRUSH: end]
 
+	// [XRUSH: begin: wire LCM auto-memory config from config]
+	wireLCMAutoMemoryConfig(store)
+	// [XRUSH: end]
+
 	// [XRUSH: begin: wire LCM post-compact config from config]
 	wireLCMPostCompactConfig(store)
 	// [XRUSH: end]

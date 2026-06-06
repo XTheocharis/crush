@@ -256,6 +256,35 @@ func wireLCMSessionBudget(store *config.ConfigStore) {
 
 // [XRUSH: end]
 
+// [XRUSH: begin: wireLCMAutoMemoryConfig]
+func wireLCMAutoMemoryConfig(store *config.ConfigStore) {
+	mgr := extensions.TheLCMExtension.Manager()
+	if mgr == nil {
+		return
+	}
+
+	cfg := store.Config()
+	if cfg.Options == nil || cfg.Options.LCM == nil {
+		return
+	}
+
+	if cfg.Options.LCM.AutoMemoryEnabled != nil {
+		mgr.SetAutoMemoryEnabled(*cfg.Options.LCM.AutoMemoryEnabled)
+		slog.Info("LCM auto-memory enabled set from config",
+			"enabled", *cfg.Options.LCM.AutoMemoryEnabled,
+		)
+	}
+
+	if cfg.Options.LCM.AutoMemoryInterval != nil {
+		mgr.SetAutoMemoryInterval(*cfg.Options.LCM.AutoMemoryInterval)
+		slog.Info("LCM auto-memory interval set from config",
+			"interval", *cfg.Options.LCM.AutoMemoryInterval,
+		)
+	}
+}
+
+// [XRUSH: end]
+
 // [XRUSH: begin: wireLCMPostCompactConfig]
 func wireLCMPostCompactConfig(store *config.ConfigStore) {
 	mgr := extensions.TheLCMExtension.Manager()

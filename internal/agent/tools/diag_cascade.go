@@ -30,19 +30,27 @@ type CascadeResult struct {
 // edited file's package. The cascade is depth-limited and uses LSP
 // reference resolution (best-effort) for discovering importers.
 type DiagnosticCascade struct {
-	lspManager *lsp.Manager
-	maxDepth   int
+	lspManager  *lsp.Manager
+	maxDepth    int
+	parser      any
+	projectRoot string
+	modulePath  string
 }
 
 // NewDiagnosticCascade creates a cascade with the given LSP manager and
-// depth limit. If maxDepth <= 0, defaults to 3.
-func NewDiagnosticCascade(lspManager *lsp.Manager, maxDepth int) *DiagnosticCascade {
+// depth limit. If maxDepth <= 0, defaults to 3. The parser, projectRoot,
+// and modulePath enable forward import resolution when treesitter is
+// available; they may be zero-valued if unavailable.
+func NewDiagnosticCascade(lspManager *lsp.Manager, maxDepth int, parser any, projectRoot, modulePath string) *DiagnosticCascade {
 	if maxDepth <= 0 {
 		maxDepth = defaultCascadeMaxDepth
 	}
 	return &DiagnosticCascade{
-		lspManager: lspManager,
-		maxDepth:   maxDepth,
+		lspManager:  lspManager,
+		maxDepth:    maxDepth,
+		parser:      parser,
+		projectRoot: projectRoot,
+		modulePath:  modulePath,
 	}
 }
 
@@ -112,6 +120,13 @@ func (dc *DiagnosticCascade) runCascadeRecursive(
 
 	// Find importers and recurse.
 	importers := dc.findImporters(ctx, absPath)
+
+	// Forward import resolution: resolve which symbols each importing file
+	// uses from the edited file via tree-sitter analysis.
+	if dc.parser != nil && dc.projectRoot != "" && len(importers) > 0 {
+		dc.resolveForwardImports(ctx, importers)
+	}
+
 	for _, importer := range importers {
 		dc.runCascadeRecursive(ctx, importer, depth+1, visited, result)
 	}
@@ -167,6 +182,34 @@ func (dc *DiagnosticCascade) findImporters(ctx context.Context, filePath string)
 	return importers
 }
 
+// resolveForwardImports runs ForwardImportResolution on each importing file
+// to discover which symbols they use from the edited package. Results are
+// logged at debug level; the analysis informs future cascade prioritization.
+func (dc *DiagnosticCascade) resolveForwardImports(ctx context.Context, importers []string) {
+	for _, importer := range importers {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		resolved, err := ForwardImportResolution(
+			ctx, dc.parser, importer, dc.projectRoot, dc.modulePath,
+		)
+		if err != nil {
+			slog.Debug("Cascade: ForwardImportResolution failed",
+				"file", importer, "error", err,
+			)
+			continue
+		}
+		if len(resolved) > 0 {
+			slog.Debug("Cascade: ForwardImportResolution resolved",
+				"file", importer, "imports", len(resolved),
+			)
+		}
+	}
+}
+
 // FormatCascadeResult formats a CascadeResult into a human-readable string
 // suitable for inclusion in a tool response.
 func FormatCascadeResult(result CascadeResult) string {
@@ -217,7 +260,7 @@ func runDiagnosticCascade(ctx context.Context, lspManager *lsp.Manager, filePath
 		return ""
 	}
 
-	cascade := NewDiagnosticCascade(lspManager, defaultCascadeMaxDepth)
+	cascade := NewDiagnosticCascade(lspManager, defaultCascadeMaxDepth, nil, "", "")
 	result := cascade.RunCascade(ctx, filePath)
 	return FormatCascadeResult(result)
 }

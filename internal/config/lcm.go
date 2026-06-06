@@ -56,6 +56,15 @@ type LCMOptions struct {
 	// When nil, the default strategy (always observe, JSON output) is used.
 	Observation *ObservationOptions `json:"observation,omitempty" jsonschema:"description=Observation strategy configuration for the LCM observer"`
 
+	// AutoMemoryEnabled controls whether auto-memory extraction is active.
+	// When nil, auto-memory is enabled (default behavior). Set to false to
+	// disable auto-memory extraction entirely.
+	AutoMemoryEnabled *bool `json:"auto_memory_enabled,omitempty" jsonschema:"description=Enable auto-memory extraction from conversation turns,default=true"`
+
+	// AutoMemoryInterval is the number of agent turns between auto-memory
+	// extraction triggers. When nil, the default interval (5) is used.
+	AutoMemoryInterval *int `json:"auto_memory_interval,omitempty" jsonschema:"description=Number of turns between auto-memory extraction triggers,default=5"`
+
 	// Nudge configures the context-limit nudge injection system. When nil,
 	// default nudge values are used.
 	Nudge *NudgeOptions `json:"nudge,omitempty" jsonschema:"description=Nudge injection configuration for context-limit warnings"`

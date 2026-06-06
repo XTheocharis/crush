@@ -360,11 +360,11 @@ func all29Components() []component {
 			Name: "LSP Symbolic Edit",
 			Files: []string{
 				"internal/agent/tools/lsp_rename.go",
-				"internal/agent/tools/lsp_symbolic.go",
+				"internal/agent/tools/symbol_edit.go",
 				"internal/lsp/util/edit.go",
 			},
 			WireGrep: []wireCheck{
-				{Pattern: "ReplaceSymbolBody", Files: []string{"internal/agent/tools/lsp_symbolic.go"}},
+				{Pattern: "ReplaceSymbolBody", Files: []string{"internal/agent/tools/symbol_edit.go"}},
 			},
 		},
 
