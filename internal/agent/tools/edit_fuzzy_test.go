@@ -258,3 +258,174 @@ func TestNewSymbolParserStub(t *testing.T) {
 	p := newSymbolParser(nil)
 	require.Nil(t, p)
 }
+
+func TestFindBestMatch_ExactMatch(t *testing.T) {
+	t.Parallel()
+
+	content := "package main\n\nfunc hello() {}\n"
+	matched, found, isMultiple := findBestMatch(content, "func hello()")
+	require.True(t, found)
+	require.False(t, isMultiple)
+	require.Equal(t, "func hello()", matched)
+}
+
+func TestFindBestMatch_ExactMatchMultiple_Ambiguous(t *testing.T) {
+	t.Parallel()
+
+	content := "aaa target bbb target ccc"
+	matched, found, isMultiple := findBestMatch(content, "target")
+	require.True(t, found)
+	require.True(t, isMultiple, "multiple occurrences should report ambiguity")
+	require.Equal(t, "target", matched)
+}
+
+func TestFindBestMatch_NoMatch(t *testing.T) {
+	t.Parallel()
+
+	content := "package main\n\nfunc hello() {}\n"
+	matched, found, isMultiple := findBestMatch(content, "nonexistent_pattern")
+	require.False(t, found)
+	require.False(t, isMultiple)
+	require.Empty(t, matched)
+}
+
+func TestFindBestMatch_TrimSurroundingBlankLines(t *testing.T) {
+	t.Parallel()
+
+	content := "line1\nline2\nline3\n"
+	oldString := "\n\nline2\n\n"
+	matched, found, _ := findBestMatch(content, oldString)
+	require.True(t, found, "should match after trimming surrounding blank lines")
+	require.Equal(t, "line2", matched)
+}
+
+func TestFindBestMatch_TrimTrailingWhitespace(t *testing.T) {
+	t.Parallel()
+
+	content := "line with trailing  \nnext line\n"
+	oldString := "line with trailing\n"
+	matched, found, _ := findBestMatch(content, oldString)
+	require.True(t, found, "should match after trimming trailing whitespace")
+	require.Equal(t, "line with trailing", matched)
+}
+
+func TestFindBestMatch_TrailingNewlineToggle(t *testing.T) {
+	t.Parallel()
+
+	content := "func main() {}\nfunc other() {}\n"
+
+	matched, found, _ := findBestMatch(content, "func main() {}")
+	require.True(t, found)
+	require.Equal(t, "func main() {}", matched)
+}
+
+func TestFindBestMatch_CollapseBlankLines(t *testing.T) {
+	t.Parallel()
+
+	content := "line1\n\nline2\n"
+	oldString := "line1\n\n\n\nline2"
+	_, found, _ := findBestMatch(content, oldString)
+	require.True(t, found, "should match after collapsing blank lines")
+}
+
+func TestFindBestMatch_NormalizeIndentation(t *testing.T) {
+	t.Parallel()
+
+	content := "    if true {\n        doSomething()\n    }\n"
+	oldString := "if true {\n  doSomething()\n}\n"
+	_, found, _ := findBestMatch(content, oldString)
+	require.True(t, found, "should match with different indentation")
+}
+
+func TestFindBestMatch_NormalizeIndentationAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	content := "    if true {\n        doWork()\n    }\n    if true {\n        doWork()\n    }\n"
+	oldString := "if true {\n  doWork()\n}\n"
+	_, found, isMultiple := findBestMatch(content, oldString)
+	require.True(t, found)
+	require.True(t, isMultiple, "multiple indentation matches should report ambiguity")
+}
+
+func TestFindBestMatch_ExactMatchPreferredOverFuzzy(t *testing.T) {
+	t.Parallel()
+
+	content := "exact_match_here\n    indented_different\n"
+	matched, found, isMultiple := findBestMatch(content, "exact_match_here")
+	require.True(t, found)
+	require.False(t, isMultiple)
+	require.Equal(t, "exact_match_here", matched)
+}
+
+func TestFindBestMatch_MultipleExactMatchesReportsAmbiguity(t *testing.T) {
+	t.Parallel()
+
+	content := "duplicate\nunique\nduplicate\n"
+	_, found, isMultiple := findBestMatch(content, "duplicate")
+	require.True(t, found)
+	require.True(t, isMultiple, "duplicate occurrences should be flagged as ambiguous")
+}
+
+func TestNormalizeOldStringForMatching_ZeroWidthChars(t *testing.T) {
+	t.Parallel()
+
+	input := "hello\u200bworld\ufeff"
+	result := normalizeOldStringForMatching(input)
+	require.Equal(t, "helloworld", result)
+}
+
+func TestNormalizeOldStringForMatching_MarkdownCodeFences(t *testing.T) {
+	t.Parallel()
+
+	input := "```go\nfunc main() {}\n```"
+	result := normalizeOldStringForMatching(input)
+	require.Equal(t, "func main() {}", result)
+}
+
+func TestNormalizeOldStringForMatching_CodeFencesNotPresent(t *testing.T) {
+	t.Parallel()
+
+	input := "regular code"
+	result := normalizeOldStringForMatching(input)
+	require.Equal(t, "regular code", result)
+}
+
+func TestStripViewLineNumbers(t *testing.T) {
+	t.Parallel()
+
+	input := "  1|line one\n  2|line two\n  3|line three\n"
+	result := stripViewLineNumbers(input)
+	require.Equal(t, "line one\nline two\nline three\n", result)
+}
+
+func TestStripViewLineNumbers_MixedNotStripped(t *testing.T) {
+	t.Parallel()
+
+	input := "  1|numbered\nnot numbered\n  3|numbered\n"
+	result := stripViewLineNumbers(input)
+	require.Equal(t, "numbered\nnot numbered\nnumbered\n", result, "2/3 lines with prefix is majority, strips")
+}
+
+func TestCollapseBlankLines(t *testing.T) {
+	t.Parallel()
+
+	input := "a\n\n\n\nb\n\nc"
+	result := collapseBlankLines(input)
+	require.Equal(t, "a\n\nb\n\nc", result)
+}
+
+func TestTrimTrailingWhitespacePerLine(t *testing.T) {
+	t.Parallel()
+
+	input := "line1  \nline2\t\nline3"
+	result := trimTrailingWhitespacePerLine(input)
+	require.Equal(t, "line1\nline2\nline3", result)
+}
+
+func TestTrimSurroundingBlankLines(t *testing.T) {
+	t.Parallel()
+
+	input := "\n\n  \ncontent\n  \n\n"
+	result := trimSurroundingBlankLines(input)
+	require.Equal(t, "content", result)
+}

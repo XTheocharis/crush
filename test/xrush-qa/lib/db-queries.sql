@@ -169,3 +169,46 @@ SELECT COUNT(*) as count FROM eval_runs;
 -- name: scorer_results_count
 -- Scorer results count (global)
 SELECT COUNT(*) as count FROM scorer_results;
+
+-- ============================================================================
+-- Extended queries (Wave 2+)
+-- ============================================================================
+
+-- name: child_sessions_by_parent
+-- Child sessions with prompt counts for a parent session
+SELECT s.id, s.title, s.message_count, s.prompt_tokens, s.created_at
+FROM sessions s
+WHERE s.parent_session_id = '__SESSION_ID__'
+ORDER BY s.created_at;
+
+-- name: turn_snapshot_counts
+-- Snapshot and snapshot file counts per session
+SELECT
+  (SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '__SESSION_ID__') AS snapshot_count,
+  (SELECT COUNT(*) FROM turn_snapshot_files tsf
+   JOIN turn_snapshots ts ON ts.id = tsf.snapshot_id
+   WHERE ts.session_id = '__SESSION_ID__') AS file_count;
+
+-- name: message_timestamp_lifecycle
+-- Message timestamp lifecycle (submit → send → first token → complete)
+SELECT id, role, submitted_at, sent_to_llm_at, first_token_at, completed_at
+FROM messages
+WHERE session_id = '__SESSION_ID__'
+  AND submitted_at > 0
+ORDER BY created_at;
+
+-- name: hook_executions_by_event
+-- Hook executions by event type (placeholder — no hooks table in schema)
+-- NOTE: Hooks are user-defined shell commands in crush.json, not stored in DB.
+-- This query returns an empty result as a placeholder for future schema support.
+SELECT 'hook_executions' AS table_name, 0 AS count WHERE 0;
+
+-- name: scorer_results_by_eval
+-- Scorer results with scores for a specific eval run
+SELECT sr.scorer_name, sr.scorer_type, sr.score, sr.passed, sr.explanation,
+       sr.duration_ms, sr.error_msg, sr.created_at
+FROM scorer_results sr
+WHERE sr.run_id IN (
+  SELECT run_id FROM eval_runs ORDER BY created_at DESC LIMIT 1
+)
+ORDER BY sr.scorer_name;
