@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+list_tables() {
+  cat <<'TABLES'
+sessions
+messages
+message_parts
+files
+migrations
+lcm_context_items
+lcm_session_config
+lcm_summaries
+lcm_auto_memory
+lcm_large_files
+lcm_content_replacements
+lcm_reversible_state
+lcm_map_runs
+lcm_map_items
+lcm_observation_buffer
+session_operational_memory
+read_files
+written_files
+turn_snapshots
+turn_snapshot_files
+repo_map_file_cache
+repo_map_session_rankings
+repo_map_tags
+repo_map_imports
+eval_runs
+scorer_results
+hook_executions
+context_file_cache
+extension_state
+tool_permissions
+agent_config
+lcm_large_files_fts
+lcm_content_replacements_fts
+lcm_observation_buffer_fts
+TABLES
+}
