@@ -108,6 +108,22 @@ test_session_created() {
     fail "Scenario 1: Found $seq_gaps negative message seq value(s)"
   fi
 
+  local user_before_assistant
+  user_before_assistant=$(query_db "SELECT CASE WHEN (SELECT MIN(seq) FROM messages WHERE session_id = '$SID' AND role = 'user') < (SELECT MIN(seq) FROM messages WHERE session_id = '$SID' AND role = 'assistant') THEN 1 ELSE 0 END as ok" | jq '.[0].ok')
+  if [[ "$user_before_assistant" -eq 1 ]]; then
+    pass "Scenario 1: User message seq precedes assistant response seq"
+  else
+    fail "Scenario 1: Assistant response does not follow user message in seq order"
+  fi
+
+  local answer_count
+  answer_count=$(query_db "SELECT COUNT(*) as count FROM message_parts mp JOIN messages m ON m.id = mp.message_id WHERE m.session_id = '$SID' AND m.role = 'assistant' AND mp.part_type = 'text' AND mp.content_json GLOB '*4*'" | jq '.[0].count')
+  if [[ "$answer_count" -ge 1 ]]; then
+    pass "Scenario 1: Assistant response contains the expected arithmetic answer"
+  else
+    fail "Scenario 1: Assistant response did not contain the expected answer 4"
+  fi
+
   capture_evidence 5 "session-created"
   stop_crush
 }
