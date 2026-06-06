@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# Test: LCM session configuration and context tracking basics.
+# Verifies that Crush creates LCM session config rows, tracks context items,
+# and that token counts grow across multi-turn conversations.
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+source "$QA_DIR/lib/common.sh"
+source "$QA_DIR/lib/db-verify.sh"
+
+PASS=0
+FAIL=0
+pass() { echo "PASS: $1"; ((PASS += 1)); }
+fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
+
+# Shared session ID across scenarios (set in Scenario 1, reused in 2 and 3).
+SID=""
+# Token count captured after Scenario 1, compared in Scenario 3.
+TOKENS_AFTER_S1=0
+
+# ---------------------------------------------------------------------------
+# Scenario 1: LCM session config created on session start
+# ---------------------------------------------------------------------------
+test_lcm_session_config() {
+  echo "=== Scenario 1: LCM session config created on session start ==="
+
+  setup_clean_crush
+  # shellcheck disable=SC2317  # restore_crush is called via trap
+  restore_on_exit() {
+    stop_crush 2>/dev/null || true
+    local json_bak
+    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
+    if [[ -n "$json_bak" ]]; then
+      mv "$json_bak" crush.json
+    fi
+    command restore_crush
+  }
+  trap restore_on_exit EXIT
+
+  start_crush 3
+  send_prompt "Hello"
+  if ! wait_for_idle 120; then
+    fail "Scenario 1: Crush did not become idle"
+    capture_evidence 13 "lcm-config"
+    return
+  fi
+
+  # Get the session ID.
+  SID=$(get_session_id)
+  if [[ -z "$SID" ]]; then
+    fail "Scenario 1: No session ID found in DB"
+    capture_evidence 13 "lcm-config"
+    return
+  fi
+
+  # Query lcm_session_config for this session.
+  local config
+  config=$(query_db "SELECT model_ctx_max_tokens, ctx_cutoff_threshold, soft_threshold_tokens, hard_threshold_tokens FROM lcm_session_config WHERE session_id = '$SID'")
+  if [[ -z "$config" ]] || [[ "$config" == "[]" ]]; then
+    fail "Scenario 1: No lcm_session_config row for session $SID"
+    capture_evidence 13 "lcm-config"
+    return
+  fi
+
+  # Assert: model_ctx_max_tokens > 0.
+  local model_ctx_max_tokens
+  model_ctx_max_tokens=$(echo "$config" | jq '.[0].model_ctx_max_tokens // 0')
+  if [[ "$model_ctx_max_tokens" -gt 0 ]]; then
+    pass "Scenario 1: model_ctx_max_tokens = $model_ctx_max_tokens (> 0)"
+  else
+    fail "Scenario 1: model_ctx_max_tokens is $model_ctx_max_tokens, expected > 0"
+  fi
+
+  # Assert: ctx_cutoff_threshold > 0 AND <= 1.
+  local cutoff
+  cutoff=$(echo "$config" | jq '.[0].ctx_cutoff_threshold // 0')
+  # Use string comparison for the floating-point check.
+  local cutoff_ok=true
+  if [[ "$cutoff" == "0" ]] || [[ "$cutoff" == "null" ]]; then
+    cutoff_ok=false
+  fi
+  # Check <= 1 via awk.
+  local above_one
+  above_one=$(awk -v c="$cutoff" 'BEGIN { print (c > 1) ? 1 : 0 }')
+  if [[ "$above_one" == "1" ]]; then
+    cutoff_ok=false
+  fi
+  if [[ "$cutoff_ok" == "true" ]]; then
+    pass "Scenario 1: ctx_cutoff_threshold = $cutoff (in (0, 1])"
+  else
+    fail "Scenario 1: ctx_cutoff_threshold = $cutoff, expected in (0, 1]"
+  fi
+
+  # Assert: soft_threshold_tokens > 0 AND hard_threshold_tokens > 0.
+  local soft_tokens hard_tokens
+  soft_tokens=$(echo "$config" | jq '.[0].soft_threshold_tokens // 0')
+  hard_tokens=$(echo "$config" | jq '.[0].hard_threshold_tokens // 0')
+  if [[ "$soft_tokens" -gt 0 ]]; then
+    pass "Scenario 1: soft_threshold_tokens = $soft_tokens (> 0)"
+  else
+    fail "Scenario 1: soft_threshold_tokens is $soft_tokens, expected > 0"
+  fi
+  if [[ "$hard_tokens" -gt 0 ]]; then
+    pass "Scenario 1: hard_threshold_tokens = $hard_tokens (> 0)"
+  else
+    fail "Scenario 1: hard_threshold_tokens is $hard_tokens, expected > 0"
+  fi
+
+  capture_evidence 13 "lcm-config"
+  stop_crush
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 2: Context items track conversation tokens
+# ---------------------------------------------------------------------------
+test_context_items() {
+  echo "=== Scenario 2: Context items track conversation tokens ==="
+
+  if [[ -z "$SID" ]]; then
+    fail "Scenario 2: No session ID from Scenario 1 — skipping"
+    return
+  fi
+
+  # Query aggregate stats from lcm_context_items for message-type items.
+  local stats
+  stats=$(query_db "SELECT COUNT(*) as item_count, SUM(token_count) as total_tokens FROM lcm_context_items WHERE session_id = '$SID' AND item_type = 'message'")
+  if [[ -z "$stats" ]] || [[ "$stats" == "[]" ]]; then
+    fail "Scenario 2: No lcm_context_items rows for session $SID"
+    return
+  fi
+
+  local item_count total_tokens
+  item_count=$(echo "$stats" | jq '.[0].item_count // 0')
+  total_tokens=$(echo "$stats" | jq '.[0].total_tokens // 0')
+
+  # Assert: at least 2 items (user + assistant minimum).
+  if [[ "$item_count" -ge 2 ]]; then
+    pass "Scenario 2: item_count = $item_count (>= 2)"
+  else
+    fail "Scenario 2: item_count = $item_count, expected >= 2"
+  fi
+
+  # Assert: total tokens > 0.
+  if [[ "$total_tokens" -gt 0 ]]; then
+    pass "Scenario 2: total_tokens = $total_tokens (> 0)"
+  else
+    fail "Scenario 2: total_tokens = $total_tokens, expected > 0"
+  fi
+
+  # Save for comparison in Scenario 3.
+  TOKENS_AFTER_S1=$total_tokens
+
+  # Verify position values are sequential (0, 1, 2, ...).
+  local positions
+  positions=$(query_db "SELECT position FROM lcm_context_items WHERE session_id = '$SID' AND item_type = 'message' ORDER BY position" | jq '.[].position')
+  local expected=0
+  local seq_ok=true
+  while IFS= read -r pos; do
+    if [[ "$pos" != "$expected" ]]; then
+      seq_ok=false
+      fail "Scenario 2: Expected position $expected, got $pos"
+    fi
+    ((expected++))
+  done <<< "$positions"
+  if [[ "$seq_ok" == "true" ]]; then
+    pass "Scenario 2: Positions are sequential (0..$((expected - 1)))"
+  fi
+
+  capture_evidence 13 "context-items"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 3: Token counts increase with multi-turn conversation
+# ---------------------------------------------------------------------------
+test_token_growth() {
+  echo "=== Scenario 3: Token counts increase with multi-turn conversation ==="
+
+  if [[ -z "$SID" ]]; then
+    fail "Scenario 3: No session ID from Scenario 1 — skipping"
+    return
+  fi
+
+  # Reuse the SAME .crush/ from Scenario 1 — do NOT call setup_clean_crush.
+  start_crush 3 --session "$SID"
+  send_prompt "Tell me about Go programming"
+  if ! wait_for_idle 120; then
+    fail "Scenario 3: Crush did not become idle on second turn"
+    capture_evidence 13 "token-growth"
+    stop_crush
+    return
+  fi
+
+  # Query token counts again.
+  local new_stats
+  new_stats=$(query_db "SELECT COUNT(*) as item_count, SUM(token_count) as total_tokens FROM lcm_context_items WHERE session_id = '$SID' AND item_type = 'message'")
+  local new_total
+  new_total=$(echo "$new_stats" | jq '.[0].total_tokens // 0')
+
+  # Assert: tokens now higher than after Scenario 1.
+  if [[ "$new_total" -gt "$TOKENS_AFTER_S1" ]]; then
+    pass "Scenario 3: Tokens grew from $TOKENS_AFTER_S1 to $new_total"
+  else
+    fail "Scenario 3: Tokens did not grow ($TOKENS_AFTER_S1 -> $new_total)"
+  fi
+
+  capture_evidence 13 "token-growth"
+  stop_crush
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+test_lcm_session_config
+test_context_items
+test_token_growth
+
+echo ""
+echo "Results: $PASS passed, $FAIL failed"
+exit "$FAIL"

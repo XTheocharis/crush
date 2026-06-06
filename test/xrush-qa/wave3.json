@@ -1,0 +1,202 @@
+{
+  "providers": {
+    "zai": {
+      "id": "zai",
+      "name": "Z.AI Coding Plan (Primary)",
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "type": "openai-compat",
+      "api_key": "${ZAI_API_KEY}",
+      "disable": false,
+      "flat_rate": true,
+      "models": [
+        {
+          "id": "glm-5.1",
+          "name": "GLM-5.1",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 131072,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-5-turbo",
+          "name": "GLM-5 Turbo",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 131072,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-5",
+          "name": "GLM-5",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 102400,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.7",
+          "name": "GLM-4.7",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 102400,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.6",
+          "name": "GLM-4.6",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 102400,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.5",
+          "name": "GLM-4.5",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 131072,
+          "default_max_tokens": 49152,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.5-air",
+          "name": "GLM-4.5 Air",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 131072,
+          "default_max_tokens": 49152,
+          "can_reason": true,
+          "supports_attachments": false
+        }
+      ]
+    },
+    "zai-2": {
+      "id": "zai-2",
+      "name": "Z.AI Coding Plan (Secondary)",
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "type": "openai-compat",
+      "api_key": "${ZAI_2_API_KEY}",
+      "disable": false,
+      "flat_rate": true,
+      "models": [
+        {
+          "id": "glm-5.1",
+          "name": "GLM-5.1",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 131072,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-5-turbo",
+          "name": "GLM-5 Turbo",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 131072,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-5",
+          "name": "GLM-5",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 102400,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.7",
+          "name": "GLM-4.7",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 102400,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.6",
+          "name": "GLM-4.6",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 200000,
+          "default_max_tokens": 102400,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.5",
+          "name": "GLM-4.5",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 131072,
+          "default_max_tokens": 49152,
+          "can_reason": true,
+          "supports_attachments": false
+        },
+        {
+          "id": "glm-4.5-air",
+          "name": "GLM-4.5 Air",
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "context_window": 131072,
+          "default_max_tokens": 49152,
+          "can_reason": true,
+          "supports_attachments": false
+        }
+      ]
+    }
+  },
+  "models": {
+    "large": {
+      "model": "glm-5.1",
+      "provider": "zai"
+    },
+    "small": {
+      "model": "glm-5-turbo",
+      "provider": "zai-2"
+    }
+  },
+  "options": {
+    "architect_model": {
+      "model": "glm-5.1",
+      "provider": "zai-2"
+    },
+    "editor_model": {
+      "model": "glm-5-turbo",
+      "provider": "zai-2"
+    },
+    "lcm": {
+      "summarizer_model": {
+        "model": "glm-5-turbo",
+        "provider": "zai-2"
+      },
+      "ctx_cutoff_threshold": 0.1,
+      "auto_memory_interval": 1,
+      "operational_memory_enabled": true,
+      "observation": {
+        "enabled": true,
+        "reflector_observation_tokens": 500,
+        "reflector_buffer_activation": 0.5
+      },
+      "large_tool_output_token_threshold": 100,
+      "disable_large_tool_output": false
+    }
+  }
+}
