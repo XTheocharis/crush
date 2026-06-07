@@ -99,10 +99,9 @@ type (
 	ActionEnableDockerMCP struct{}
 	// ActionDisableDockerMCP is a message to disable Docker MCP.
 	ActionDisableDockerMCP struct{}
-	// ActionRunEval is a message to run an evaluation.
-	ActionRunEval struct {
-		SessionID string
-	}
+	// ActionToggleProcessorDebug toggles the processor pipeline debug
+	// section in the sidebar.
+	ActionToggleProcessorDebug struct{}
 	// ActionEnableArchitect enables the architect planning phase using the
 	// current session model as the architect model.
 	ActionEnableArchitect struct{}

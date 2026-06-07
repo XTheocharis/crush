@@ -293,6 +293,10 @@ type UI struct {
 	// hyperCredits is the remaining Hyper credits, updated after each prompt.
 	hyperCredits *int
 
+	// showProcessorDebug toggles the processor pipeline debug section in
+	// the sidebar.
+	showProcessorDebug bool
+
 	// Prompt history for up/down navigation through previous messages.
 	promptHistory struct {
 		messages []string
@@ -1529,12 +1533,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionRefreshRepoMap:
 		cmds = append(cmds, m.executeRepoMapRefresh(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)
-	case dialog.ActionRunEval:
-		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, util.CmdHandler(util.InfoMsg{
-			Type: util.InfoTypeWarn,
-			Msg:  "Evaluation: feature coming soon",
-		}))
 	case dialog.ActionToggleHelp:
 		m.status.ToggleHelp()
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -1627,6 +1625,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			}
 			return util.NewInfoMsg("Architect mode disabled")
 		})
+		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionToggleProcessorDebug:
+		m.showProcessorDebug = !m.showProcessorDebug
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionQuit:
 		cmds = append(cmds, tea.Quit)
@@ -3585,7 +3586,7 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	hasTodos := hasSession && hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.customCommands, m.mcpPrompts)
+	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.customCommands, m.mcpPrompts, m.showProcessorDebug)
 	if err != nil {
 		return util.ReportError(err)
 	}

@@ -73,21 +73,23 @@ type Commands struct {
 
 	dockerMCPAvailable     *bool
 	dockerMCPCheckInFlight bool
+	showProcessorDebug     bool
 }
 
 var _ Dialog = (*Commands)(nil)
 
 // NewCommands creates a new commands dialog.
-func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue bool, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
+func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue bool, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt, showProcessorDebug bool) (*Commands, error) {
 	c := &Commands{
-		com:            com,
-		selected:       SystemCommands,
-		sessionID:      sessionID,
-		hasSession:     hasSession,
-		hasTodos:       hasTodos,
-		hasQueue:       hasQueue,
-		customCommands: customCommands,
-		mcpPrompts:     mcpPrompts,
+		com:                com,
+		selected:           SystemCommands,
+		sessionID:          sessionID,
+		hasSession:         hasSession,
+		hasTodos:           hasTodos,
+		hasQueue:           hasQueue,
+		customCommands:     customCommands,
+		mcpPrompts:         mcpPrompts,
+		showProcessorDebug: showProcessorDebug,
 	}
 
 	help := help.New()
@@ -438,7 +440,6 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}))
 		commands = append(commands, NewCommandItem(c.com.Styles, "refresh_repomap", "Refresh Repository Map", "", ActionRefreshRepoMap{SessionID: c.sessionID}))
-		commands = append(commands, NewCommandItem(c.com.Styles, "run_eval", "Run Evaluation", "", ActionRunEval{SessionID: c.sessionID}))
 	}
 
 	// Add reasoning toggle for models that support it
@@ -505,6 +506,12 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	} else {
 		commands = append(commands, NewCommandItem(c.com.Styles, "enable_architect", "Enable Architect", "", ActionEnableArchitect{}))
 	}
+
+	processorDebugLabel := "Show Processor Debug"
+	if c.showProcessorDebug {
+		processorDebugLabel = "Hide Processor Debug"
+	}
+	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_processor_debug", processorDebugLabel, "", ActionToggleProcessorDebug{}))
 
 	if c.hasTodos || c.hasQueue {
 		var label string
