@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: Repo map rankings and import resolution.
+# Test: Repo map rankings and import resolution (TUI-first approach).
 # Verifies that PageRank-based session rankings produce positive scores
 # and that the import graph contains edges for the project.
 set -euo pipefail
@@ -19,34 +19,43 @@ fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 # ---------------------------------------------------------------------------
 test_rankings_positive_scores() {
   echo "=== Scenario 1: Rankings have positive scores ==="
+  WAVE=2
+  SCENARIO="rankings-positive-scores"
 
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
     restore_crush
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
   }
   trap cleanup_test EXIT
 
-  start_crush 2
-  send_prompt "Tell me about the agent package in this project"
-  if ! wait_for_idle 120; then
+  start_crush_tui 2
+  focus_editor
+  send_tui_prompt "Tell me about the agent package in this project. Somewhere in your reply include the exact token RANKINGS_AGENT_SENTINEL_42"
+
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 1: Crush did not become idle"
-    capture_evidence 12 "rankings"
-    stop_crush
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "RANKINGS_AGENT_SENTINEL_42"; then
+    pass "Scenario 1: TUI shows RANKINGS_AGENT_SENTINEL_42 sentinel"
+  else
+    fail "Scenario 1: TUI does not show RANKINGS_AGENT_SENTINEL_42 sentinel"
+    capture_tui_evidence "sentinel-missing"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   local SID
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 12 "rankings"
-    stop_crush
     return
   fi
 
@@ -73,8 +82,9 @@ test_rankings_positive_scores() {
     fail "Scenario 1: Agent-package prompt did not rank any internal/agent files"
   fi
 
-  capture_evidence 12 "rankings"
-  stop_crush
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -82,8 +92,39 @@ test_rankings_positive_scores() {
 # ---------------------------------------------------------------------------
 test_import_graph_edges() {
   echo "=== Scenario 2: Import graph has edges ==="
+  WAVE=2
+  SCENARIO="import-graph-edges"
 
-  # Import graph is populated during repo indexing, independent of session.
+  setup_clean_crush
+  # shellcheck disable=SC2317
+  cleanup_test() {
+    restore_crush
+  }
+  trap cleanup_test EXIT
+
+  start_crush_tui 2
+  focus_editor
+  send_tui_prompt "Tell me about the project imports. Somewhere in your reply include the exact token IMPORTS_GRAPH_SENTINEL_88"
+
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 2: Crush did not become idle"
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    return
+  fi
+
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "IMPORTS_GRAPH_SENTINEL_88"; then
+    pass "Scenario 2: TUI shows IMPORTS_GRAPH_SENTINEL_88 sentinel"
+  else
+    fail "Scenario 2: TUI does not show IMPORTS_GRAPH_SENTINEL_88 sentinel"
+    capture_tui_evidence "sentinel-missing"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   local import_count
   import_count=$(query_db "SELECT COUNT(*) as count FROM repo_map_imports" | jq '.[0].count')
   if [[ "$import_count" -gt 100 ]]; then
@@ -98,15 +139,7 @@ test_import_graph_edges() {
   echo "Agent package imports (sample):"
   echo "$agent_imports" | jq -r '.[] | "  \(.path) -> \(.import_path)"' 2>/dev/null || echo "$agent_imports"
 
-  # Verify path contains agent paths.
-  local agent_import_count
-  agent_import_count=$(echo "$agent_imports" | jq 'length')
-  if [[ "$agent_import_count" -gt 0 ]]; then
-    pass "Scenario 2: Agent package has import relationships"
-  else
-    fail "Scenario 2: No agent package imports found"
-  fi
-
+  # Verify known agent->message import edge.
   local known_import
   known_import=$(query_db "SELECT COUNT(*) as count FROM repo_map_imports WHERE path='internal/agent/agent.go' AND import_path='github.com/charmbracelet/crush/internal/message'" | jq '.[0].count')
   if [[ "$known_import" -ge 1 ]]; then
@@ -115,7 +148,9 @@ test_import_graph_edges() {
     fail "Scenario 2: Missing known internal/agent/agent.go -> internal/message import edge"
   fi
 
-  capture_evidence 12 "imports"
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------

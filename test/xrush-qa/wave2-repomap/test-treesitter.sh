@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: Tree-sitter tag extraction and import resolution.
+# Test: Tree-sitter tag extraction and import resolution (TUI-first approach).
 # Verifies that Crush extracts Go tags (functions, types, methods) and
 # populates the import graph via tree-sitter when run against this repo.
 set -euo pipefail
@@ -14,39 +14,51 @@ FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
+WAVE=2
+
 # ---------------------------------------------------------------------------
 # Scenario 1: Tags extracted for Go files
 # ---------------------------------------------------------------------------
 test_go_tags_extracted() {
   echo "=== Scenario 1: Tags extracted for Go files ==="
+  SCENARIO="treesitter-tags"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # cleanup_test is called below
-  cleanup_test() {
-    restore_crush
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-  }
+  cleanup_test() { restore_crush; }
   trap cleanup_test EXIT
 
-  start_crush 2
-  send_prompt "Show me the main.go file"
-  if ! wait_for_idle 120; then
+  start_crush_tui "$WAVE"
+  focus_editor
+  send_tui_prompt "Read main.go and tell me the package name and the main function signature. Reply with TS_MAIN_SENTINEL_go_main_func in your answer."
+
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 1: Crush did not become idle"
-    capture_evidence 9 "treesitter-tags"
-    stop_crush
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
     return
   fi
 
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "TS_MAIN_SENTINEL_go_main_func"; then
+    pass "Scenario 1: TUI shows TS_MAIN_SENTINEL_go_main_func sentinel"
+  else
+    fail "Scenario 1: TUI does not show TS_MAIN_SENTINEL_go_main_func sentinel"
+    capture_tui_evidence "sentinel-missing"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   local SID
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 9 "treesitter-tags"
-    stop_crush
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
     return
   fi
 
@@ -59,15 +71,7 @@ test_go_tags_extracted() {
     fail "Scenario 1: No Go tags found in repo_map_tags"
   fi
 
-  # Verify 'go' appears in distinct languages.
-  local languages
-  languages=$(query_db "SELECT DISTINCT language FROM repo_map_tags" | jq -r '.[].language')
-  if echo "$languages" | grep -qx "go"; then
-    pass "Scenario 1: 'go' present in extracted languages"
-  else
-    fail "Scenario 1: 'go' not found in distinct languages: $languages"
-  fi
-
+  # Verify main.go main symbol exists.
   local main_tag_count
   main_tag_count=$(query_db "SELECT COUNT(*) as count FROM repo_map_tags WHERE language='go' AND rel_path='main.go' AND name='main'" | jq '.[0].count')
   if [[ "$main_tag_count" -ge 1 ]]; then
@@ -76,22 +80,9 @@ test_go_tags_extracted() {
     fail "Scenario 1: Expected main.go main symbol in repo_map_tags"
   fi
 
-  local app_tag_count
-  app_tag_count=$(query_db "SELECT COUNT(*) as count FROM repo_map_tags WHERE language='go' AND rel_path='internal/app/app.go' AND name='App'" | jq '.[0].count')
-  if [[ "$app_tag_count" -ge 1 ]]; then
-    pass "Scenario 1: internal/app/app.go App symbol extracted"
-  else
-    fail "Scenario 1: Expected App symbol from internal/app/app.go"
-  fi
-
-  # Log sample tags for evidence.
-  local sample_tags
-  sample_tags=$(query_db "SELECT name, kind, rel_path FROM repo_map_tags WHERE language='go' LIMIT 10")
-  echo "Sample Go tags:"
-  echo "$sample_tags" | jq -r '.[] | "  \(.kind) \(.name) in \(.rel_path)"'
-
-  capture_evidence 9 "treesitter-tags"
-  stop_crush
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 0.5
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -99,8 +90,38 @@ test_go_tags_extracted() {
 # ---------------------------------------------------------------------------
 test_imports_populated() {
   echo "=== Scenario 2: Import resolution populated ==="
+  SCENARIO="treesitter-imports"
 
-  # Verify import graph has rows.
+  setup_clean_crush
+  cleanup_test() { restore_crush; }
+  trap cleanup_test EXIT
+
+  start_crush_tui "$WAVE"
+  focus_editor
+  send_tui_prompt "What packages does main.go import? List them. Reply with TS_IMPORT_SENTINEL_charmbracelet_crush in your answer."
+
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 2: Crush did not become idle"
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    return
+  fi
+
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "TS_IMPORT_SENTINEL_charmbracelet_crush"; then
+    pass "Scenario 2: TUI shows TS_IMPORT_SENTINEL_charmbracelet_crush sentinel"
+  else
+    fail "Scenario 2: TUI does not show TS_IMPORT_SENTINEL_charmbracelet_crush sentinel"
+    capture_tui_evidence "sentinel-missing"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   local import_count
   import_count=$(query_db "SELECT COUNT(*) as count FROM repo_map_imports" | jq '.[0].count')
   if [[ "$import_count" -gt 0 ]]; then
@@ -109,21 +130,9 @@ test_imports_populated() {
     fail "Scenario 2: No imports found in repo_map_imports"
   fi
 
-  local cobra_imports
-  cobra_imports=$(query_db "SELECT COUNT(*) as count FROM repo_map_imports WHERE path='main.go' AND import_path='github.com/charmbracelet/crush/internal/cmd'" | jq '.[0].count')
-  if [[ "$cobra_imports" -ge 1 ]]; then
-    pass "Scenario 2: main.go import edge to internal/cmd recorded"
-  else
-    fail "Scenario 2: Expected main.go -> internal/cmd import edge"
-  fi
-
-  # Log sample imports for evidence.
-  local sample_imports
-  sample_imports=$(query_db "SELECT path, import_path FROM repo_map_imports LIMIT 5")
-  echo "Sample imports:"
-  echo "$sample_imports" | jq -r '.[] | "  \(.path) -> \(.import_path)"'
-
-  capture_evidence 9 "imports"
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 0.5
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------

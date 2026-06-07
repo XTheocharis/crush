@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: Repo map generation and caching.
+# Test: Repo map generation and caching (TUI-first approach).
 # Verifies that Crush populates the repo map file cache, creates session
 # rankings, and injects the repo map into the system prompt during a session.
 set -euo pipefail
@@ -21,33 +21,42 @@ SID=""
 # ---------------------------------------------------------------------------
 test_repomap_cache() {
   echo "=== Scenario 1: Repo map file cache populated ==="
+  WAVE=2
+  SCENARIO="repomap-cache"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # cleanup_test is called below
+  # shellcheck disable=SC2317
   cleanup_test() {
     restore_crush
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
   }
   trap cleanup_test EXIT
 
-  start_crush 2
-  send_prompt "What files are in this project?"
-  if ! wait_for_idle 120; then
+  start_crush_tui 2
+  focus_editor
+  send_tui_prompt "What files are in this project? Somewhere in your reply include the exact token REPO_MAP_CACHE_SENTINEL_55"
+
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 1: Crush did not become idle"
-    capture_evidence 10 "repomap-cache"
-    stop_crush
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "REPO_MAP_CACHE_SENTINEL_55"; then
+    pass "Scenario 1: TUI shows REPO_MAP_CACHE_SENTINEL_55 sentinel"
+  else
+    fail "Scenario 1: TUI does not show REPO_MAP_CACHE_SENTINEL_55 sentinel"
+    capture_tui_evidence "sentinel-missing"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 10 "repomap-cache"
-    stop_crush
     return
   fi
 
@@ -73,21 +82,45 @@ test_repomap_cache() {
     fail "Scenario 1: Expected main.go, internal/agent/agent.go, and internal/lcm/manager.go in repo map cache; found $required_paths/3"
   fi
 
-  capture_evidence 10 "repomap-cache"
-  stop_crush
+  # Keep session alive for scenarios 2 and 3 — do NOT kill tmux here.
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Session rankings created
+# Scenario 2: Session rankings created (reuses SID from Scenario 1)
 # ---------------------------------------------------------------------------
 test_session_rankings() {
   echo "=== Scenario 2: Session rankings created ==="
+  WAVE=2
+  SCENARIO="repomap-session-rankings"
 
   if [[ -z "$SID" ]]; then
     fail "Scenario 2: No session ID from Scenario 1"
     return
   fi
 
+  # Send a follow-up prompt in the same session to trigger rankings.
+  focus_editor
+  send_tui_prompt "Tell me about the repo map session rankings for this project. Somewhere in your reply include the exact token REPO_MAP_SESSION_SENTINEL_33"
+
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 2: Crush did not become idle"
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    return
+  fi
+
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "REPO_MAP_SESSION_SENTINEL_33"; then
+    pass "Scenario 2: TUI shows REPO_MAP_SESSION_SENTINEL_33 sentinel"
+  else
+    fail "Scenario 2: TUI does not show REPO_MAP_SESSION_SENTINEL_33 sentinel"
+    capture_tui_evidence "sentinel-missing"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   # Verify session rankings exist for this session.
   local ranking_count
   ranking_count=$(query_db "SELECT COUNT(*) as count FROM repo_map_session_rankings WHERE session_id = '$SID'" | jq '.[0].count')
@@ -117,20 +150,42 @@ test_session_rankings() {
   else
     fail "Scenario 2: Expected ranked entry for main.go or internal/agent/agent.go"
   fi
-
-  capture_evidence 10 "repomap-rankings"
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 3: Repo map injected into system prompt (log check)
+# Scenario 3: Repo map injected into system prompt (log check, same session)
 # ---------------------------------------------------------------------------
 test_repomap_logs() {
   echo "=== Scenario 3: Repo map injected into system prompt (log check) ==="
+  WAVE=2
+  SCENARIO="repomap-logs"
 
+  # Send a follow-up prompt in the same session.
+  focus_editor
+  send_tui_prompt "Tell me about repo map injection. Somewhere in your reply include the exact token REPO_MAP_LOG_SENTINEL_22"
+
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 3: Crush did not become idle"
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    return
+  fi
+
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "REPO_MAP_LOG_SENTINEL_22"; then
+    pass "Scenario 3: TUI shows REPO_MAP_LOG_SENTINEL_22 sentinel"
+  else
+    fail "Scenario 3: TUI does not show REPO_MAP_LOG_SENTINEL_22 sentinel"
+    capture_tui_evidence "sentinel-missing"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary log checks ---
   local log_file=".crush/logs/crush.log"
   if [[ ! -f "$log_file" ]]; then
     fail "Scenario 3: crush.log not found at $log_file"
-    capture_evidence 10 "repomap-logs"
     return
   fi
 
@@ -142,7 +197,10 @@ test_repomap_logs() {
     fail "Scenario 3: No repo map log entries found"
   fi
 
-  capture_evidence 10 "repomap-logs"
+  # Kill tmux — this is the last scenario.
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
