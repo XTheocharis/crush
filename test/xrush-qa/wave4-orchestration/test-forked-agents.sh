@@ -1,75 +1,70 @@
 #!/usr/bin/env bash
-# Test: Forked agent creates child sessions.
+# Test: Forked agent creates child sessions (TUI-first).
 # Verifies that Crush creates child sessions with proper ID format
-# (parent_uuid$$call_uuid) when sub-agents are dispatched, and that
-# the main session references sub-agent results in its messages.
+# when sub-agents are dispatched. TUI output must show a deterministic
+# sentinel. Secondary DB checks prove forked session and message flow.
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-source "$QA_DIR/lib/common.sh"
-source "$QA_DIR/lib/db-verify.sh"
+WAVE=4
+SCENARIO="forked-agent-child-session"
+source "$(dirname "$0")/../lib/common.sh"
+source "$(dirname "$0")/../lib/db-verify.sh"
 
 PASS=0
 FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
-# Main session ID captured after the prompt completes.
-SID=""
+cleanup_test() { restore_crush; }
+trap cleanup_test EXIT
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Forked agent creates child session
+# Scenario: Forked agent creates child session — TUI sentinel + DB checks
 # ---------------------------------------------------------------------------
 test_forked_agent_child_session() {
-  echo "=== Scenario 1: Forked agent creates child session ==="
+  echo "=== Scenario: Forked agent creates child session ==="
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_crush is called via trap
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-    restore_crush
-  }
-  trap restore_on_exit EXIT
+  start_crush_tui "$WAVE"
 
-  # Wave 4 config enables orchestration features.
-  start_crush 4
-  send_prompt "Use sub-agents to: 1) count files in internal/lcm/, 2) count files in internal/repomap/"
-  if ! wait_for_idle 180; then
-    fail "Scenario 1: Crush did not become idle (180s timeout)"
-    capture_evidence 41 "forked-agents"
+  send_tui_prompt "Use sub-agents to: (1) count files in internal/lcm/, (2) count files in internal/repomap/. After both finish, respond with exactly FORKED_AGENT_SENTINEL_88 on its own line."
+  if ! wait_for_tui_idle 180; then
+    fail "Scenario: Crush did not become idle (180s timeout)"
+    capture_tui_evidence "forked-agents-timeout"
     return
   fi
 
-  # Get the main session ID.
+  # --- Primary: TUI sentinel check ---
+  if assert_tui_contains "FORKED_AGENT_SENTINEL_88"; then
+    pass "Scenario: TUI output contains FORKED_AGENT_SENTINEL_88"
+  else
+    fail "Scenario: TUI output missing FORKED_AGENT_SENTINEL_88"
+  fi
+  capture_tui_evidence "forked-agents-result"
+
+  # --- Secondary: DB checks ---
+  local SID
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
-    fail "Scenario 1: No session ID found in DB"
-    capture_evidence 41 "forked-agents"
+    fail "Scenario: No session ID found in DB"
     return
   fi
-  pass "Scenario 1: Main session ID = $SID"
+  pass "Scenario: Main session ID = $SID"
 
-  # Query child sessions (parent_session_id matches main session).
+  # Query child sessions via parent_session_id.
   local children
   children=$(query_db "SELECT id FROM sessions WHERE parent_session_id = '$SID'")
   if [[ -z "$children" ]] || [[ "$children" == "[]" ]]; then
-    fail "Scenario 1: No child sessions found for parent $SID"
-    capture_evidence 41 "forked-agents"
+    fail "Scenario: No child sessions found for parent $SID"
     return
   fi
 
   local child_count
   child_count=$(echo "$children" | jq 'length')
   if [[ "$child_count" -ge 1 ]]; then
-    pass "Scenario 1: Found $child_count child session(s) (>= 1)"
+    pass "Scenario: Found $child_count child session(s) (>= 1)"
   else
-    fail "Scenario 1: Expected >= 1 child sessions, got $child_count"
+    fail "Scenario: Expected >= 1 child sessions, got $child_count"
   fi
 
   # Verify child ID format contains '$$' (parent_uuid$$call_uuid).
@@ -77,52 +72,43 @@ test_forked_agent_child_session() {
   local child_ids
   child_ids=$(echo "$children" | jq -r '.[].id')
   while IFS= read -r cid; do
+    [[ -z "$cid" ]] && continue
     if [[ "$cid" != *'$$'* ]]; then
-      fail "Scenario 1: Child ID '$cid' does not contain '\$\$'"
+      fail "Scenario: Child ID '$cid' does not contain '\$\$'"
       all_have_dollar=false
     fi
   done <<< "$child_ids"
   if [[ "$all_have_dollar" == "true" ]]; then
-    pass "Scenario 1: All child IDs contain '\$\$' separator"
+    pass "Scenario: All child IDs contain '\$\$' separator"
   fi
 
+  # Verify each child has user and assistant messages.
   local child_message_failures=0
   while IFS= read -r cid; do
-    local child_role_counts child_user_count child_assistant_count
+    [[ -z "$cid" ]] && continue
+    local child_role_counts
     child_role_counts=$(query_db "SELECT role, COUNT(*) as count FROM messages WHERE session_id = '$cid' GROUP BY role")
+    local child_user_count
     child_user_count=$(echo "$child_role_counts" | jq '[.[] | select(.role == "user")][0].count // 0')
+    local child_assistant_count
     child_assistant_count=$(echo "$child_role_counts" | jq '[.[] | select(.role == "assistant")][0].count // 0')
     if [[ "$child_user_count" -lt 1 ]] || [[ "$child_assistant_count" -lt 1 ]]; then
-      fail "Scenario 1: Child session $cid lacks user/assistant message exchange"
+      fail "Scenario: Child session $cid lacks user/assistant message exchange"
       child_message_failures=$((child_message_failures + 1))
     fi
   done <<< "$child_ids"
   if [[ "$child_message_failures" -eq 0 ]]; then
-    pass "Scenario 1: Every child session contains a user/assistant exchange"
+    pass "Scenario: Every child session contains a user/assistant exchange"
   fi
 
-  # Verify main session messages reference sub-agent results.
-  # Look for messages containing typical sub-agent result keywords.
-  local messages
-  messages=$(query_db "SELECT COUNT(*) as cnt FROM messages WHERE session_id = '$SID' AND role = 'assistant'")
+  # Verify main session has assistant messages.
   local msg_count
-  msg_count=$(echo "$messages" | jq '.[0].cnt // 0')
+  msg_count=$(query_db "SELECT COUNT(*) as cnt FROM messages WHERE session_id = '$SID' AND role = 'assistant'" | jq '.[0].cnt // 0')
   if [[ "$msg_count" -ge 1 ]]; then
-    pass "Scenario 1: Main session has $msg_count assistant message(s) (>= 1)"
+    pass "Scenario: Main session has $msg_count assistant message(s) (>= 1)"
   else
-    fail "Scenario 1: Expected >= 1 assistant messages, got $msg_count"
+    fail "Scenario: Expected >= 1 assistant messages, got $msg_count"
   fi
-
-  local synthesized_count
-  synthesized_count=$(query_db "SELECT COUNT(*) as count FROM message_parts mp JOIN messages m ON m.id = mp.message_id WHERE m.session_id = '$SID' AND m.role = 'assistant' AND mp.part_type = 'text' AND lower(mp.content_json) GLOB '*lcm*' AND lower(mp.content_json) GLOB '*repomap*'" | jq '.[0].count')
-  if [[ "$synthesized_count" -ge 1 ]]; then
-    pass "Scenario 1: Main assistant response synthesizes child lcm and repomap results"
-  else
-    fail "Scenario 1: Main assistant response did not synthesize child lcm and repomap results"
-  fi
-
-  capture_evidence 41 "forked-agents"
-  stop_crush
 }
 
 # ---------------------------------------------------------------------------

@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-# Test: Rewind restore verification — code and conversation rewind.
-# Verifies that snapshots exist after file-editing turns and documents the
-# expected behaviour for code restore and conversation truncation via rewind.
-#
-# SKIP: Rewind is not exposed via CLI or shell-accessible command. Rewind is
-# triggered through the TUI message-options dialog (press 'o' on a message,
-# then select a rewind mode). Since tmux send-keys cannot reliably navigate
-# the interactive dialog menu, the restore scenarios below are documented as
-# what-should-happen but marked SKIP. The snapshot preconditions are verified.
+# Test: Rewind restore verification — code and conversation rewind via TUI.
+# Scenario A: Create file V1 → modify to V2 → rewind (code only) → verify V1 restored.
+# Scenario B: Send 3 sentinel turns → rewind (convo only) to turn 2 → verify turn 3 removed.
+# Drives rewind through the TUI message-options dialog (press 'o' on a message).
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -17,233 +12,331 @@ source "$QA_DIR/lib/db-verify.sh"
 
 PASS=0
 FAIL=0
-SKIP=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
-skip() { echo "SKIP: $1"; ((SKIP += 1)); }
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Code restore — snapshot created, rewind restores original file
-# ---------------------------------------------------------------------------
-# What this test would verify:
-#   1. Create a file with known content via Crush.
-#   2. Verify a turn snapshot exists via turn_snapshot_counts query.
-#   3. Modify the file via a second Crush turn.
-#   4. Trigger rewind-to-turn-1 (RewindCodeOnly) via TUI dialog.
-#   5. Assert file content matches the original snapshot.
-#
-# SKIP reason: Rewind is only available through the TUI message-options
-# dialog (press 'o' on a message, then select "Rewind (code only)"). There is
-# no `crush rewind` CLI subcommand and no /rewind slash command that accepts
-# arguments from the prompt line. The dialog requires interactive navigation
-# (arrow keys, Enter) that cannot be reliably driven from tmux send-keys.
-#
-# Precondition checks (snapshot creation) are verified in test-rewind.sh.
+# Scenario A: Code restore — create V1 → modify to V2 → rewind code → V1 restored
 # ---------------------------------------------------------------------------
 test_code_restore() {
-  echo "=== Scenario 1: Code restore (snapshot → modify → rewind → assert original) ==="
+  echo "=== Scenario A: Code restore (V1 → V2 → rewind code → V1) ==="
+  export SCENARIO="rewind-restore-code"
+
+  local sentinel_file="/tmp/qa-rewind-restore-code-$$.txt"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_on_exit is called via trap
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
+  # shellcheck disable=SC2317
+  cleanup_test() {
+    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
+    sleep 0.3
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    restore_crush
-    rm -f /tmp/qa-rewind-restore-s1.txt
+    rm -f "$sentinel_file"
   }
-  trap restore_on_exit EXIT
+  trap cleanup_test EXIT
 
-  start_crush 4
+  WAVE=4 start_crush_tui 4
+  focus_editor
 
-  # Turn 1: Create a file with known content.
-  send_prompt "Create a new file /tmp/qa-rewind-restore-s1.txt with exactly this content: ORIGINAL_CONTENT_V1"
-  if ! wait_for_idle 120; then
-    fail "Scenario 1: Crush did not become idle after turn 1"
-    capture_evidence 44 "rewind-restore-code"
+  # Turn 1: Create file with V1 content.
+  send_tui_prompt "Create a new file $sentinel_file with exactly this content: REWIND_CODE_V1_SENTINEL"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario A: Crush did not become idle after turn 1"
+    capture_tui_evidence "after-turn1-timeout"
     return
   fi
+  capture_tui_evidence "after-turn1"
 
-  # Verify file was created with expected content.
-  if [[ -f /tmp/qa-rewind-restore-s1.txt ]] && grep -q "ORIGINAL_CONTENT_V1" /tmp/qa-rewind-restore-s1.txt; then
-    pass "Scenario 1: File created with ORIGINAL_CONTENT_V1 after turn 1"
+  # Verify V1 content in TUI.
+  if assert_tui_contains "REWIND_CODE_V1_SENTINEL"; then
+    pass "Scenario A: TUI shows REWIND_CODE_V1_SENTINEL after turn 1"
   else
-    fail "Scenario 1: File missing or wrong content after turn 1"
-    capture_evidence 44 "rewind-restore-code"
-    stop_crush
+    fail "Scenario A: TUI does not show REWIND_CODE_V1_SENTINEL after turn 1"
+    capture_tui_evidence "turn1-missing-v1"
     return
   fi
 
-  # Turn 2: Modify the file.
-  send_prompt "Replace the content of /tmp/qa-rewind-restore-s1.txt with exactly: MODIFIED_CONTENT_V2"
-  if ! wait_for_idle 120; then
-    fail "Scenario 1: Crush did not become idle after turn 2"
-    capture_evidence 44 "rewind-restore-code"
-    return
-  fi
-
-  # Verify file was modified.
-  if [[ -f /tmp/qa-rewind-restore-s1.txt ]] && grep -q "MODIFIED_CONTENT_V2" /tmp/qa-rewind-restore-s1.txt; then
-    pass "Scenario 1: File modified to MODIFIED_CONTENT_V2 after turn 2"
+  # Verify file on disk.
+  if [[ -f "$sentinel_file" ]] && grep -q "REWIND_CODE_V1_SENTINEL" "$sentinel_file"; then
+    pass "Scenario A: File $sentinel_file exists with V1 content"
   else
-    fail "Scenario 1: File not modified as expected after turn 2"
-    capture_evidence 44 "rewind-restore-code"
-    stop_crush
+    fail "Scenario A: File $sentinel_file missing or wrong content after turn 1"
+    capture_tui_evidence "turn1-file-check-fail"
     return
   fi
 
-  # Verify snapshots exist in DB using turn_snapshot_counts query.
+  # Turn 2: Modify file to V2 content.
+  send_tui_prompt "Replace the entire content of $sentinel_file with exactly: REWIND_CODE_V2_SENTINEL"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario A: Crush did not become idle after turn 2"
+    capture_tui_evidence "after-turn2-timeout"
+    return
+  fi
+  capture_tui_evidence "after-turn2"
+
+  # Verify V2 content in TUI.
+  if assert_tui_contains "REWIND_CODE_V2_SENTINEL"; then
+    pass "Scenario A: TUI shows REWIND_CODE_V2_SENTINEL after turn 2"
+  else
+    fail "Scenario A: TUI does not show REWIND_CODE_V2_SENTINEL after turn 2"
+    capture_tui_evidence "turn2-missing-v2"
+    return
+  fi
+
+  # Verify file on disk has V2.
+  if [[ -f "$sentinel_file" ]] && grep -q "REWIND_CODE_V2_SENTINEL" "$sentinel_file"; then
+    pass "Scenario A: File modified to REWIND_CODE_V2_SENTINEL"
+  else
+    fail "Scenario A: File not modified as expected after turn 2"
+    capture_tui_evidence "turn2-file-check-fail"
+    return
+  fi
+
+  # --- Trigger rewind via TUI ---
+  # Focus the chat list pane.
+  focus_chat
+  sleep 0.5
+
+  # Navigate to the assistant message from turn 2 (offset 0 = last message,
+  # which is the assistant's V2 response at the bottom).
+  select_message_by_offset 0
+  sleep 0.3
+  capture_tui_evidence "before-o-key"
+
+  # Press 'o' to open message options dialog.
+  tmux send-keys -t "$TMUX_SESSION" o
+  sleep 0.8
+  capture_tui_evidence "after-o-key"
+
+  # Select "Rewind (code only)" — index 0, just press Enter.
+  tmux send-keys -t "$TMUX_SESSION" Enter
+  capture_tui_evidence "after-rewind-enter"
+
+  # Wait for rewind to complete.
+  if ! wait_for_tui_idle 60; then
+    fail "Scenario A: Crush did not become idle after rewind"
+    capture_tui_evidence "rewind-timeout"
+    return
+  fi
+  capture_tui_evidence "after-rewind-idle"
+
+  # --- Assertions after rewind ---
+  # Primary: file should now have V1 content restored.
+  if [[ -f "$sentinel_file" ]] && grep -q "REWIND_CODE_V1_SENTINEL" "$sentinel_file"; then
+    pass "Scenario A: File restored to REWIND_CODE_V1_SENTINEL after code rewind"
+  else
+    fail "Scenario A: File not restored to V1 after code rewind"
+    capture_tui_evidence "rewind-file-not-restored"
+  fi
+
+  # Secondary: V2 content should no longer be in the file.
+  if ! grep -q "REWIND_CODE_V2_SENTINEL" "$sentinel_file" 2>/dev/null; then
+    pass "Scenario A: V2 content no longer in file after rewind"
+  else
+    fail "Scenario A: V2 content still present in file after rewind"
+  fi
+
+  # Secondary DB check: snapshots should exist.
   local SID
   SID=$(get_session_id)
-  if [[ -z "$SID" ]]; then
-    fail "Scenario 1: No session ID found in DB"
-    capture_evidence 44 "rewind-restore-code"
-    stop_crush
-    return
+  if [[ -n "$SID" ]]; then
+    local snapshot_count
+    snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+    if [[ "$snapshot_count" -ge 1 ]]; then
+      pass "Scenario A: $snapshot_count snapshot(s) exist in DB"
+    else
+      fail "Scenario A: No snapshots in DB"
+    fi
   fi
 
-  local snapshot_data
-  snapshot_data=$(run_query "turn_snapshot_counts" "$SID")
-  local snapshot_count file_count
-  snapshot_count=$(echo "$snapshot_data" | jq '.[0].snapshot_count // 0')
-  file_count=$(echo "$snapshot_data" | jq '.[0].file_count // 0')
-
-  echo "  Snapshot count: $snapshot_count, File count: $file_count"
-
-  if [[ "$snapshot_count" -ge 1 ]]; then
-    pass "Scenario 1: $snapshot_count snapshot(s) exist in DB — rewind data available"
+  # TUI should show rewind-related indicator.
+  local tui_output
+  tui_output=$(capture_tui | strip_ansi)
+  if echo "$tui_output" | grep -qi "rewind\|Rewind\|restored"; then
+    pass "Scenario A: TUI shows rewind indicator"
   else
-    fail "Scenario 1: No snapshots in DB — rewind cannot be triggered"
+    # Not a hard failure — rewind may have completed silently.
+    echo "  NOTE: No rewind indicator visible in TUI (rewind may be silent)"
   fi
-
-  # --- SKIP: Rewind trigger via TUI dialog ---
-  # To complete this scenario, we would need to:
-  #   1. Navigate to the first user message in the TUI (Up arrow keys)
-  #   2. Press 'o' to open message options dialog
-  #   3. Select "Rewind (code only)" from the dialog
-  #   4. Wait for rewind to complete
-  #   5. Assert: grep -q "ORIGINAL_CONTENT_V1" /tmp/qa-rewind-restore-s1.txt
-  #
-  # This requires interactive TUI navigation that tmux send-keys cannot
-  # reliably perform because the number of keypresses to reach the target
-  # message depends on the dynamic number of assistant response lines.
-  skip "Scenario 1: Code restore rewind — no CLI command; requires TUI dialog navigation"
-
-  capture_evidence 44 "rewind-restore-code"
-  stop_crush
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Conversation truncation — rewind removes later messages
-# ---------------------------------------------------------------------------
-# What this test would verify:
-#   1. Send 3 turns with unique sentinel text (SENTINEL_A, SENTINEL_B, SENTINEL_C).
-#   2. Verify messages exist via query_db.
-#   3. Trigger rewind-to-turn-2 (RewindConvoOnly) via TUI dialog.
-#   4. Assert: SENTINEL_A and SENTINEL_B messages preserved, SENTINEL_C removed.
-#
-# SKIP reason: Same as Scenario 1 — rewind requires TUI dialog interaction.
+# Scenario B: Conversation truncation — 3 turns → rewind convo → turn 3 removed
 # ---------------------------------------------------------------------------
 test_conversation_truncation() {
-  echo "=== Scenario 2: Conversation truncation (3 turns → rewind to middle → assert later removed) ==="
+  echo "=== Scenario B: Conversation truncation (3 turns → rewind convo → turn 3 removed) ==="
+  export SCENARIO="rewind-restore-convo"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_on_exit is called via trap
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
+  # shellcheck disable=SC2317
+  cleanup_test() {
+    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
+    sleep 0.3
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    restore_crush
   }
-  trap restore_on_exit EXIT
+  trap cleanup_test EXIT
 
-  start_crush 4
+  WAVE=4 start_crush_tui 4
+  focus_editor
 
-  # Turn 1: Sent with unique sentinel A.
-  send_prompt "Reply with exactly: SENTINEL_A_CONFIRMED and nothing else"
-  if ! wait_for_idle 120; then
-    fail "Scenario 2: Crush did not become idle after turn 1"
-    capture_evidence 44 "rewind-restore-convo"
+  # Turn 1: Sent with sentinel A.
+  send_tui_prompt "Reply with exactly: REWIND_CONVO_A_CONFIRMED and nothing else"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario B: Crush did not become idle after turn 1"
+    capture_tui_evidence "convo-turn1-timeout"
+    return
+  fi
+  capture_tui_evidence "convo-after-turn1"
+
+  if assert_tui_contains "REWIND_CONVO_A_CONFIRMED"; then
+    pass "Scenario B: TUI shows REWIND_CONVO_A_CONFIRMED after turn 1"
+  else
+    fail "Scenario B: TUI does not show REWIND_CONVO_A_CONFIRMED after turn 1"
+    capture_tui_evidence "convo-turn1-missing"
     return
   fi
 
-  # Turn 2: Sent with unique sentinel B.
-  send_prompt "Reply with exactly: SENTINEL_B_CONFIRMED and nothing else"
-  if ! wait_for_idle 120; then
-    fail "Scenario 2: Crush did not become idle after turn 2"
-    capture_evidence 44 "rewind-restore-convo"
+  # Turn 2: Sent with sentinel B.
+  send_tui_prompt "Reply with exactly: REWIND_CONVO_B_CONFIRMED and nothing else"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario B: Crush did not become idle after turn 2"
+    capture_tui_evidence "convo-turn2-timeout"
+    return
+  fi
+  capture_tui_evidence "convo-after-turn2"
+
+  if assert_tui_contains "REWIND_CONVO_B_CONFIRMED"; then
+    pass "Scenario B: TUI shows REWIND_CONVO_B_CONFIRMED after turn 2"
+  else
+    fail "Scenario B: TUI does not show REWIND_CONVO_B_CONFIRMED after turn 2"
+    capture_tui_evidence "convo-turn2-missing"
     return
   fi
 
-  # Turn 3: Sent with unique sentinel C.
-  send_prompt "Reply with exactly: SENTINEL_C_CONFIRMED and nothing else"
-  if ! wait_for_idle 120; then
-    fail "Scenario 2: Crush did not become idle after turn 3"
-    capture_evidence 44 "rewind-restore-convo"
+  # Turn 3: Sent with sentinel C.
+  send_tui_prompt "Reply with exactly: REWIND_CONVO_C_CONFIRMED and nothing else"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario B: Crush did not become idle after turn 3"
+    capture_tui_evidence "convo-turn3-timeout"
+    return
+  fi
+  capture_tui_evidence "convo-after-turn3"
+
+  if assert_tui_contains "REWIND_CONVO_C_CONFIRMED"; then
+    pass "Scenario B: TUI shows REWIND_CONVO_C_CONFIRMED after turn 3"
+  else
+    fail "Scenario B: TUI does not show REWIND_CONVO_C_CONFIRMED after turn 3"
+    capture_tui_evidence "convo-turn3-missing"
     return
   fi
 
-  # Verify all 3 turns exist in the DB.
+  # Verify all 3 turns in DB before rewind.
   local SID
   SID=$(get_session_id)
-  if [[ -z "$SID" ]]; then
-    fail "Scenario 2: No session ID found in DB"
-    capture_evidence 44 "rewind-restore-convo"
-    stop_crush
+  if [[ -n "$SID" ]]; then
+    local pre_msg_count
+    pre_msg_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+    echo "  Message count before rewind: $pre_msg_count"
+    if [[ "$pre_msg_count" -ge 6 ]]; then
+      pass "Scenario B: $pre_msg_count messages before rewind (expected >= 6)"
+    else
+      fail "Scenario B: Only $pre_msg_count messages before rewind (expected >= 6)"
+    fi
+  fi
+
+  # --- Trigger rewind via TUI ---
+  # Focus the chat list pane.
+  focus_chat
+  sleep 0.5
+
+  # Navigate to the assistant message from turn 3 (offset 0 = last message).
+  select_message_by_offset 0
+  sleep 0.3
+  capture_tui_evidence "convo-before-o-key"
+
+  # Press 'o' to open message options dialog.
+  tmux send-keys -t "$TMUX_SESSION" o
+  sleep 0.8
+  capture_tui_evidence "convo-after-o-key"
+
+  # Select "Rewind (convo only)" — index 1: Down then Enter.
+  tmux send-keys -t "$TMUX_SESSION" Down
+  sleep 0.2
+  tmux send-keys -t "$TMUX_SESSION" Enter
+  capture_tui_evidence "convo-after-rewind-enter"
+
+  # Wait for rewind to complete.
+  if ! wait_for_tui_idle 60; then
+    fail "Scenario B: Crush did not become idle after convo rewind"
+    capture_tui_evidence "convo-rewind-timeout"
     return
   fi
+  capture_tui_evidence "convo-after-rewind-idle"
 
-  local message_count
-  message_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id = '$SID'")
-  echo "  Message count after 3 turns: $message_count"
-
-  if [[ "$message_count" -ge 6 ]]; then
-    # Expect at least 6 messages: 3 user + 3 assistant.
-    pass "Scenario 2: $message_count messages recorded after 3 turns (expected >= 6)"
+  # --- Assertions after rewind ---
+  # Primary TUI: sentinel C should no longer be visible.
+  if assert_tui_not_contains "REWIND_CONVO_C_CONFIRMED"; then
+    pass "Scenario B: TUI no longer shows REWIND_CONVO_C_CONFIRMED after convo rewind"
   else
-    fail "Scenario 2: Only $message_count messages after 3 turns (expected >= 6)"
+    fail "Scenario B: TUI still shows REWIND_CONVO_C_CONFIRMED after convo rewind"
+    capture_tui_evidence "convo-c-still-visible"
   fi
 
-  # Verify snapshots exist.
-  local snapshot_data
-  snapshot_data=$(run_query "turn_snapshot_counts" "$SID")
-  local snapshot_count
-  snapshot_count=$(echo "$snapshot_data" | jq '.[0].snapshot_count // 0')
-  echo "  Snapshot count after 3 turns: $snapshot_count"
-
-  if [[ "$snapshot_count" -ge 1 ]]; then
-    pass "Scenario 2: $snapshot_count snapshot(s) exist — rewind data available"
+  # Secondary: sentinels A and B should still be present.
+  local tui_output
+  tui_output=$(capture_tui | strip_ansi)
+  if echo "$tui_output" | grep -q "REWIND_CONVO_A_CONFIRMED"; then
+    pass "Scenario B: TUI still shows REWIND_CONVO_A_CONFIRMED"
   else
-    fail "Scenario 2: No snapshots in DB after 3 turns"
+    echo "  NOTE: REWIND_CONVO_A_CONFIRMED may have scrolled off visible TUI area"
   fi
 
-  # --- SKIP: Rewind trigger via TUI dialog ---
-  # To complete this scenario, we would need to:
-  #   1. Navigate to the second user message in the TUI
-  #   2. Press 'o' to open message options dialog
-  #   3. Select "Rewind (conversation only)" from the dialog
-  #   4. Wait for rewind to complete
-  #   5. Assert: query_db for SENTINEL_A, SENTINEL_B → found
-  #   6. Assert: query_db for SENTINEL_C → NOT found (message deleted)
-  #   7. Assert: message count reduced by 2 (user msg 3 + assistant msg 3 removed)
-  #
-  # Expected SQL for post-rewind verification:
-  #   SELECT COUNT(*) FROM messages WHERE session_id = '$SID'
-  #     AND content LIKE '%SENTINEL_A%'  → >= 1
-  #   SELECT COUNT(*) FROM messages WHERE session_id = '$SID'
-  #     AND content LIKE '%SENTINEL_B%'  → >= 1
-  #   SELECT COUNT(*) FROM messages WHERE session_id = '$SID'
-  #     AND content LIKE '%SENTINEL_C%'  → 0
-  skip "Scenario 2: Conversation truncation rewind — no CLI command; requires TUI dialog navigation"
+  if echo "$tui_output" | grep -q "REWIND_CONVO_B_CONFIRMED"; then
+    pass "Scenario B: TUI still shows REWIND_CONVO_B_CONFIRMED"
+  else
+    echo "  NOTE: REWIND_CONVO_B_CONFIRMED may have scrolled off visible TUI area"
+  fi
 
-  capture_evidence 44 "rewind-restore-convo"
-  stop_crush
+  # Secondary DB check: message count should have decreased.
+  if [[ -n "$SID" ]]; then
+    local post_msg_count
+    post_msg_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+    echo "  Message count after rewind: $post_msg_count"
+
+    # Convo rewind should remove user msg 3 + assistant msg 3 (2 messages).
+    if [[ "$post_msg_count" -lt "$pre_msg_count" ]]; then
+      pass "Scenario B: Message count decreased from $pre_msg_count to $post_msg_count"
+    else
+      fail "Scenario B: Message count did not decrease after convo rewind ($pre_msg_count → $post_msg_count)"
+    fi
+
+    # Verify sentinel C is no longer in the DB.
+    local c_count
+    c_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id = '$SID' AND content LIKE '%REWIND_CONVO_C%'" 2>/dev/null || echo 0)
+    if [[ "$c_count" -eq 0 ]]; then
+      pass "Scenario B: REWIND_CONVO_C messages removed from DB"
+    else
+      fail "Scenario B: REWIND_CONVO_C messages still in DB (count: $c_count)"
+    fi
+  fi
+
+  # TUI should show rewind-related indicator.
+  if echo "$tui_output" | grep -qi "rewind\|Rewind"; then
+    pass "Scenario B: TUI shows rewind indicator"
+  else
+    echo "  NOTE: No rewind indicator visible in TUI"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -253,13 +346,5 @@ test_code_restore
 test_conversation_truncation
 
 echo ""
-echo "Results: $PASS passed, $FAIL failed, $SKIP skipped"
-echo ""
-echo "NOTE: $SKIP scenario(s) skipped because rewind is not exposed via CLI."
-echo "      Rewind is triggered through the TUI message-options dialog (press 'o'"
-echo "      on a message, then select rewind mode). To make these tests fully"
-echo "      automatable, one of the following would be needed:"
-echo "      1. A 'crush rewind --session <id> --seq <n> --mode <code|convo|both>' CLI command"
-echo "      2. A /rewind <seq> <mode> slash command that accepts arguments"
-echo "      3. A programmatic API endpoint for rewind operations"
-exit "$FAIL"
+echo "Results: $PASS passed, $FAIL failed"
+[ "$FAIL" -eq 0 ]
