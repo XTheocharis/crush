@@ -18,6 +18,8 @@ import (
 // buildRepomapTools creates the repo-map tools with real refresh functions
 // backed by repomap.Service when tree-sitter is available.
 func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostContext) []fantasy.AgentTool {
+	slog.Info("RepomapExtension: building with treesitter tag — repo-map service enabled")
+
 	rawDB := host.DB()
 	if rawDB == nil {
 		slog.Warn("RepomapExtension: no DB available, using nil refresh functions")
@@ -26,7 +28,7 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 
 	cfg := host.Config()
 	if cfg == nil || cfg.Options == nil || cfg.Options.RepoMap == nil || cfg.Options.RepoMap.Disabled {
-		slog.Info("RepomapExtension: repo map disabled in config",
+		slog.Warn("RepomapExtension: repo map disabled — tools will have nil refresh functions",
 			"cfg_nil", cfg == nil,
 			"options_nil", cfg != nil && cfg.Options == nil,
 			"repomap_nil", cfg != nil && cfg.Options != nil && cfg.Options.RepoMap == nil,

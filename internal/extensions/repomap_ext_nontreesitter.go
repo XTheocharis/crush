@@ -4,6 +4,7 @@ package extensions
 
 import (
 	"context"
+	"log/slog"
 
 	"charm.land/fantasy"
 
@@ -12,6 +13,9 @@ import (
 )
 
 func (e *RepomapExtension) buildRepomapTools(_ context.Context, _ ext.HostContext) []fantasy.AgentTool {
+	slog.Warn("RepomapExtension: built WITHOUT treesitter tag — repo-map refresh is disabled, " +
+		"all repo-map tables (file_cache, tags, imports, session_rankings) will remain empty. " +
+		"Rebuild with CGO_ENABLED=1 and -tags=treesitter to enable repo-map.")
 	return []fantasy.AgentTool{
 		tools.NewAgenticMapTool(),
 		tools.NewLlmMapTool(),

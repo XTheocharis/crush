@@ -279,8 +279,17 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		return fallback(nil)
 	}
 
+	slog.Info("Repomap Generate: calling extractTags",
+		"session_id", sessionID,
+		"file_universe_count", len(fileUniverse),
+		"force_refresh", opts.ForceRefresh,
+	)
 	tags, importEdges, err := s.extractTags(ctx, s.rootDir, fileUniverse, opts.ForceRefresh)
 	if err != nil {
+		slog.Warn("Repomap Generate: extractTags failed",
+			"session_id", sessionID,
+			"error", err,
+		)
 		if errors.Is(err, context.DeadlineExceeded) && opts.ParityMode {
 			slog.Warn("Disabling repo map for session — extractTags timed out",
 				"session", sessionID)
@@ -288,6 +297,11 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 		}
 		return fallback(err)
 	}
+	slog.Info("Repomap Generate: extractTags completed",
+		"session_id", sessionID,
+		"tag_count", len(tags),
+		"import_edge_count", len(importEdges),
+	)
 
 	// W6.1: Build tagsByFile map for efficient lookup by RenderRepoMap.
 	tagsByFile := make(map[string][]treesitter.Tag, len(tags)/10+1)
@@ -570,12 +584,23 @@ func (s *Service) ClearInjection(sessionID string, runKey RunInjectionKey) {
 // RefreshAsync schedules async refresh.
 func (s *Service) RefreshAsync(sessionID string, opts GenerateOpts) {
 	if s == nil || s.isClosed() {
+		slog.Warn("Repomap RefreshAsync: skipped — service nil or closed",
+			"session_id", sessionID,
+			"service_nil", s == nil,
+		)
 		return
 	}
 	if opts.SessionID == "" {
 		opts.SessionID = sessionID
 	}
 	flightKey := s.buildRefreshFlightKey(sessionID, opts)
+
+	slog.Info("Repomap RefreshAsync: scheduling refresh",
+		"session_id", sessionID,
+		"opts_session_id", opts.SessionID,
+		"force_refresh", opts.ForceRefresh,
+		"flight_key", flightKey,
+	)
 
 	s.wg.Add(1)
 	go func(key string, sid string, o GenerateOpts) {
@@ -585,6 +610,16 @@ func (s *Service) RefreshAsync(sessionID string, opts GenerateOpts) {
 				s.onRefreshRun()
 			}
 			_, _, err := s.Refresh(s.serviceCtx, sid, o)
+			if err != nil {
+				slog.Warn("Repomap RefreshAsync: refresh failed",
+					"session_id", sid,
+					"error", err,
+				)
+			} else {
+				slog.Info("Repomap RefreshAsync: refresh completed",
+					"session_id", sid,
+				)
+			}
 			return nil, err
 		})
 	}(flightKey, sessionID, opts)
@@ -1041,36 +1076,40 @@ func rankedFilePaths(files []RankedFile) []string {
 
 func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKey string, ranked []RankedFile, readOnlyPaths []string) {
 	if s == nil || s.db == nil || repoKey == "" || strings.TrimSpace(sessionID) == "" {
-		slog.Debug("Repomap persistSessionArtifacts: skipped",
+		slog.Warn("Repomap persistSessionArtifacts: skipped due to guard condition",
 			"session_id", sessionID,
 			"repo_key", repoKey,
 			"service_nil", s == nil,
 			"db_nil", s == nil || s.db == nil,
+			"repo_key_empty", repoKey == "",
+			"session_id_empty", strings.TrimSpace(sessionID) == "",
 		)
 		return
 	}
 
-	slog.Debug("Repomap persistSessionArtifacts: persisting",
+	slog.Info("Repomap persistSessionArtifacts: persisting",
 		"session_id", sessionID,
 		"ranked_count", len(ranked),
 		"read_only_count", len(readOnlyPaths),
+		"repo_key", repoKey,
 	)
 
 	if err := s.db.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
-		slog.Debug("Repomap persistSessionArtifacts: failed to delete old rankings",
+		slog.Warn("Repomap persistSessionArtifacts: failed to delete old rankings",
 			"session_id", sessionID,
 			"error", err,
 		)
 		return
 	}
 	if err := s.db.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
-		slog.Debug("Repomap persistSessionArtifacts: failed to delete old read-only paths",
+		slog.Warn("Repomap persistSessionArtifacts: failed to delete old read-only paths",
 			"session_id", sessionID,
 			"error", err,
 		)
 		return
 	}
 
+	upserted := 0
 	for _, file := range ranked {
 		rel := normalizeGraphRelPath(file.Path)
 		if rel == "" {
@@ -1082,13 +1121,14 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 			RelPath:   rel,
 			Rank:      file.Rank,
 		}); err != nil {
-			slog.Debug("Repomap persistSessionArtifacts: failed to upsert ranking",
+			slog.Warn("Repomap persistSessionArtifacts: failed to upsert ranking",
 				"session_id", sessionID,
 				"path", rel,
 				"error", err,
 			)
 			return
 		}
+		upserted++
 	}
 
 	for _, p := range normalizeUniqueGraphPaths(readOnlyPaths) {
@@ -1097,7 +1137,7 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 			SessionID: sessionID,
 			RelPath:   p,
 		}); err != nil {
-			slog.Debug("Repomap persistSessionArtifacts: failed to upsert read-only path",
+			slog.Warn("Repomap persistSessionArtifacts: failed to upsert read-only path",
 				"session_id", sessionID,
 				"path", p,
 				"error", err,
@@ -1106,8 +1146,10 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 		}
 	}
 
-	slog.Debug("Repomap persistSessionArtifacts: completed",
+	slog.Info("Repomap persistSessionArtifacts: completed",
 		"session_id", sessionID,
-		"ranked_count", len(ranked),
+		"ranked_upserted", upserted,
+		"ranked_total", len(ranked),
+		"read_only_total", len(readOnlyPaths),
 	)
 }
