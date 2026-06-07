@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
@@ -458,6 +459,11 @@ func wireLCMDedupConfig(store *config.ConfigStore) {
 
 	mgr.SetDeduplicationEnabled(dedup)
 	mgr.SetPurgeErrorsEnabled(purge)
+
+	if cfg.Options.LCM.SummarizerTimeoutSeconds > 0 {
+		mgr.SetSummarizerTimeout(time.Duration(cfg.Options.LCM.SummarizerTimeoutSeconds) * time.Second)
+	}
+
 	slog.Info("LCM dedup config wired",
 		"deduplication_enabled", dedup,
 		"purge_errors_enabled", purge,

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/db"
 )
@@ -84,6 +85,11 @@ func (m *compactionManager) trySummarize(ctx context.Context, sessionID string, 
 	}
 
 	if len(selectedEntries) < MinMessagesToSummarize {
+		slog.Debug("LCM trySummarize: not enough messages to summarize",
+			"session_id", sessionID,
+			"selected_count", len(selectedEntries),
+			"min_required", MinMessagesToSummarize,
+		)
 		return false, nil
 	}
 
@@ -123,8 +129,21 @@ func (m *compactionManager) trySummarize(ctx context.Context, sessionID string, 
 		Messages:  msgsForSummary,
 	}
 
-	summaryText, summaryTokens, err := m.summarizer.Summarize(ctx, input)
+	timeout := m.summarizerTimeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	sumCtx, cancel := context.WithTimeout(ctx, timeout)
+	summaryText, summaryTokens, err := m.summarizer.Summarize(sumCtx, input)
+	cancel()
 	if err != nil {
+		if sumCtx.Err() == context.DeadlineExceeded {
+			slog.Error("LCM summarizer timed out, skipping compaction layer",
+				"session_id", sessionID,
+				"timeout", timeout,
+			)
+			return false, nil
+		}
 		return false, fmt.Errorf("generating summary: %w", err)
 	}
 	if summaryTokens == 0 {
@@ -197,6 +216,13 @@ func (m *compactionManager) trySummarize(ctx context.Context, sessionID string, 
 		return false, fmt.Errorf("committing transaction: %v: %w", ErrStorageTransaction, err)
 	}
 
+	slog.Debug("LCM trySummarize: summarization completed",
+		"session_id", sessionID,
+		"summary_id", summaryID,
+		"summary_tokens", summaryTokens,
+		"messages_summarized", len(selectedEntries),
+	)
+
 	return true, nil
 }
 
@@ -222,8 +248,21 @@ func (m *compactionManager) tryCondense(ctx context.Context, sessionID string, b
 	// Condense up to the first two adjacent summaries.
 	toCondense := summaryEntries[:min(2, len(summaryEntries))]
 
-	condensedText, condensedTokens, err := m.summarizer.Condense(ctx, toCondense)
+	timeout := m.summarizerTimeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	condCtx, cancel := context.WithTimeout(ctx, timeout)
+	condensedText, condensedTokens, err := m.summarizer.Condense(condCtx, toCondense)
+	cancel()
 	if err != nil {
+		if condCtx.Err() == context.DeadlineExceeded {
+			slog.Error("LCM condenser timed out, skipping compaction layer",
+				"session_id", sessionID,
+				"timeout", timeout,
+			)
+			return false, nil
+		}
 		return false, fmt.Errorf("condensing summaries: %w", err)
 	}
 	if condensedTokens == 0 {
@@ -385,6 +424,13 @@ func (m *compactionManager) tryCondense(ctx context.Context, sessionID string, b
 
 	_ = budget
 	_ = position
+
+	slog.Debug("LCM tryCondense: condensation completed",
+		"session_id", sessionID,
+		"condensed_id", condensedID,
+		"condensed_tokens", condensedTokens,
+		"parents_condensed", len(toCondense),
+	)
 
 	return true, nil
 }

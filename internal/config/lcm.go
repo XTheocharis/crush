@@ -68,6 +68,11 @@ type LCMOptions struct {
 	// Nudge configures the context-limit nudge injection system. When nil,
 	// default nudge values are used.
 	Nudge *NudgeOptions `json:"nudge,omitempty" jsonschema:"description=Nudge injection configuration for context-limit warnings"`
+
+	// SummarizerTimeoutSeconds is the maximum time in seconds for a single
+	// summarizer LLM call during compaction. When the timeout fires, the
+	// compaction layer is skipped and the pipeline continues. Default: 60.
+	SummarizerTimeoutSeconds int `json:"summarizer_timeout,omitempty" jsonschema:"description=Timeout in seconds for LCM summarizer LLM calls during compaction,default=60"`
 }
 
 // NudgeOptions configures the nudge injection system.

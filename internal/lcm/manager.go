@@ -219,6 +219,11 @@ type Manager interface {
 	// compaction (default: true).
 	SetPurgeErrorsEnabled(enabled bool)
 
+	// SetSummarizerTimeout sets the per-call timeout for LLM summarization
+	// during compaction. When exceeded, the compaction layer is skipped.
+	// Values <= 0 keep the default (60s).
+	SetSummarizerTimeout(d time.Duration)
+
 	// GetTurnCount returns the current turn count for a session. Returns 0
 	// for unknown sessions.
 	GetTurnCount(sessionID string) int64
@@ -362,6 +367,10 @@ type compactionManager struct {
 	// nudgeInjector appends context-limit nudges to prompts when pressure
 	// is high. Nil means no nudges are injected.
 	nudgeInjector *nudge.NudgeInjector
+
+	// summarizerTimeout is the per-call timeout for LLM summarization.
+	// When exceeded, the compaction layer is skipped. Default: 60s.
+	summarizerTimeout time.Duration
 }
 
 type providerTokenState struct {
@@ -1664,6 +1673,13 @@ func (m *compactionManager) SetDeduplicationEnabled(enabled bool) {
 
 func (m *compactionManager) SetPurgeErrorsEnabled(enabled bool) {
 	m.purgeErrorsEnabled = enabled
+}
+
+func (m *compactionManager) SetSummarizerTimeout(d time.Duration) {
+	if d <= 0 {
+		d = 60 * time.Second
+	}
+	m.summarizerTimeout = d
 }
 
 func (m *compactionManager) SetHookRunners(preCompact, postCompact *hooks.Runner) {
