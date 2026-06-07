@@ -55,7 +55,7 @@ test_architect_plan() {
 
   # --- Secondary: architect log evidence ---
   local architect_count
-  architect_count=$(grep -ci "architect" .crush/logs/crush.log 2>/dev/null || echo 0)
+  architect_count=$(grep -ci "architect" .crush/logs/crush.log 2>/dev/null ) || architect_count=0
 
   if [[ "$architect_count" -gt 0 ]]; then
     pass "Scenario 1: Architect invoked (log mentions: $architect_count occurrences)"
@@ -100,7 +100,7 @@ test_architect_parse_bug() {
   fi
 
   local parse_fail_count
-  parse_fail_count=$(grep -c "Failed to parse architect plan" .crush/logs/crush.log 2>/dev/null || echo 0)
+  parse_fail_count=$(grep -c "Failed to parse architect plan" .crush/logs/crush.log 2>/dev/null ) || parse_fail_count=0
 
   if [[ "$parse_fail_count" -eq 0 ]]; then
     pass "Scenario 2: No architect plan parse failures detected"

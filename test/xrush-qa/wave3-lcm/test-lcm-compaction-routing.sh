@@ -122,7 +122,7 @@ test_compaction_then_routing() {
 
   # --- Secondary: log grep for compaction and routing evidence. ---
   local compaction_entries
-  compaction_entries=$(grep -ciE "compact|lcm.*summar|layer.*compact|summary.*creat" .crush/logs/crush.log 2>/dev/null || echo 0)
+  compaction_entries=$(grep -ciE "compact|lcm.*summar|layer.*compact|summary.*creat" .crush/logs/crush.log 2>/dev/null ) || compaction_entries=0
   if [[ "$compaction_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $compaction_entries compaction log entries"
   else
@@ -130,7 +130,7 @@ test_compaction_then_routing() {
   fi
 
   local routing_entries
-  routing_entries=$(grep -ciE "router|tier|routing|model.*select|route.*request|escalat" .crush/logs/crush.log 2>/dev/null || echo 0)
+  routing_entries=$(grep -ciE "router|tier|routing|model.*select|route.*request|escalat" .crush/logs/crush.log 2>/dev/null ) || routing_entries=0
   if [[ "$routing_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $routing_entries routing/tier log entries"
   else
@@ -352,7 +352,7 @@ test_post_compaction_routing_persistence() {
 
   # --- Log evidence for both compaction and routing. ---
   local compaction_log
-  compaction_log=$(grep -ciE "compact|lcm.*summar|layer.*compact" .crush/logs/crush.log 2>/dev/null || echo 0)
+  compaction_log=$(grep -ciE "compact|lcm.*summar|layer.*compact" .crush/logs/crush.log 2>/dev/null ) || compaction_log=0
   if [[ "$compaction_log" -ge 1 ]]; then
     pass "Scenario 2: Found $compaction_log compaction log entries"
   else
@@ -360,7 +360,7 @@ test_post_compaction_routing_persistence() {
   fi
 
   local routing_log
-  routing_log=$(grep -ciE "router|tier|routing|model.*select|route.*request" .crush/logs/crush.log 2>/dev/null || echo 0)
+  routing_log=$(grep -ciE "router|tier|routing|model.*select|route.*request" .crush/logs/crush.log 2>/dev/null ) || routing_log=0
   if [[ "$routing_log" -ge 1 ]]; then
     pass "Scenario 2: Found $routing_log routing/tier log entries"
   else

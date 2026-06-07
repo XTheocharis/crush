@@ -80,8 +80,8 @@ echo ""
 echo "=== Results Summary ==="
 if [[ -f "$QA_DIR/reports/results.txt" ]]; then
   cat "$QA_DIR/reports/results.txt"
-  pass=$(grep -c 'PASS$' "$QA_DIR/reports/results.txt" || echo 0)
-  fail=$(grep -c 'FAIL$' "$QA_DIR/reports/results.txt" || echo 0)
+  pass=$(grep -c 'PASS$' "$QA_DIR/reports/results.txt" ) || pass=0
+  fail=$(grep -c 'FAIL$' "$QA_DIR/reports/results.txt" ) || fail=0
   echo ""
     echo "Passed: $pass  Failed: $fail"
 else

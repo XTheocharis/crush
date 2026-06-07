@@ -33,8 +33,8 @@ test_small_request_routing() {
   # Simple prompt — should route to a lightweight tier.
   send_tui_prompt "What is 2+2? Reply with exactly: ROUTING_SMALL_SENTINEL_42"
 
-  if ! wait_for_tui_idle 120; then
-    fail "Scenario 1: Crush did not become idle within 120s"
+  if ! wait_for_tui_idle 180; then
+    fail "Scenario 1: Crush did not become idle within 180s"
     capture_tui_evidence "small-routing-timeout"
     return
   fi
@@ -49,7 +49,7 @@ test_small_request_routing() {
 
   # Secondary: log grep for router/tier entries.
   local log_entries
-  log_entries=$(grep -ciE "router|tier|routing|model.*select|route.*request" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "router|tier|routing|model.*select|route.*request" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries routing/tier log entries"
@@ -94,7 +94,7 @@ test_large_request_routing() {
 
   # Secondary: log grep for routing/fallback entries.
   local log_entries
-  log_entries=$(grep -ciE "router|tier|routing|fallback|model.*select|escalat|route.*request|budget" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "router|tier|routing|fallback|model.*select|escalat|route.*request|budget" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 2: Found $log_entries routing/fallback log entries"

@@ -94,7 +94,7 @@ test_orchestration_autofix() {
     local tool_calls
     tool_calls=$(query_db "SELECT content_json FROM message_parts WHERE session_id = '$cid' AND part_type = 'tool_call'")
     local autofix_match
-    autofix_match=$(echo "$tool_calls" | jq -r '.[].name // empty' 2>/dev/null | grep -ciE "diag_autofix|diag_gate|autofix|diagnostic" || echo 0)
+    autofix_match=$(echo "$tool_calls" | jq -r '.[].name // empty' 2>/dev/null | grep -ciE "diag_autofix|diag_gate|autofix|diagnostic" ) || autofix_match=0
     if [[ "$autofix_match" -ge 1 ]]; then
       autofix_found=$((autofix_found + 1))
     fi
@@ -102,7 +102,7 @@ test_orchestration_autofix() {
     local child_texts
     child_texts=$(query_db "SELECT content_json FROM message_parts mp JOIN messages m ON m.id = mp.message_id WHERE m.session_id = '$cid' AND m.role = 'assistant' AND mp.part_type = 'text'")
     local text_match
-    text_match=$(echo "$child_texts" | jq -r '.[].content // empty' 2>/dev/null | grep -ciE "diag|vet|lint|unused|autofix|fix" || echo 0)
+    text_match=$(echo "$child_texts" | jq -r '.[].content // empty' 2>/dev/null | grep -ciE "diag|vet|lint|unused|autofix|fix" ) || text_match=0
     if [[ "$text_match" -ge 1 ]]; then
       autofix_found=$((autofix_found + 1))
     fi
@@ -186,7 +186,7 @@ test_operator_autofix() {
 
   # --- Secondary log check: orchestration + diagnostic tooling ---
   local orch_diag_count
-  orch_diag_count=$(grep -ciE "operator|parallel|sub.?agent|diag_autofix|autofix|vet" .crush/logs/crush.log 2>/dev/null || echo 0)
+  orch_diag_count=$(grep -ciE "operator|parallel|sub.?agent|diag_autofix|autofix|vet" .crush/logs/crush.log 2>/dev/null ) || orch_diag_count=0
   if [[ "$orch_diag_count" -gt 0 ]]; then
     pass "Scenario 2: Orchestration + diagnostic pipeline ran ($orch_diag_count log matches)"
   else

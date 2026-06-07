@@ -67,7 +67,7 @@ test_eval_pipeline_command_palette() {
   local db_path=".crush/crush.db"
   if [[ -f "$db_path" ]]; then
     local session_count
-    session_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM sessions" 2>/dev/null || echo 0)
+    session_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM sessions" 2>/dev/null ) || session_count=0
     if [[ "$session_count" -ge 1 ]]; then
       pass "Scenario 1: DB has $session_count session(s) from TUI launch"
     else
@@ -81,7 +81,7 @@ test_eval_pipeline_command_palette() {
   local log_path=".crush/logs/crush.log"
   if [[ -f "$log_path" ]]; then
     local eval_log_matches
-    eval_log_matches=$(grep -ciE "eval|Evaluation|ActionRunEval" "$log_path" 2>/dev/null || echo 0)
+    eval_log_matches=$(grep -ciE "eval|Evaluation|ActionRunEval" "$log_path" 2>/dev/null ) || eval_log_matches=0
     if [[ "$eval_log_matches" -ge 1 ]]; then
       pass "Scenario 1: Crush log contains eval evidence ($eval_log_matches matches)"
     else
@@ -145,7 +145,7 @@ test_eval_pipeline_palette_with_session() {
     sid=$(sqlite3 "$db_path" "SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1" 2>/dev/null || true)
     if [[ -n "$sid" ]]; then
       local msg_count
-      msg_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE session_id = '$sid'" 2>/dev/null || echo 0)
+      msg_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE session_id = '$sid'" 2>/dev/null ) || msg_count=0
       if [[ "$msg_count" -ge 2 ]]; then
         pass "Scenario 2: DB has $msg_count messages in session"
       else
@@ -199,7 +199,7 @@ test_eval_pipeline_no_cli_error() {
   local log_path=".crush/logs/crush.log"
   if [[ -f "$log_path" ]]; then
     local error_count
-    error_count=$(grep -ciE "error.*eval|eval.*error|panic" "$log_path" 2>/dev/null || echo 0)
+    error_count=$(grep -ciE "error.*eval|eval.*error|panic" "$log_path" 2>/dev/null ) || error_count=0
     if [[ "$error_count" -eq 0 ]]; then
       pass "Scenario 3: No eval-related errors in crush log"
     else

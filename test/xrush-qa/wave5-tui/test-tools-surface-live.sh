@@ -72,7 +72,7 @@ test_tools_surface_listing() {
 
   # Secondary: log grep for tool surface / registry entries.
   local log_entries
-  log_entries=$(grep -ciE "tool.?surface|tool.?registry|register.*tool|visible.*tool" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "tool.?surface|tool.?registry|register.*tool|visible.*tool" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries tool registry/surface log entries"
@@ -164,7 +164,7 @@ test_tool_usage() {
 
   # Secondary: log grep for tool execution entries.
   local exec_entries
-  exec_entries=$(grep -ciE "tool.?call|tool.?exec|executing.*tool|ran.*tool" .crush/logs/crush.log 2>/dev/null || echo 0)
+  exec_entries=$(grep -ciE "tool.?call|tool.?exec|executing.*tool|ran.*tool" .crush/logs/crush.log 2>/dev/null ) || exec_entries=0
 
   if [[ "$exec_entries" -ge 1 ]]; then
     pass "Scenario 2: Found $exec_entries tool execution log entries"

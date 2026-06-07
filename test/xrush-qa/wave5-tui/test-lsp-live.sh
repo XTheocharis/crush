@@ -87,7 +87,7 @@ GOEOF
 
   # Secondary: check the crush log for LSP-related entries.
   local log_entries
-  log_entries=$(grep -ciE "lsp|gopls|diagnostic|textDocument/publishDiagnostics" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "lsp|gopls|diagnostic|textDocument/publishDiagnostics" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries LSP-related log entries"
@@ -157,7 +157,7 @@ GOEOF
 
   # Secondary: check the crush log for LSP symbol/hover requests.
   local log_entries
-  log_entries=$(grep -ciE "symbol|hover|textDocument/hover|textDocument/documentSymbol|definition" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "symbol|hover|textDocument/hover|textDocument/documentSymbol|definition" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 2: Found $log_entries LSP symbol/hover log entries"

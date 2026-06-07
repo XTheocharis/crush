@@ -47,7 +47,9 @@ test_session_flag_resume() {
   fi
 
   SID=$(get_session_id)
-  MSG_COUNT_BEFORE=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id='$SID'")
+  # Strip $$call_... suffix: sub-agent sessions may have a compound ID.
+  SID=${SID%%'$$'*}
+  MSG_COUNT_BEFORE=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id LIKE '$SID%'")
 
   tmux send-keys -t "$TMUX_SESSION" C-c
   sleep 0.5
@@ -83,7 +85,7 @@ test_session_flag_resume() {
   capture_tui_evidence "resume-context"
 
   # --- Secondary DB checks ---
-  MSG_COUNT_AFTER=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id='$SID'")
+  MSG_COUNT_AFTER=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id LIKE '$SID%'")
 
   if (( MSG_COUNT_AFTER >= MSG_COUNT_BEFORE + 2 )); then
     pass "session-resume: message count increased by >= 2"
@@ -92,7 +94,8 @@ test_session_flag_resume() {
   fi
 
   LATEST_SID=$(get_session_id)
-  if [[ "$LATEST_SID" == "$SID" ]]; then
+  LATEST_BASE=${LATEST_SID%%'$$'*}
+  if [[ "$LATEST_BASE" == "$SID" ]]; then
     pass "session-resume: latest session ID matches resumed SID"
   else
     fail "session-resume: latest session ID ($LATEST_SID) != resumed SID ($SID)"

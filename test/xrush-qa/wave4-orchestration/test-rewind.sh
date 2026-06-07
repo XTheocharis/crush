@@ -72,7 +72,7 @@ test_single_code_rewind() {
   SID=$(get_session_id)
   if [[ -n "$SID" ]]; then
     local snapshot_count
-    snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+    snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null ) || snapshot_count=0
     if [[ "$snapshot_count" -ge 1 ]]; then
       pass "Scenario 1: $snapshot_count snapshot(s) exist — rewind data available"
     else
@@ -80,7 +80,7 @@ test_single_code_rewind() {
     fi
 
     local snapshot_file_count
-    snapshot_file_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshot_files WHERE snapshot_id IN (SELECT id FROM turn_snapshots WHERE session_id = '$SID')" 2>/dev/null || echo 0)
+    snapshot_file_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshot_files WHERE snapshot_id IN (SELECT id FROM turn_snapshots WHERE session_id = '$SID')" 2>/dev/null ) || snapshot_file_count=0
     if [[ "$snapshot_file_count" -gt 0 ]]; then
       pass "Scenario 1: $snapshot_file_count snapshot file row(s) recorded"
     else
@@ -139,7 +139,7 @@ test_single_code_rewind() {
 
   # Check logs for rewind activity.
   local rewind_log_count
-  rewind_log_count=$(grep -ci "rewind\|rollback\|restore" .crush/logs/crush.log 2>/dev/null || echo 0)
+  rewind_log_count=$(grep -ci "rewind\|rollback\|restore" .crush/logs/crush.log 2>/dev/null ) || rewind_log_count=0
   if [[ "$rewind_log_count" -ge 1 ]]; then
     pass "Scenario 1: $rewind_log_count rewind-related log entries found"
   else

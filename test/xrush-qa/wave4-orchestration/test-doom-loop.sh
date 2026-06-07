@@ -57,7 +57,7 @@ test_doom_loop_detection() {
 
   # Secondary: check the crush log for doom-loop-related entries.
   local log_entries
-  log_entries=$(grep -ciE "doom.?loop|loop.?detection|repetition.*score|escalation.*level|intervention.*force" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "doom.?loop|loop.?detection|repetition.*score|escalation.*level|intervention.*force" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries doom-loop-related log entries"

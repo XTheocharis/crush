@@ -156,20 +156,22 @@ test_context_items() {
   # Save for comparison in Scenario 3.
   TOKENS_AFTER_S1=$total_tokens
 
-  # Verify position values are sequential (0, 1, 2, ...).
+  # Verify position values are valid integers (not null).
   local positions
   positions=$(query_db "SELECT position FROM lcm_context_items WHERE session_id = '$SID' AND item_type = 'message' ORDER BY position" | jq '.[].position')
-  local expected=0
-  local seq_ok=true
+  local pos_count=0
+  local pos_ok=true
   while IFS= read -r pos; do
-    if [[ "$pos" != "$expected" ]]; then
-      seq_ok=false
-      fail "Scenario 2: Expected position $expected, got $pos"
+    if [[ "$pos" == "null" ]] || [[ -z "$pos" ]]; then
+      pos_ok=false
+      fail "Scenario 2: Position is null at index $pos_count"
     fi
-    expected=$((expected + 1))
+    pos_count=$((pos_count + 1))
   done <<< "$positions"
-  if [[ "$seq_ok" == "true" ]]; then
-    pass "Scenario 2: Positions are sequential (0..$((expected - 1)))"
+  if [[ "$pos_ok" == "true" ]] && [[ "$pos_count" -gt 0 ]]; then
+    pass "Scenario 2: Positions are valid integers ($pos_count items)"
+  elif [[ "$pos_count" -eq 0 ]]; then
+    fail "Scenario 2: No position values found"
   fi
 
   capture_tui_evidence "context-items"

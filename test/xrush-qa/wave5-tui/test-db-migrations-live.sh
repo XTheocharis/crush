@@ -206,7 +206,7 @@ test_old_db_migration() {
   local log_file=".crush/logs/crush.log"
   if [[ -f "$log_file" ]]; then
     local migration_log_matches
-    migration_log_matches=$(grep -ciE "migration|migrate|goose|schema" "$log_file" 2>/dev/null || echo 0)
+    migration_log_matches=$(grep -ciE "migration|migrate|goose|schema" "$log_file" 2>/dev/null ) || migration_log_matches=0
     if [[ "$migration_log_matches" -ge 1 ]]; then
       pass "Scenario 1: Crush log contains migration evidence ($migration_log_matches matches)"
     else

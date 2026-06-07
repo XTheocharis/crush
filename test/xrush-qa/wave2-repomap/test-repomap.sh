@@ -191,7 +191,7 @@ test_repomap_logs() {
   fi
 
   local match_count
-  match_count=$(grep -ci "repo.map\|repomap" "$log_file" 2>/dev/null || echo 0)
+  match_count=$(grep -ci "repo.map\|repomap" "$log_file" 2>/dev/null ) || match_count=0
   if [[ "$match_count" -ge 1 ]]; then
     pass "Scenario 3: Found $match_count repo map log entries"
   else

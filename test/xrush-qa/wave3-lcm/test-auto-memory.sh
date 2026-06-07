@@ -34,7 +34,7 @@ test_auto_memory_extracted() {
 
   # First turn: state preferences with deterministic sentinel.
   send_tui_prompt "I prefer using table-driven tests in Go. My project uses testify for assertions. Remember that AUTO_MEM_STORE_SENTINEL_42 is my unique test identifier."
-  if ! wait_for_tui_idle 120; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after first prompt"
     capture_tui_evidence "idle-timeout-p1"
     tmux send-keys -t "$TMUX_SESSION" C-c

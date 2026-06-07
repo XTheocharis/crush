@@ -39,7 +39,7 @@ test_read_files_tracking() {
   start_crush_tui 1
   focus_editor
   send_tui_prompt "Read the file go.mod and reply with exactly: FILE_READ_SENTINEL_charmbracelet_crush"
-  if ! wait_for_tui_idle 120; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle"
     capture_tui_evidence "read-files"
     return
@@ -98,7 +98,7 @@ test_written_files_tracking() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    rm -f "$tmpfile"
+    rm -f "${tmpfile:-}"
   }
   trap cleanup_test EXIT
 

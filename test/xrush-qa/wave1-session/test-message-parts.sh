@@ -164,7 +164,7 @@ test_message_parts_timestamps() {
     [[ -z "$mid" ]] && continue
     local parts
     parts=$(sqlite3 .crush/crush.db \
-      "SELECT part_index FROM message_parts WHERE session_id='$SID' AND message_id=$mid ORDER BY part_index")
+      "SELECT part_index FROM message_parts WHERE session_id='$SID' AND message_id='$mid' ORDER BY part_index")
 
     local expected=0
     while IFS= read -r idx; do

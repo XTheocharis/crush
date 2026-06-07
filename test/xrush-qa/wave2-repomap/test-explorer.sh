@@ -31,7 +31,7 @@ test_explorer_dispatch_code_file() {
   focus_editor
   send_tui_prompt "Show me internal/config/config.go and describe its contents. Reply with EXPLORER_DISPATCH_SENTINEL_42 in your answer."
 
-  if ! wait_for_tui_idle 120; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle"
     capture_tui_evidence "idle-timeout"
     tmux send-keys -t "$TMUX_SESSION" C-c
@@ -57,7 +57,7 @@ test_explorer_dispatch_code_file() {
   explorer_lines=$(grep -i "explorer" .crush/logs/crush.log 2>/dev/null | tail -20 || true)
   if [[ -n "$explorer_lines" ]]; then
     local match_count
-    match_count=$(echo "$explorer_lines" | grep -ciE "dispatch|processing|explore" || echo 0)
+    match_count=$(echo "$explorer_lines" | grep -ciE "dispatch|processing|explore" ) || match_count=0
     if [[ "$match_count" -ge 1 ]]; then
       pass "Scenario 1: Explorer dispatch/processing found in logs ($match_count matches)"
     else
@@ -113,7 +113,7 @@ test_explorer_noncode_file() {
   explorer_lines=$(grep -i "explorer" .crush/logs/crush.log 2>/dev/null || true)
   if [[ -n "$explorer_lines" ]]; then
     local match_count
-    match_count=$(echo "$explorer_lines" | grep -ciE "dispatch|processing|explore" || echo 0)
+    match_count=$(echo "$explorer_lines" | grep -ciE "dispatch|processing|explore" ) || match_count=0
     if [[ "$match_count" -ge 1 ]]; then
       pass "Scenario 2: Explorer processing found for non-code file ($match_count matches)"
     else

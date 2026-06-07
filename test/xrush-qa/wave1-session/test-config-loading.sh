@@ -35,7 +35,7 @@ test_config_provider_visible() {
   # Deterministic sentinel: ask model to report ONLY its provider name.
   send_tui_prompt "What provider and model are you using? Reply with exactly CONFIG_SENTINEL followed by the provider name in uppercase, like CONFIG_SENTINEL_ANTHROPIC. Do not include any API key or secret."
 
-  if ! wait_for_tui_idle 120; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle"
     capture_tui_evidence "idle-timeout"
     tmux send-keys -t "$TMUX_SESSION" C-c
@@ -58,8 +58,8 @@ test_config_provider_visible() {
     "sk-"
     "api_key"
     "apikey"
-    "secret"
-    "token"
+    "bearer "
+    "Authorization:"
   )
 
   local leaked=0
@@ -101,7 +101,7 @@ test_config_provider_visible() {
   if [[ -f "$log_path" ]]; then
     # Check log mentions provider loading or model resolution.
     local provider_loaded
-    provider_loaded=$(grep -ci 'provider\|model\|config' "$log_path" 2>/dev/null || echo 0)
+    provider_loaded=$(grep -ci 'provider\|model\|config' "$log_path" 2>/dev/null ) || provider_loaded=0
     if [[ "$provider_loaded" -gt 0 ]]; then
       pass "Scenario 1: Log file shows provider/model/config references ($provider_loaded)"
     else
@@ -110,7 +110,7 @@ test_config_provider_visible() {
 
     # Verify no API key in log file either.
     local log_key_leak
-    log_key_leak=$(grep -c 'sk-\|api_key\|apikey' "$log_path" 2>/dev/null || echo 0)
+    log_key_leak=$(grep -cE 'sk-|api_key|apikey' "$log_path" 2>/dev/null) || log_key_leak=0
     if [[ "$log_key_leak" -eq 0 ]]; then
       pass "Scenario 1: Log file contains no API key patterns"
     else

@@ -135,7 +135,7 @@ GOCODE
   local log_file=".crush/logs/crush.log"
   if [[ -f "$log_file" ]]; then
     local refresh_hits
-    refresh_hits=$(grep -ci "map.refresh\|map_refresh\|cache.invalidat\|PreIndex" "$log_file" 2>/dev/null || echo 0)
+    refresh_hits=$(grep -ci "map.refresh\|map_refresh\|cache.invalidat\|PreIndex" "$log_file" 2>/dev/null ) || refresh_hits=0
     if [[ "$refresh_hits" -ge 1 ]]; then
       pass "Scenario 1: Found $refresh_hits map-refresh/invalidation log entries"
     else
@@ -192,7 +192,7 @@ GOCODE
   local log_file=".crush/logs/crush.log"
   if [[ -f "$log_file" ]]; then
     local refresh_log
-    refresh_log=$(grep -ci "map.refresh\|map_refresh\|repo.map\|repomap" "$log_file" 2>/dev/null || echo 0)
+    refresh_log=$(grep -ci "map.refresh\|map_refresh\|repo.map\|repomap" "$log_file" 2>/dev/null ) || refresh_log=0
     if [[ "$refresh_log" -ge 1 ]]; then
       pass "Scenario 2: Found $refresh_log repo-map log entries"
     else

@@ -147,7 +147,7 @@ HOOK_EOF
 
   # Tertiary: log grep for hook execution evidence.
   local log_entries
-  log_entries=$(grep -ciE "hook.*PreToolUse|PreToolUse.*hook|running hook|hook.*blocked" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "hook.*PreToolUse|PreToolUse.*hook|running hook|hook.*blocked" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries hook-related log entries"
   else
@@ -248,9 +248,9 @@ HOOK_EOF
     local hook_calls
     hook_calls=$(cat "$ROLLBACK_MARKER")
     local edit_count
-    edit_count=$(grep -c "file_edit" "$ROLLBACK_MARKER" || echo 0)
+    edit_count=$(grep -c "file_edit" "$ROLLBACK_MARKER" ) || edit_count=0
     local rollback_count
-    rollback_count=$(grep -ci "rollback" "$ROLLBACK_MARKER" || echo 0)
+    rollback_count=$(grep -ci "rollback" "$ROLLBACK_MARKER" ) || rollback_count=0
 
     if [[ "$edit_count" -ge 1 ]]; then
       pass "Scenario 2: Hook fired for file_edit ($edit_count time(s))"
@@ -269,7 +269,7 @@ HOOK_EOF
 
   # Tertiary: log grep for hook execution evidence.
   local log_entries
-  log_entries=$(grep -ciE "hook.*PreToolUse|PreToolUse.*hook|running hook" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "hook.*PreToolUse|PreToolUse.*hook|running hook" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 2: Found $log_entries hook-related log entries"
   else

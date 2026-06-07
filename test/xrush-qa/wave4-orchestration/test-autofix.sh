@@ -67,7 +67,7 @@ test_autofix_syntax_error() {
 
   # --- Secondary log check: diagnostic tooling was used ---
   local diag_count
-  diag_count=$(grep -ciE "diag_autofix|autofix.*loop|auto.?fix.*diagnostic|running.*go vet|validation.*auto.?fix" .crush/logs/crush.log 2>/dev/null || echo 0)
+  diag_count=$(grep -ciE "diag_autofix|autofix.*loop|auto.?fix.*diagnostic|running.*go vet|validation.*auto.?fix" .crush/logs/crush.log 2>/dev/null ) || diag_count=0
   if [[ "$diag_count" -gt 0 ]]; then
     pass "Scenario 1: Diagnostic pipeline ran ($diag_count log matches)"
   else
@@ -122,7 +122,7 @@ test_autofix_lint_error() {
 
   # --- Secondary log check ---
   local diag_count
-  diag_count=$(grep -ciE "diag_autofix|autofix.*loop|auto.?fix.*diagnostic|unused|vet" .crush/logs/crush.log 2>/dev/null || echo 0)
+  diag_count=$(grep -ciE "diag_autofix|autofix.*loop|auto.?fix.*diagnostic|unused|vet" .crush/logs/crush.log 2>/dev/null ) || diag_count=0
   if [[ "$diag_count" -gt 0 ]]; then
     pass "Scenario 2: Diagnostic pipeline ran ($diag_count log matches)"
   else

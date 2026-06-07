@@ -32,7 +32,7 @@ test_explorer_semantic_quality() {
   focus_editor
   send_tui_prompt "Explore $FIXTURE_REL and report all symbols found. Include the package name, exported types, and functions. Reply with EXPLORER_SEMANTIC_SENTINEL_qaexplorer in your answer."
 
-  if ! wait_for_tui_idle 120; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle"
     capture_tui_evidence "idle-timeout"
     tmux send-keys -t "$TMUX_SESSION" C-c

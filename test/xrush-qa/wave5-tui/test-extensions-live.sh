@@ -55,7 +55,7 @@ test_extension_load() {
 
   # Secondary: log grep for extension load/start entries.
   local log_entries
-  log_entries=$(grep -ciE "extension.*(init|load|start|register)|prompt.?assembly.*init|host.*context" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "extension.*(init|load|start|register)|prompt.?assembly.*init|host.*context" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries extension load/start log entries"
@@ -102,7 +102,7 @@ test_prompt_assembly_extension() {
 
   # Secondary: log grep for prompt_assembly/extension entries.
   local log_entries
-  log_entries=$(grep -ciE "prompt.?assembly|SystemPromptModifier|extension.*hook|context.*inject|repo.?map.*inject" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "prompt.?assembly|SystemPromptModifier|extension.*hook|context.*inject|repo.?map.*inject" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
 
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 2: Found $log_entries prompt-assembly/extension log entries"

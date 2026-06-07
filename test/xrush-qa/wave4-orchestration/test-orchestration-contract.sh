@@ -159,7 +159,7 @@ test_orchestration_contract_partial_failure() {
   local parent_content
   parent_content=$(echo "$parent_text" | jq -r '.content // ""' | tr '[:upper:]' '[:lower:]')
   local partial_indicators
-  partial_indicators=$(echo "$parent_content" | grep -ciE "partial|could not|not found|unable|error|missing|does not exist|failed" || echo 0)
+  partial_indicators=$(echo "$parent_content" | grep -ciE "partial|could not|not found|unable|error|missing|does not exist|failed" ) || partial_indicators=0
   if [[ "$partial_indicators" -ge 1 ]]; then
     pass "Scenario 2: Parent reports partial success ($partial_indicators indicator(s))"
   else

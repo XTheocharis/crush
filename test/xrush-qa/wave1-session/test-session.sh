@@ -147,6 +147,8 @@ test_session_visible_in_second_tui() {
   # Launch a second TUI attached to the same project.
   # start_crush_tui generates a unique tmux session name (qa-w1-<timestamp>).
   start_crush_tui 1
+  focus_editor
+  send_tui_prompt "What was the last session about? Mention SESSION_CREATE_OK_42 if you see it in context."
 
   # Wait for TUI to initialize and show session list / recent content.
   if ! wait_for_tui_idle 60; then

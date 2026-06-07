@@ -82,7 +82,7 @@ test_shell_env_expansion() {
 
   # Secondary: no real secret patterns leaked.
   local real_secret_count
-  real_secret_count=$(printf '%s' "$tui_output" | grep -ciE "sk-[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16}|-----BEGIN.*PRIVATE KEY" || echo 0)
+  real_secret_count=$(printf '%s' "$tui_output" | grep -ciE "sk-[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16}|-----BEGIN.*PRIVATE KEY" ) || real_secret_count=0
   if [[ "$real_secret_count" -eq 0 ]]; then
     pass "Scenario 1: No real secrets leaked in output"
   else
@@ -93,7 +93,7 @@ test_shell_env_expansion() {
   local log_file=".crush/logs/crush.log"
   if [[ -f "$log_file" ]]; then
     local shell_log_matches
-    shell_log_matches=$(grep -ciE "bash.*command|shell.*exec|tool.*bash|running.*command" "$log_file" 2>/dev/null || echo 0)
+    shell_log_matches=$(grep -ciE "bash.*command|shell.*exec|tool.*bash|running.*command" "$log_file" 2>/dev/null ) || shell_log_matches=0
     if [[ "$shell_log_matches" -ge 1 ]]; then
       pass "Scenario 1: Crush log contains shell execution evidence ($shell_log_matches matches)"
     else
@@ -117,7 +117,7 @@ test_background_job_cancel() {
 
   # Record baseline sleep process count before the test.
   local sleep_before
-  sleep_before=$(pgrep -c "sleep" 2>/dev/null || echo 0)
+  sleep_before=$(pgrep -c "sleep" 2>/dev/null ) || sleep_before=0
 
   setup_clean_crush
   start_crush_tui 5
@@ -162,7 +162,7 @@ test_background_job_cancel() {
   # Secondary: verify no orphaned background sleep processes.
   sleep 2
   local sleep_after
-  sleep_after=$(pgrep -c "sleep" 2>/dev/null || echo 0)
+  sleep_after=$(pgrep -c "sleep" 2>/dev/null ) || sleep_after=0
   local delta=$((sleep_after - sleep_before))
   if [[ "$delta" -le 0 ]]; then
     pass "Scenario 2: No orphaned background sleep processes (delta=$delta)"
@@ -174,7 +174,7 @@ test_background_job_cancel() {
   local log_file=".crush/logs/crush.log"
   if [[ -f "$log_file" ]]; then
     local bg_log_matches
-    bg_log_matches=$(grep -ciE "background|signal|kill.*sleep|SIGTERM|SIGKILL|process.*stop" "$log_file" 2>/dev/null || echo 0)
+    bg_log_matches=$(grep -ciE "background|signal|kill.*sleep|SIGTERM|SIGKILL|process.*stop" "$log_file" 2>/dev/null ) || bg_log_matches=0
     if [[ "$bg_log_matches" -ge 1 ]]; then
       pass "Scenario 2: Crush log contains background job evidence ($bg_log_matches matches)"
     else

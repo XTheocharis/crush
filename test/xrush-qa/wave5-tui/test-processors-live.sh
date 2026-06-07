@@ -66,7 +66,7 @@ test_pii_redaction() {
   local log_file=".crush/logs/crush.log"
   if [[ -f "$log_file" ]]; then
     local pii_log_matches
-    pii_log_matches=$(grep -ciE "REDACTED|pii_detector|PIIDetector" "$log_file" 2>/dev/null || echo 0)
+    pii_log_matches=$(grep -ciE "REDACTED|pii_detector|PIIDetector" "$log_file" 2>/dev/null ) || pii_log_matches=0
     if [[ "$pii_log_matches" -ge 1 ]]; then
       pass "Scenario 1: Crush log contains PII redaction evidence ($pii_log_matches matches)"
     else
@@ -155,7 +155,7 @@ test_token_limiter() {
   local log_file=".crush/logs/crush.log"
   if [[ -f "$log_file" ]]; then
     local tl_log_matches
-    tl_log_matches=$(grep -ciE "token_limiter|TokenLimiter|token.*budget|messages_removed|tokens_before|tokens_after|trimming|context.*truncat" "$log_file" 2>/dev/null || echo 0)
+    tl_log_matches=$(grep -ciE "token_limiter|TokenLimiter|token.*budget|messages_removed|tokens_before|tokens_after|trimming|context.*truncat" "$log_file" 2>/dev/null ) || tl_log_matches=0
     if [[ "$tl_log_matches" -ge 1 ]]; then
       pass "Scenario 2: Crush log contains token limiter evidence ($tl_log_matches matches)"
     else
