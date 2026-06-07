@@ -97,7 +97,11 @@ func (m agentHookMediator) invokeStepFinish(ctx context.Context, sessionID strin
 			if err := safeCall("OnStepFinish:"+hook.Name, func() error {
 				return hook.OnStepFinish(ctx, sessionID, stepResult)
 			}); err != nil {
-				slog.Warn("Extension step finish hook failed", "hook", hook.Name, "error", err)
+				slog.Error("Extension step finish hook failed",
+					"hook", hook.Name,
+					"session_id", sessionID,
+					"error", err,
+				)
 			}
 		}
 	}
