@@ -40,14 +40,14 @@ func NewSnapshotter(q db.Querier, opts ...SnapshotterOption) Snapshotter {
 }
 
 func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, userMessageSeq int) error {
-	slog.Debug("Rewind: CaptureSnapshot invoked",
+	slog.Info("Rewind: CaptureSnapshot invoked",
 		"session_id", sessionID,
 		"user_message_seq", userMessageSeq,
 	)
 
 	msg, err := s.q.GetLatestUserMessage(ctx, sessionID)
 	if err != nil {
-		slog.Debug("Rewind: CaptureSnapshot failed to get latest user message",
+		slog.Warn("Rewind: CaptureSnapshot failed to get latest user message",
 			"session_id", sessionID,
 			"error", err,
 		)
@@ -61,7 +61,7 @@ func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, use
 		UserMessageSeq: int64(userMessageSeq),
 	})
 	if err != nil {
-		slog.Debug("Rewind: CaptureSnapshot failed to create snapshot",
+		slog.Warn("Rewind: CaptureSnapshot failed to create snapshot",
 			"session_id", sessionID,
 			"error", err,
 		)
@@ -70,12 +70,18 @@ func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, use
 
 	files, err := s.q.ListLatestSessionFiles(ctx, sessionID)
 	if err != nil {
-		slog.Debug("Rewind: CaptureSnapshot failed to list session files",
+		slog.Warn("Rewind: CaptureSnapshot failed to list session files",
 			"session_id", sessionID,
 			"error", err,
 		)
 		return fmt.Errorf("listing session files: %w", err)
 	}
+
+	slog.Info("Rewind: CaptureSnapshot listing files",
+		"session_id", sessionID,
+		"snapshot_id", snapshot.ID,
+		"file_count", len(files),
+	)
 
 	for _, f := range files {
 		if err := s.q.AddSnapshotFile(ctx, db.AddSnapshotFileParams{
@@ -84,7 +90,7 @@ func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, use
 			Path:       f.Path,
 			Version:    f.Version,
 		}); err != nil {
-			slog.Debug("Rewind: CaptureSnapshot failed to add snapshot file",
+			slog.Warn("Rewind: CaptureSnapshot failed to add snapshot file",
 				"session_id", sessionID,
 				"path", f.Path,
 				"error", err,
@@ -93,7 +99,7 @@ func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, use
 		}
 	}
 
-	slog.Debug("Rewind: CaptureSnapshot completed",
+	slog.Info("Rewind: CaptureSnapshot completed",
 		"session_id", sessionID,
 		"snapshot_id", snapshot.ID,
 		"file_count", len(files),

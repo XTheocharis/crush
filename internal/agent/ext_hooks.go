@@ -90,9 +90,15 @@ func (m agentHookMediator) invokePrepareStep(ctx context.Context, sessionID stri
 // invokeStepFinish calls OnStepFinish on every registered StepHook.
 func (m agentHookMediator) invokeStepFinish(ctx context.Context, sessionID string, stepResult fantasy.StepResult) {
 	if m.host == nil {
+		slog.Warn("AgentHook: invokeStepFinish called with nil host")
 		return
 	}
-	for _, hook := range m.host.StepHooks() {
+	hooks := m.host.StepHooks()
+	slog.Info("AgentHook: invokeStepFinish dispatching",
+		"session_id", sessionID,
+		"hook_count", len(hooks),
+	)
+	for _, hook := range hooks {
 		if hook.OnStepFinish != nil {
 			if err := safeCall("OnStepFinish:"+hook.Name, func() error {
 				return hook.OnStepFinish(ctx, sessionID, stepResult)
