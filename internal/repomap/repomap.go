@@ -183,6 +183,7 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOpts) (string, int,
 
 	sessionID := strings.TrimSpace(opts.SessionID)
 	if sessionID == "" {
+		slog.Debug("Repomap Generate: skipped, empty session ID")
 		return "", 0, nil
 	}
 
@@ -1040,13 +1041,33 @@ func rankedFilePaths(files []RankedFile) []string {
 
 func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKey string, ranked []RankedFile, readOnlyPaths []string) {
 	if s == nil || s.db == nil || repoKey == "" || strings.TrimSpace(sessionID) == "" {
+		slog.Debug("Repomap persistSessionArtifacts: skipped",
+			"session_id", sessionID,
+			"repo_key", repoKey,
+			"service_nil", s == nil,
+			"db_nil", s == nil || s.db == nil,
+		)
 		return
 	}
 
+	slog.Debug("Repomap persistSessionArtifacts: persisting",
+		"session_id", sessionID,
+		"ranked_count", len(ranked),
+		"read_only_count", len(readOnlyPaths),
+	)
+
 	if err := s.db.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
+		slog.Debug("Repomap persistSessionArtifacts: failed to delete old rankings",
+			"session_id", sessionID,
+			"error", err,
+		)
 		return
 	}
 	if err := s.db.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
+		slog.Debug("Repomap persistSessionArtifacts: failed to delete old read-only paths",
+			"session_id", sessionID,
+			"error", err,
+		)
 		return
 	}
 
@@ -1061,6 +1082,11 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 			RelPath:   rel,
 			Rank:      file.Rank,
 		}); err != nil {
+			slog.Debug("Repomap persistSessionArtifacts: failed to upsert ranking",
+				"session_id", sessionID,
+				"path", rel,
+				"error", err,
+			)
 			return
 		}
 	}
@@ -1071,7 +1097,17 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 			SessionID: sessionID,
 			RelPath:   p,
 		}); err != nil {
+			slog.Debug("Repomap persistSessionArtifacts: failed to upsert read-only path",
+				"session_id", sessionID,
+				"path", p,
+				"error", err,
+			)
 			return
 		}
 	}
+
+	slog.Debug("Repomap persistSessionArtifacts: completed",
+		"session_id", sessionID,
+		"ranked_count", len(ranked),
+	)
 }

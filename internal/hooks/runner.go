@@ -174,6 +174,7 @@ func (r *Runner) runOne(parentCtx context.Context, hook config.HookConfig, envVa
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
+	start := time.Now()
 	var stdout, stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
@@ -219,6 +220,7 @@ func (r *Runner) runOne(parentCtx context.Context, hook config.HookConfig, envVa
 
 	if err != nil {
 		exitCode := shell.ExitCode(err)
+		duration := time.Since(start)
 		switch exitCode {
 		case 2:
 			// Exit code 2 = block this tool call. Stderr is the reason.
@@ -226,6 +228,12 @@ func (r *Runner) runOne(parentCtx context.Context, hook config.HookConfig, envVa
 			if reason == "" {
 				reason = "blocked by hook"
 			}
+			slog.Debug("Hook blocked tool",
+				"command", hook.Command,
+				"exit_code", exitCode,
+				"duration_ms", duration.Milliseconds(),
+				"reason", reason,
+			)
 			return HookResult{
 				Decision: DecisionDeny,
 				Reason:   reason,
@@ -236,6 +244,12 @@ func (r *Runner) runOne(parentCtx context.Context, hook config.HookConfig, envVa
 			if reason == "" {
 				reason = "turn halted by hook"
 			}
+			slog.Debug("Hook halted turn",
+				"command", hook.Command,
+				"exit_code", exitCode,
+				"duration_ms", duration.Milliseconds(),
+				"reason", reason,
+			)
 			return HookResult{
 				Decision: DecisionDeny,
 				Halt:     true,
@@ -247,6 +261,7 @@ func (r *Runner) runOne(parentCtx context.Context, hook config.HookConfig, envVa
 				"Hook failed with non-blocking error",
 				"command", hook.Command,
 				"exit_code", exitCode,
+				"duration_ms", duration.Milliseconds(),
 				"stderr", strings.TrimSpace(stderr.String()),
 				"error", err,
 			)
@@ -256,10 +271,12 @@ func (r *Runner) runOne(parentCtx context.Context, hook config.HookConfig, envVa
 
 	// Exit code 0 — parse stdout JSON.
 	result := parseStdout(stdout.String())
+	duration := time.Since(start)
 	slog.Debug(
 		"Hook executed",
 		"command", hook.Command,
 		"decision", result.Decision.String(),
+		"duration_ms", duration.Milliseconds(),
 	)
 	return result
 }

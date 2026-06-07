@@ -187,11 +187,18 @@ func (e *AutoMemoryExtractor) Extract(ctx context.Context, sessionID string) <-c
 	}
 	if _, ok := e.pending[sessionID]; ok {
 		e.mu.Unlock()
+		slog.Debug("LCM auto-memory: extraction already in-flight, skipping",
+			"session_id", sessionID,
+		)
 		return nil
 	}
 	e.pending[sessionID] = struct{}{}
 	llm := e.llm
 	e.mu.Unlock()
+
+	slog.Debug("LCM auto-memory: extraction triggered",
+		"session_id", sessionID,
+	)
 
 	go func() {
 		defer func() {
@@ -301,6 +308,13 @@ func (e *AutoMemoryExtractor) extractCycle(ctx context.Context, sessionID string
 		currentSize += memSize
 		stored = append(stored, mem)
 	}
+
+	slog.Debug("LCM auto-memory: extraction cycle completed",
+		"session_id", sessionID,
+		"memories_extracted", len(memories),
+		"memories_stored", len(stored),
+		"budget_used", currentSize,
+	)
 
 	return ExtractResult{Memories: stored}
 }

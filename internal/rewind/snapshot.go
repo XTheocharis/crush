@@ -3,6 +3,7 @@ package rewind
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -39,8 +40,17 @@ func NewSnapshotter(q db.Querier, opts ...SnapshotterOption) Snapshotter {
 }
 
 func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, userMessageSeq int) error {
+	slog.Debug("Rewind: CaptureSnapshot invoked",
+		"session_id", sessionID,
+		"user_message_seq", userMessageSeq,
+	)
+
 	msg, err := s.q.GetLatestUserMessage(ctx, sessionID)
 	if err != nil {
+		slog.Debug("Rewind: CaptureSnapshot failed to get latest user message",
+			"session_id", sessionID,
+			"error", err,
+		)
 		return fmt.Errorf("getting latest user message: %w", err)
 	}
 
@@ -51,11 +61,19 @@ func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, use
 		UserMessageSeq: int64(userMessageSeq),
 	})
 	if err != nil {
+		slog.Debug("Rewind: CaptureSnapshot failed to create snapshot",
+			"session_id", sessionID,
+			"error", err,
+		)
 		return fmt.Errorf("creating turn snapshot: %w", err)
 	}
 
 	files, err := s.q.ListLatestSessionFiles(ctx, sessionID)
 	if err != nil {
+		slog.Debug("Rewind: CaptureSnapshot failed to list session files",
+			"session_id", sessionID,
+			"error", err,
+		)
 		return fmt.Errorf("listing session files: %w", err)
 	}
 
@@ -66,9 +84,20 @@ func (s *snapshotter) CaptureSnapshot(ctx context.Context, sessionID string, use
 			Path:       f.Path,
 			Version:    f.Version,
 		}); err != nil {
+			slog.Debug("Rewind: CaptureSnapshot failed to add snapshot file",
+				"session_id", sessionID,
+				"path", f.Path,
+				"error", err,
+			)
 			return fmt.Errorf("adding snapshot file %s: %w", f.Path, err)
 		}
 	}
+
+	slog.Debug("Rewind: CaptureSnapshot completed",
+		"session_id", sessionID,
+		"snapshot_id", snapshot.ID,
+		"file_count", len(files),
+	)
 
 	return nil
 }

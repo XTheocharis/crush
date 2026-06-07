@@ -195,6 +195,11 @@ func (x *xrushConfig) toConfig() *Config {
 			if cfg.Options.Validation == nil {
 				cfg.Options.Validation = &ValidationOptions{}
 			}
+			// Enabling AutoFix implicitly enables Validation so the
+			// diagnostic pipeline actually runs.
+			if x.Quality.LintOnWrite {
+				cfg.Options.Validation.Enabled = true
+			}
 			cfg.Options.Validation.AutoFix = x.Quality.LintOnWrite
 			cfg.Options.Validation.AutoFixLoopEnabled = x.Quality.AutoCommit
 			cfg.Options.Validation.MaxAutoFixRetries = x.Quality.MaxRetries

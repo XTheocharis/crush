@@ -33,8 +33,18 @@ func newHookedTool(inner fantasy.AgentTool, preRunner, postRunner *hooks.Runner)
 // caller's side.
 func wrapToolsWithHooks(tools []fantasy.AgentTool, preRunner, postRunner *hooks.Runner, isSubAgent bool) []fantasy.AgentTool {
 	if (preRunner == nil && postRunner == nil) || isSubAgent {
+		if isSubAgent {
+			slog.Debug("Hook wrapping: skipped for sub-agent")
+		} else {
+			slog.Debug("Hook wrapping: no runners configured")
+		}
 		return tools
 	}
+	slog.Debug("Hook wrapping: active",
+		"tool_count", len(tools),
+		"has_pre", preRunner != nil,
+		"has_post", postRunner != nil,
+	)
 	out := make([]fantasy.AgentTool, len(tools))
 	for i, tool := range tools {
 		out[i] = newHookedTool(tool, preRunner, postRunner)

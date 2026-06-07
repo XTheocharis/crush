@@ -104,6 +104,11 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 		tokenCount := EstimateTokens(partsText)
 
 		if !s.cfg.DisableLargeToolOutput && tokenCount > s.cfg.threshold() {
+			slog.Debug("LCM messageDecorator: large-output offload triggered",
+				"session_id", sessionID,
+				"token_count", tokenCount,
+				"threshold", s.cfg.threshold(),
+			)
 			fileID, err := s.store.InsertLargeTextContent(ctx, sessionID, partsText, "")
 			if err != nil {
 				// Storage failed — fall back to deterministic truncation.
@@ -119,6 +124,10 @@ func (s *messageDecorator) Create(ctx context.Context, sessionID string, params 
 					}
 				}
 			} else {
+				slog.Debug("LCM messageDecorator: large-output stored successfully",
+					"session_id", sessionID,
+					"file_id", fileID,
+				)
 				s.persistLargeOutputExploration(ctx, sessionID, fileID, partsText)
 
 				preview := truncateString(partsText, previewChars)

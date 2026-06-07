@@ -209,7 +209,17 @@ func (m *UI) drawSidebar(scr uv.Screen, area uv.Rectangle) {
 					mcpSection,
 					"",
 					skillsSection,
+					m.processorDebugSection(width),
 				),
 			),
 	).Draw(scr, area)
+}
+
+// processorDebugSection returns the processor debug section string, or an
+// empty string if the debug view is not toggled on.
+func (m *UI) processorDebugSection(width int) string {
+	if !m.showProcessorDebug {
+		return ""
+	}
+	return "\n" + m.processorInfo(width)
 }
