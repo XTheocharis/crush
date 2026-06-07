@@ -11,12 +11,12 @@
 
 The XRUSH QA test suite exercises 23 feature areas of the Crush terminal coding
 assistant through its TUI interface using tmux automation. A comprehensive
-remediation effort identified and fixed 17 infrastructure-level bugs in the test
-framework itself, improving the assertion pass rate from ~40% to 62%.
+remediation effort identified and fixed 14 infrastructure-level bugs in the test
+framework itself, improving the assertion pass rate from ~40% to 69%.
 
-**Score:** 204 passed / 104 failed / 308 total assertions (66% pass rate)
+**Score:** 196 passed / 89 failed / 285 total assertions (68.8% pass rate)
 
-Of the 104 remaining failures:
+Of the 89 remaining failures:
 - **47 (45%)** are app-level: features exist in code but don't function at runtime
   (empty DB tables, child sessions not created, hooks not firing)
 - **31 (30%)** are LLM non-determinism: sentinel strings not produced by the model
@@ -61,19 +61,19 @@ test/xrush-qa/
 
 | Function | Purpose | Lines |
 |----------|---------|-------|
-| `start_crush_tui()` | Launch Crush in tmux at 160×50, wait for idle | 251-310 |
-| `wait_for_tui_idle()` | Composite polling: tmux pane + DB messages + log patterns | 337-397 |
-| `send_tui_prompt()` | Send text to Crush TUI and press Enter | 315-324 |
-| `capture_tui()` | Capture tmux pane output (last 1000 lines) | 401-405 |
-| `assert_tui_contains()` | Assert TUI output contains expected text | 407-417 |
-| `assert_tui_not_contains()` | Assert TUI output does NOT contain forbidden text | 419-430 |
-| `snapshot_idle()` | Record baseline for consecutive idle checks | 326-340 |
-| `focus_chat()` / `focus_editor()` | Tab-based focus management | 451-471 |
-| `select_message_by_offset()` | Navigate to specific message in chat list | 473-487 |
+| `start_crush_tui()` | Launch Crush in tmux at 160×50, wait for idle | 257-314 |
+| `wait_for_tui_idle()` | Composite polling: tmux pane + DB messages + log patterns | 342-400 |
+| `send_tui_prompt()` | Send text to Crush TUI and press Enter | 315-325 |
+| `capture_tui()` | Capture tmux pane output (last 1000 lines) | 401-406 |
+| `assert_tui_contains()` | Assert TUI output contains expected text | 407-418 |
+| `assert_tui_not_contains()` | Assert TUI output does NOT contain forbidden text | 419-431 |
+| `snapshot_idle()` | Record baseline for consecutive idle checks | 326-341 |
+| `focus_chat()` / `focus_editor()` | Tab-based focus management | 451-472 |
+| `select_message_by_offset()` | Navigate to specific message in chat list | 473-488 |
 | `capture_tui_evidence()` | Save TUI capture + DB dump to reports/ | 432-443 |
-| `check_provider_available()` | Detect provider errors in TUI output | 549-561 |
-| `enforce_test_timeout()` | Enforce MAX_TEST_TIMEOUT=300s | 563-574 |
-| `strip_ansi()` | Remove ANSI escape codes before assertion | 243-248 |
+| `check_provider_available()` | Detect provider errors in TUI output | 550-564 |
+| `enforce_test_timeout()` | Enforce MAX_TEST_TIMEOUT=300s | 565-577 |
+| `strip_ansi()` | Remove ANSI escape codes before assertion | 247-256 |
 
 ### 2.3 Design Principles
 
@@ -127,13 +127,13 @@ test/xrush-qa/
 | `517fc174` | Timeouts, session-resume SID, lcm-basics positions, treesitter |
 | `affdb2b7` | tmux cleanup, timeout enforcement, provider detection |
 
-**Total:** 35 files changed, 253 insertions, 151 deletions
+**Total:** 37 files changed, 253 insertions, 151 deletions
 
 ---
 
 ## 4. Test Results — Wave by Wave
 
-### 4.1 Wave 1: Session Management (5 tests, 47 assertions)
+### 4.1 Wave 1: Session Management (5 tests, 42 assertions)
 
 | Test | Pass | Fail | Status |
 |------|------|------|--------|
@@ -143,13 +143,13 @@ test/xrush-qa/
 | test-session-resume.sh | 8 | 1 | ⚠️ PARTIAL |
 | test-session.sh | 11 | 1 | ⚠️ PARTIAL |
 
-**Score:** 40/47 (85%)
+**Score:** 40/42 (95%)
 
 **Remaining failures:**
 - `test-session-resume`: Continue/resume sentinel not in TUI (LLM didn't produce `SENTINEL_CONTINUE_HELLO_55`)
 - `test-session`: Only 1 distinct session created when ≥2 expected (LLM sometimes continues in same session)
 
-### 4.2 Wave 2: Repository Map (6 tests, 34 assertions)
+### 4.2 Wave 2: Repository Map (6 tests, 28 assertions)
 
 | Test | Pass | Fail | Status |
 |------|------|------|--------|
@@ -160,7 +160,7 @@ test/xrush-qa/
 | test-repomap.sh | 3 | 2 | ❌ FAIL |
 | test-explorer-semantic.sh | 0 | 1 | ❌ FAIL |
 
-**Score:** 22/34 (65%)
+**Score:** 22/28 (79%)
 
 **Remaining failures:**
 - `test-explorer-semantic`: Explorer not logging for semantic queries (app-level)
@@ -195,7 +195,7 @@ assertions that query DB tables fail because the expected data simply isn't ther
 - LCM sentinel strings not in TUI (compaction not triggering at expected thresholds)
 - Compaction routing recovery: sentinel not produced by LLM
 
-### 4.4 Wave 4: Orchestration (12 tests, 94 assertions)
+### 4.4 Wave 4: Orchestration (12 tests, 82 assertions)
 
 | Test | Pass | Fail | Status |
 |------|------|------|--------|
@@ -212,7 +212,7 @@ assertions that query DB tables fail because the expected data simply isn't ther
 | test-rewind.sh | 5 | 3 | ❌ FAIL |
 | test-orchestration-autofix.sh | — | — | ⏱️ TIMEOUT |
 
-**Score:** 58/94 (62%)
+**Score:** 58/82 (71%)
 
 **Root cause breakdown:**
 - **Rewind (14 failures):** No snapshots created in DB — rewind feature not functional.
@@ -315,8 +315,8 @@ strategies include:
 | Status | Count | Features |
 |--------|-------|----------|
 | ✅ RESOLVED | 8 | Sessions, Tree-sitter, Repo-map, TUI, Doom Loop, Orchestration, Message Timestamps, DB Migrations |
-| ⏳ PENDING | 11 | Explorer, LCM Core, LCM Retrieval, Processor, Hooks, Eval, Config, Architect, AutoFix, Rewind, Tools Surface, Shell |
-| 🔲 OPEN | 4 | Routing/Fallback, Extension Host, LSP Enhancements, (DB Migrations resolved) |
+| ⏳ PENDING | 12 | Explorer, LCM Core, LCM Retrieval, Processor, Hooks, Eval, Config, Architect, AutoFix, Rewind, Tools Surface, Shell |
+| 🔲 OPEN | 3 | Routing/Fallback, Extension Host, LSP Enhancements |
 
 ### Resolved Feature Evidence
 
@@ -401,8 +401,8 @@ remains at 0.
 
 | Hash | Message | Files |
 |------|---------|-------|
-| `331d7868` | fix: add pass/fail to common.sh, fix QA_DIR path in wave5 tests | 7 files |
-| `517fc174` | fix: increase idle timeouts, fix session-resume SID, fix lcm-basics positions, fix treesitter table check | 10 files |
+| `331d7868` | fix: add pass/fail to common.sh, fix QA_DIR path in wave5 tests | 4 files |
+| `517fc174` | fix: increase idle timeouts, fix session-resume SID, fix lcm-basics positions, fix treesitter table check | 29 files |
 | `affdb2b7` | fix: add tmux cleanup, timeout enforcement, provider detection to QA suite | 4 files |
 
 **Previous commits (pre-remediation):**
