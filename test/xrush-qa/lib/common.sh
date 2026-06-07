@@ -169,6 +169,36 @@ stop_crush() {
   fi
 }
 
+# Gracefully tear down the tmux session with existence checks and retries.
+# Usage: cleanup_tui
+cleanup_tui() {
+  if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+    return 0
+  fi
+
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 0.5
+  tmux send-keys -t "$TMUX_SESSION" y
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+
+  local retries=0
+  while tmux has-session -t "$TMUX_SESSION" 2>/dev/null; do
+    if [[ "$retries" -ge 3 ]]; then
+      tmux kill-server 2>/dev/null || true
+      break
+    fi
+    sleep 1
+    ((retries++))
+  done
+
+  local backup
+  backup=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f | sort -t. -k5 -n | tail -1)
+  if [[ -n "$backup" ]]; then
+    mv "$backup" crush.json
+  fi
+}
+
 # --- TUI-only tmux launcher contract ---
 
 # Remove ANSI escape codes from stdin or argument string.
@@ -216,6 +246,8 @@ start_crush_tui() {
   [[ -n "$cwd_flag" ]] && launch_cmd="$launch_cmd $cwd_flag"
 
   tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && $launch_cmd" Enter
+
+  _QA_FOCUS_STATE="editor"
 
   local waited=0
   while [[ $waited -lt 15 ]]; do
@@ -333,19 +365,35 @@ capture_tui_evidence() {
   QA_DIR="${QA_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
   local evidence_dir="$QA_DIR/reports/$wave/$scenario"
   mkdir -p "$evidence_dir"
-  capture_tui > "$evidence_dir/${label}.txt"
+  capture_tui | mask_secret > "$evidence_dir/${label}.txt"
+}
+
+# Reset the tracked focus state to editor (Crush starts with editor focused).
+# Usage: reset_focus_state
+reset_focus_state() {
+  _QA_FOCUS_STATE="editor"
 }
 
 # Send Tab key to switch focus to chat list pane.
+# Tracks focus state to avoid redundant Tab presses.
 # Usage: focus_chat
 focus_chat() {
+  if [[ "${_QA_FOCUS_STATE:-editor}" == "chat" ]]; then
+    return 0
+  fi
   tmux send-keys -t "$TMUX_SESSION" Tab
+  _QA_FOCUS_STATE="chat"
 }
 
 # Send Tab key to switch focus to editor pane.
+# Tracks focus state to avoid redundant Tab presses.
 # Usage: focus_editor
 focus_editor() {
+  if [[ "${_QA_FOCUS_STATE:-editor}" == "editor" ]]; then
+    return 0
+  fi
   tmux send-keys -t "$TMUX_SESSION" Tab
+  _QA_FOCUS_STATE="editor"
 }
 
 # Select a message by offset from the bottom of the chat list.

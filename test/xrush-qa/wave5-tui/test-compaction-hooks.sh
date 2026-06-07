@@ -113,7 +113,7 @@ HOOK_EOF
   if [[ -f "$PRE_COMPACT_MARKER" ]]; then
     pass "Scenario 1: PreCompact hook marker file exists (compaction triggered)"
   else
-    echo "  NOTE: PreCompact marker not found (compaction may not have triggered in this run)"
+    echo "  FAIL: PreCompact marker not found (compaction did not trigger)" >&2; return 1
   fi
 
   # Secondary: PostCompact marker file.
@@ -149,12 +149,12 @@ test_compaction_hook_env_vars() {
   SCENARIO="compaction-hooks-env"
 
   if [[ ! -s "$COMPACT_ENV" ]]; then
-    echo "  NOTE: Compaction env capture file is empty or missing (compaction may not have triggered)"
+    echo "  FAIL: Compaction env capture file is empty or missing (compaction did not trigger)" >&2
     # Fallback: verify Stop hook marker if compaction did not trigger.
     if [[ -f "$STOP_MARKER" ]]; then
       pass "Scenario 2 (fallback): Stop hook marker file exists"
     fi
-    return
+    return 1
   fi
 
   if grep -q '^CRUSH_EVENT=PreCompact$' "$COMPACT_ENV"; then

@@ -159,9 +159,6 @@ test_code_restore() {
   tui_output=$(capture_tui | strip_ansi)
   if echo "$tui_output" | grep -qi "rewind\|Rewind\|restored"; then
     pass "Scenario A: TUI shows rewind indicator"
-  else
-    # Not a hard failure — rewind may have completed silently.
-    echo "  NOTE: No rewind indicator visible in TUI (rewind may be silent)"
   fi
 }
 
@@ -299,13 +296,13 @@ test_conversation_truncation() {
   if echo "$tui_output" | grep -q "REWIND_CONVO_A_CONFIRMED"; then
     pass "Scenario B: TUI still shows REWIND_CONVO_A_CONFIRMED"
   else
-    echo "  NOTE: REWIND_CONVO_A_CONFIRMED may have scrolled off visible TUI area"
+    echo "  (REWIND_CONVO_A_CONFIRMED scrolled off TUI, DB check below is authoritative)"
   fi
 
   if echo "$tui_output" | grep -q "REWIND_CONVO_B_CONFIRMED"; then
     pass "Scenario B: TUI still shows REWIND_CONVO_B_CONFIRMED"
   else
-    echo "  NOTE: REWIND_CONVO_B_CONFIRMED may have scrolled off visible TUI area"
+    echo "  (REWIND_CONVO_B_CONFIRMED scrolled off TUI, DB check below is authoritative)"
   fi
 
   # Secondary DB check: message count should have decreased.

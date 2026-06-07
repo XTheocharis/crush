@@ -70,7 +70,7 @@ test_pii_redaction() {
     if [[ "$pii_log_matches" -ge 1 ]]; then
       pass "Scenario 1: Crush log contains PII redaction evidence ($pii_log_matches matches)"
     else
-      echo "  NOTE: No PII processor log entries found (processor may not have triggered)"
+      echo "  FAIL: No PII processor log entries found (processor did not trigger)" >&2; return 1
     fi
   fi
 
@@ -159,7 +159,7 @@ test_token_limiter() {
     if [[ "$tl_log_matches" -ge 1 ]]; then
       pass "Scenario 2: Crush log contains token limiter evidence ($tl_log_matches matches)"
     else
-      echo "  NOTE: No token limiter log entries found (limiter may not have triggered)"
+      echo "  FAIL: No token limiter log entries found (limiter did not trigger)" >&2; return 1
     fi
   fi
 

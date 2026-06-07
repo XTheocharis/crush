@@ -62,7 +62,7 @@ test_doom_loop_detection() {
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries doom-loop-related log entries"
   else
-    echo "  NOTE: No doom-loop log entries found (doom detection may not have triggered)"
+    echo "  FAIL: No doom-loop log entries found (doom detection did not trigger)" >&2; return 1
   fi
 
   # Capture log evidence for debugging.

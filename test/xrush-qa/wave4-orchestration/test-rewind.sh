@@ -138,8 +138,6 @@ test_single_code_rewind() {
   tui_output=$(capture_tui | strip_ansi)
   if echo "$tui_output" | grep -qi "rewind\|Rewind"; then
     pass "Scenario 1: TUI shows rewind indicator"
-  else
-    echo "  NOTE: No rewind indicator visible in TUI (rewind may be silent)"
   fi
 
   # Check logs for rewind activity.
