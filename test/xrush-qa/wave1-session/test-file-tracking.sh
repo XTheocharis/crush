@@ -2,6 +2,7 @@
 # Test: File tracking in read_files and written_files tables.
 # Verifies that Crush records files viewed by the agent in read_files,
 # and files written by the agent in written_files.
+# TUI-first: primary gate is sentinel in TUI output; DB checks are secondary.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -15,14 +16,19 @@ pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Viewed file appears in read_files
+# Scenario 1: Read file appears in TUI output and read_files table
 # ---------------------------------------------------------------------------
 test_read_files_tracking() {
-  echo "=== Scenario 1: Viewed file appears in read_files ==="
+  echo "=== Scenario 1: Read file appears in TUI output and read_files ==="
+  export WAVE=1
+  export SCENARIO="read-files"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # cleanup_test is called below
+  # shellcheck disable=SC2317
   cleanup_test() {
+    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
+    sleep 0.3
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
@@ -32,25 +38,34 @@ test_read_files_tracking() {
   }
   trap cleanup_test EXIT
 
-  start_crush 1
-  send_prompt "Show me the contents of go.mod"
-  if ! wait_for_idle 120; then
+  start_crush_tui 1
+  focus_editor
+  send_tui_prompt "Read the file go.mod and reply with exactly: FILE_READ_SENTINEL_charmbracelet_crush"
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 1: Crush did not become idle"
-    capture_evidence 7 "read-files"
-    stop_crush
+    capture_tui_evidence "read-files"
     return
   fi
 
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "FILE_READ_SENTINEL_charmbracelet_crush"; then
+    pass "Scenario 1: TUI output contains FILE_READ_SENTINEL_charmbracelet_crush"
+  else
+    fail "Scenario 1: TUI output does not contain FILE_READ_SENTINEL_charmbracelet_crush"
+    capture_tui_evidence "read-files"
+    return
+  fi
+
+  capture_tui_evidence "read-files"
+
+  # Secondary DB checks.
   local SID
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 7 "read-files"
-    stop_crush
     return
   fi
 
-  # Query read_files table for this session.
   local read_paths
   read_paths=$(query_db "SELECT path FROM read_files WHERE session_id = '$SID'")
   if [[ -z "$read_paths" ]] || [[ "$read_paths" == "[]" ]]; then
@@ -64,78 +79,87 @@ test_read_files_tracking() {
       fail "Scenario 1: go.mod not found in read_files for targeted read request"
     fi
   fi
-
-  capture_evidence 7 "read-files"
-  stop_crush
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Written file appears in written_files
+# Scenario 2: Written file appears in TUI output and written_files table
 # ---------------------------------------------------------------------------
 test_written_files_tracking() {
-  echo "=== Scenario 2: Written file appears in written_files ==="
+  echo "=== Scenario 2: Written file appears in TUI output and written_files ==="
+  export WAVE=1
+  export SCENARIO="written-files"
+  local tmpfile="/tmp/qa-file-tracking-$$.txt"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # cleanup_test is called below
+  # shellcheck disable=SC2317
   cleanup_test() {
+    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
+    sleep 0.3
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
+    rm -f "$tmpfile"
   }
   trap cleanup_test EXIT
 
-  start_crush 1
-  send_prompt "Create a file /tmp/qa-test-file.txt with the text 'hello qa test'"
-  if ! wait_for_idle 120; then
+  start_crush_tui 1
+  focus_editor
+  send_tui_prompt "Create the file $tmpfile with exactly this content: FILE_WRITE_SENTINEL_hello_qa"
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 2: Crush did not become idle"
-    capture_evidence 7 "written-files"
-    stop_crush
+    capture_tui_evidence "written-files"
     return
   fi
 
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "FILE_WRITE_SENTINEL_hello_qa"; then
+    pass "Scenario 2: TUI output contains FILE_WRITE_SENTINEL_hello_qa"
+  else
+    fail "Scenario 2: TUI output does not contain FILE_WRITE_SENTINEL_hello_qa"
+    capture_tui_evidence "written-files"
+    return
+  fi
+
+  capture_tui_evidence "written-files"
+
+  # Verify the actual file was created with expected content.
+  if [[ -f "$tmpfile" ]]; then
+    local content
+    content=$(cat "$tmpfile")
+    if [[ "$content" == *"FILE_WRITE_SENTINEL_hello_qa"* ]]; then
+      pass "Scenario 2: $tmpfile exists with expected content"
+    else
+      fail "Scenario 2: $tmpfile exists but content is unexpected: $content"
+    fi
+  else
+    fail "Scenario 2: $tmpfile was not created"
+  fi
+
+  # Secondary DB checks.
   local SID
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 2: No session ID found in DB"
-    capture_evidence 7 "written-files"
-    stop_crush
     return
   fi
 
-  # Query written_files table for this session.
   local written_paths
   written_paths=$(query_db "SELECT path FROM written_files WHERE session_id = '$SID'")
   if [[ -z "$written_paths" ]] || [[ "$written_paths" == "[]" ]]; then
     fail "Scenario 2: No entries in written_files for session $SID"
   else
     local has_target
-    has_target=$(echo "$written_paths" | jq -r '.[].path' | grep -Ec '^/tmp/qa-test-file\.txt$' || true)
+    has_target=$(echo "$written_paths" | jq -r '.[].path' | grep -cF "$tmpfile" || true)
     if [[ "$has_target" -ge 1 ]]; then
-      pass "Scenario 2: /tmp/qa-test-file.txt recorded in written_files"
+      pass "Scenario 2: $tmpfile recorded in written_files"
     else
-      fail "Scenario 2: /tmp/qa-test-file.txt not recorded in written_files"
+      fail "Scenario 2: $tmpfile not recorded in written_files"
     fi
   fi
-
-  # Also verify the actual file was created with expected content.
-  if [[ -f /tmp/qa-test-file.txt ]]; then
-    local content
-    content=$(cat /tmp/qa-test-file.txt)
-    if [[ "$content" == *"hello qa test"* ]]; then
-      pass "Scenario 2: /tmp/qa-test-file.txt exists with expected content"
-    else
-      fail "Scenario 2: /tmp/qa-test-file.txt exists but content is unexpected: $content"
-    fi
-  else
-    fail "Scenario 2: /tmp/qa-test-file.txt was not created"
-  fi
-
-  capture_evidence 7 "written-files"
-  stop_crush
-  rm -f /tmp/qa-test-file.txt
 }
 
 # ---------------------------------------------------------------------------
