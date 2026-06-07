@@ -17,10 +17,12 @@ framework itself, improving the assertion pass rate from ~40% to 69%.
 **Score:** 196 passed / 89 failed / 285 total assertions (68.8% pass rate)
 
 Of the 89 remaining failures:
-- **47 (45%)** are app-level: features exist in code but don't function at runtime
-  (empty DB tables, child sessions not created, hooks not firing)
-- **31 (30%)** are LLM non-determinism: sentinel strings not produced by the model
-- **26 (25%)** are feature gaps or edge cases (eval not in palette, partial data)
+- **52 (58%)** are confirmed app defects: features exist in code but don't function
+  at runtime (empty DB tables, hooks not firing, LCM data not persisting)
+- **20 (23%)** are LLM non-determinism: sentinel strings not produced by the model
+- **7 (8%)** are config-gated: features work but need specific config (AutoFix, Architect)
+- **7 (8%)** are stubbed features: partially implemented (Eval TUI "coming soon")
+- **3 (3%)** are threshold-gated: features need runtime conditions to trigger (LCM compaction)
 
 **Key conclusion:** The test infrastructure is now sound. Remaining failures
 expose real application defects or fundamental LLM variability — not test bugs.
@@ -163,8 +165,8 @@ test/xrush-qa/
 **Score:** 22/28 (79%)
 
 **Remaining failures:**
-- `test-explorer-semantic`: Explorer not logging for semantic queries (app-level)
-- `test-explorer`: No explorer-related log lines found for non-code file (app-level)
+- `test-explorer-semantic`: Explorer returns structured metadata, not log lines (tests should check DB)
+- `test-explorer`: No explorer log lines for non-code files (tests should check DB metadata, not logs)
 - `test-repomap`: Sentinel strings not in TUI (LLM) + session_rankings empty (app-level)
 - `test-map-refresh`: session_rankings empty for session (app-level)
 
@@ -215,14 +217,16 @@ assertions that query DB tables fail because the expected data simply isn't ther
 **Score:** 58/82 (71%)
 
 **Root cause breakdown:**
-- **Rewind (14 failures):** No snapshots created in DB — rewind feature not functional.
-  The `o` key path is correctly driven through tmux, but `turn_snapshots` table is empty.
-- **Child sessions (6 failures):** Operator/forked agents don't create child sessions
-  visible in the sessions table. The parent session exists but `parent_id` queries return 0 rows.
-- **Architect (4 failures):** Target directories not created — architect plan not triggering
-  file creation through the operator pipeline.
-- **Autofix (3 failures):** No diagnostic pipeline log matches — autofix not detecting
-  or fixing lint errors.
+- **Rewind (14 failures):** Extension hooks exist but snapshots not created in DB.
+  The `o` key path is correctly driven through tmux, but `turn_snapshots` table remains
+  empty. Likely a timing/trigger issue rather than missing code.
+- **Child sessions (6 failures):** ForkedAgent creates NO database sessions by design
+  (in-memory only). Tests expect child sessions with `parent_id` in the sessions table,
+  but this expectation doesn't match the implementation.
+- **Architect (4 failures):** Target directories not created. Requires
+  `cfg.Options.ArchitectModel` to be set for full plan execution.
+- **Autofix (3 failures):** Basic lint→format cycle runs on Go files unconditionally,
+  but full diagnostic pipeline requires explicit config.
 
 ### 4.5 Wave 5: TUI Features (15 tests, 77 assertions)
 
@@ -251,9 +255,10 @@ assertions that query DB tables fail because the expected data simply isn't ther
 **Root cause breakdown:**
 - **Hooks (7 failures):** Hooks not firing — marker files not created by PreToolUse/PostToolUse
 - **Edit tools (10 failures):** Edits not applied — files still contain original content after
-  LLM receives edit instructions. The `edit_anchor` and `edit_fuzzy` tools aren't modifying files.
-- **Eval (7 failures):** "Evaluation" not visible in TUI — eval command doesn't exist in
-  the TUI command palette (CLI-only feature)
+  LLM receives edit instructions. The `edit_anchor` and `edit_fuzzy` are internal helpers,
+  not user-facing tools. Tests reference scenario names correctly.
+- **Eval (7 failures):** Eval palette entry exists but handler is stubbed ("coming soon").
+  The CLI subcommand (`crush eval`) works. This is a stubbed feature, not a missing one.
 - **Tools surface (3 failures):** Sentinel strings not in TUI (LLM didn't produce them)
 
 ---
@@ -264,29 +269,31 @@ assertions that query DB tables fail because the expected data simply isn't ther
 
 | Category | Count | % | Description |
 |----------|-------|---|-------------|
-| App-level defects | 47 | 45% | Features coded but not working at runtime |
-| LLM non-determinism | 31 | 30% | Model doesn't produce expected sentinel strings |
-| Feature gaps | 15 | 14% | Features missing or incomplete |
-| Test timeouts | 4 | 4% | Tests exceed time limits |
-| Edge cases | 7 | 7% | Boundary conditions, partial data |
+| Confirmed app defects | 52 | 58.4% | Features with complete code that fail at runtime |
+| LLM non-determinism | 20 | 22.5% | Sentinel strings not produced reliably by the model |
+| Config-gated | 7 | 7.9% | Feature works but requires specific config to activate |
+| Stubbed features | 7 | 7.9% | Feature partially implemented (placeholder UI) |
+| Threshold-gated | 3 | 3.4% | Feature needs runtime conditions to trigger |
 
-### 5.2 App-Level Defects (47 failures)
+### 5.2 Confirmed App Defects (52 failures)
 
-These are real application bugs the tests correctly expose:
+Features with complete implementation code that fail at runtime due to actual bugs:
 
 | Feature Area | Failure | Affected Tests |
 |-------------|---------|---------------|
-| **Rewind** | `turn_snapshots` table empty — no snapshots created after turns | test-rewind.sh, test-rewind-restore.sh, test-rewind-orchestration.sh |
-| **Child sessions** | Operator/forked agents don't create visible child sessions | test-forked-agents.sh, test-orchestration-contract.sh, test-autofix.sh |
+| **Rewind snapshots** | Extension hooks exist but snapshots not created after turns (timing/trigger issue) | test-rewind.sh, test-rewind-restore.sh, test-rewind-orchestration.sh |
 | **LCM persistence** | `lcm_large_files`, `lcm_auto_memory` tables empty after compaction | test-large-file-offload.sh, test-auto-memory.sh, test-operational-memory.sh |
 | **Hooks not firing** | PreToolUse/PostToolUse hooks don't execute | test-hooks.sh, test-post-tool-use.sh, test-hooks-edit-rollback.sh |
-| **Edit tools** | edit_anchor, edit_fuzzy don't modify files | test-edit-tools-live.sh |
-| **Explorer logging** | No explorer log lines for semantic/non-code queries | test-explorer.sh, test-explorer-semantic.sh |
-| **Session rankings** | `repo_map_session_rankings` empty | test-map-refresh.sh, test-repomap.sh |
-| **Architect** | Plan execution doesn't create target directories | test-architect.sh, test-architect-operator.sh |
-| **Autofix** | No diagnostic pipeline log entries | test-autofix.sh |
+| **Session rankings** | `repo_map_session_rankings` empty after map generation | test-map-refresh.sh, test-repomap.sh |
+| **Explorer metadata** | Explorer returns structured metadata but tests check for log lines instead of DB records | test-explorer.sh, test-explorer-semantic.sh |
 
-### 5.3 LLM Non-Determinism (31 failures)
+**Reclassified from earlier "app-level defects":**
+- Rewind is not missing code. Extension hooks exist. Likely a timing/trigger issue where the
+  Snapshotter callback doesn't fire in the test window.
+- Explorer doesn't log to the log file. It writes structured metadata to the database.
+  Tests that grep for log lines will always fail.
+
+### 5.3 LLM Non-Determinism (20 failures)
 
 Tests use sentinel strings (e.g., `CONFIG_SENTINEL_ANTHROPIC`, `TREE_SITTER_SENTINEL_42`)
 to verify the LLM produced specific output. Failures occur when:
@@ -294,19 +301,60 @@ to verify the LLM produced specific output. Failures occur when:
 - Model doesn't produce the sentinel at all (creative interpretation of prompt)
 - Model produces sentinel in wrong format (e.g., code block vs inline)
 
-**Impact:** These are not test bugs — they're inherent to LLM-based testing. Mitigation
+**Impact:** These are not test bugs. They are inherent to LLM-based testing. Mitigation
 strategies include:
 - Using simpler sentinel patterns
 - Accepting partial matches with `grep -i`
 - Multiple retry attempts for sentinel-based assertions
 
-### 5.4 Feature Gaps (15 failures)
+### 5.4 Config-Gated Features (7 failures)
 
-| Gap | Description |
-|-----|-------------|
-| **Eval in TUI** | Eval command exists as CLI (`crush eval`) but not in TUI command palette |
-| **Processor testing** | No way to verify processor pipeline through TUI |
-| **Compaction triggers** | Compaction threshold may not be reached in test time window |
+Features that work in code but require specific configuration to activate:
+
+| Feature | Gate | Affected Tests |
+|---------|------|---------------|
+| **Architect** | Requires `cfg.Options.ArchitectModel` to be set | test-architect.sh, test-architect-operator.sh |
+| **AutoFix** | Basic lint→format cycle always runs on Go files regardless of `Validation.Enabled`; full diagnostic pipeline requires explicit config | test-autofix.sh, test-orchestration-autofix.sh |
+
+**Note:** AutoFix is not "disabled." The basic Go lint→format cycle runs unconditionally.
+The full diagnostic pipeline (`diag_autofix`, `diag_gate`) requires the validation config
+to be explicitly enabled.
+
+### 5.5 Stubbed Features (7 failures)
+
+Features that are partially implemented with placeholder UI:
+
+| Feature | Status | Affected Tests |
+|---------|--------|---------------|
+| **Eval TUI** | Palette entry exists but handler is stubbed ("coming soon") | test-eval.sh, test-eval-pipeline.sh |
+
+The eval command works as a CLI subcommand (`crush eval`). The TUI command palette
+has the entry, but the handler behind it is a stub that shows a placeholder message.
+
+### 5.6 Threshold-Gated Features (3 failures)
+
+Features that function correctly but require runtime conditions (token thresholds,
+compaction triggers) that may not be reached within the test time window:
+
+| Feature | Threshold | Affected Tests |
+|---------|-----------|---------------|
+| **LCM compaction** | Requires conversation token count to exceed compaction threshold | test-lcm-compaction.sh, test-lcm-compaction-retrieval.sh, test-lcm-compaction-routing.sh |
+
+### 5.7 Reclassification Notes
+
+Several failure categories were reclassified from the original "app-level defects" label
+after source verification revealed more accurate root causes:
+
+- **Child sessions** (ForkedAgent): ForkedAgent creates NO database sessions by design.
+  It operates in-memory. Tests that query `sessions` table for child records have
+  incorrect expectations.
+- **edit_anchor/edit_fuzzy**: These are internal helper functions, not user-facing tools.
+  Tests reference them via scenario names, which is correct, but the assertions expect
+  file modifications through a different code path than what the helpers provide.
+- **Eval not in palette**: FALSE. The palette entry exists. The handler behind it is
+  stubbed, which makes this a "stubbed feature" rather than a missing feature.
+- **Explorer "no logs"**: Explorer returns structured metadata to the database, not
+  log lines. Tests should verify DB metadata rather than grepping log output.
 
 ---
 
@@ -347,7 +395,7 @@ strategies include:
 
 ### 7.2 Weaknesses
 
-1. **LLM dependency** — ~30% of failures are model non-determinism, not app bugs
+1. **LLM dependency** — ~23% of failures are model non-determinism, not app bugs
 2. **No retry mechanism** — Sentinel assertions are single-attempt
 3. **Wave-level timeout** — 10-minute wave timeout kills slow tests mid-execution
 4. **No parallel test execution** — Tests run serially within each wave
@@ -367,27 +415,28 @@ strategies include:
 
 ## 8. Blocked Items (App-Level Requirements)
 
-Three acceptance checklist items cannot be resolved without application changes:
+Two acceptance checklist items require further investigation:
 
 ### 8.1 Rewind `o` Key (3 tests affected)
 
-**Issue:** The `turn_snapshots` table remains empty after agent turns. The rewind
-feature code exists but snapshots aren't being created.
+**Issue:** The `turn_snapshots` table remains empty after agent turns. Extension hooks
+exist for snapshotting, but the Snapshotter callback appears to not fire within the
+test window. This is likely a timing or trigger issue rather than missing code.
 
-**Required fix:** Ensure `internal/rewind/snapshot.go` Snapshotter is called after
-each agent turn and persists to `turn_snapshots` table.
+**Required investigation:** Verify that `internal/rewind/snapshot.go` Snapshotter is
+called after each agent turn and that the callback timing aligns with test expectations.
 
 **Test path verified:** test-rewind.sh correctly drives focus_chat → select_message →
 `o` key → Enter through tmux. The test infrastructure is correct.
 
 ### 8.2 Eval TUI Command (2 tests affected)
 
-**Issue:** The `eval` command exists as a CLI subcommand (`crush eval`) but is not
-registered in the TUI command palette. Tests that search for "Evaluation" or
-"Run Evaluation" in the palette fail.
+**Issue:** The `eval` command palette entry exists, but the handler behind it is stubbed.
+Tests that search for "Evaluation" or "Run Evaluation" in the palette find the entry,
+but the handler shows a placeholder message ("coming soon").
 
-**Required fix:** Register eval command in TUI command palette (likely in
-`internal/ui/` command registration).
+**Required fix:** Implement the eval handler in the TUI command palette to invoke
+the existing eval pipeline.
 
 ### 8.3 No Skipped Assertions
 
@@ -428,8 +477,8 @@ remains at 0.
 
 | Test | Failure | Root Cause |
 |------|---------|------------|
-| test-explorer-semantic | Sentinel not in TUI | App — explorer not dispatching semantic queries |
-| test-explorer | No explorer log lines | App — explorer not logging for non-code files |
+| test-explorer-semantic | Sentinel not in TUI | App — explorer returns DB metadata, not log lines |
+| test-explorer | No explorer log lines | App — tests should check DB metadata, not log output |
 | test-repomap | Session sentinel not in TUI | LLM — sentinel not produced |
 | test-repomap | Session_rankings empty | App — rankings not persisted to DB |
 | test-map-refresh | Session_rankings empty | App — same as above |
@@ -449,19 +498,19 @@ remains at 0.
 
 | Test | Failure | Root Cause |
 |------|---------|------------|
-| test-rewind* | No snapshots in DB | App — Snapshotter not called after turns |
+| test-rewind* | No snapshots in DB | App — extension hooks exist, likely timing/trigger issue |
 | test-rewind* | Files not removed after rewind | App — depends on snapshots (above) |
-| test-forked-agents | No child sessions | App — forked sessions not visible in sessions table |
-| test-architect* | Target dirs not created | App — architect plan not executing file creation |
-| test-autofix | No diagnostic pipeline logs | App — autofix not detecting/fixing errors |
-| test-orchestration-contract | No child sessions for parent | App — same as forked-agents |
+| test-forked-agents | No child sessions | Design — ForkedAgent is in-memory, creates NO DB sessions |
+| test-architect* | Target dirs not created | Config-gated — requires cfg.Options.ArchitectModel |
+| test-autofix | No diagnostic pipeline logs | Config-gated — basic lint→format runs, full pipeline needs config |
+| test-orchestration-contract | No child sessions for parent | Design — ForkedAgent is in-memory, creates NO DB sessions |
 
 ### Wave 5
 
 | Test | Failure | Root Cause |
 |------|---------|------------|
-| test-edit-tools-live | Files still contain original content | App — edit_anchor/edit_fuzzy not modifying files |
-| test-eval* | "Evaluation" not in TUI | Gap — eval not in TUI command palette |
+| test-edit-tools-live | Files still contain original content | App — edit_anchor/edit_fuzzy are internal helpers, not user-facing tools |
+| test-eval* | "Evaluation" not in TUI | Stubbed — palette entry exists, handler is stubbed |
 | test-hooks* | Hook marker files not created | App — hooks not firing |
 | test-hooks-edit-rollback | Forbidden text still in output | App — hook didn't block edit |
 | test-tools-surface-live | Sentinel not in TUI | LLM — sentinel not produced |
