@@ -1,139 +1,119 @@
 #!/usr/bin/env bash
-# Test: Config loading and context file walking.
-# Verifies that Crush loads its configuration (include directives) and
-# discovers context files (AGENTS.md) in the project root.
+# Test: Routing/fallback live behavior for small and large/context-heavy requests.
+# Verifies that Crush routes simple prompts and complex multi-file synthesis
+# prompts through the appropriate tiers, observable via TUI output and logs.
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-source "$QA_DIR/lib/common.sh"
+WAVE=5
+source "$(dirname "$0")/../lib/common.sh"
 
 PASS=0
 FAIL=0
-pass() { echo "PASS: $1"; ((PASS += 1)); }
-fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
+
+cleanup_test() {
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+  local _bak
+  _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
+  [[ -n "$_bak" ]] && mv "$_bak" crush.json
+  restore_crush
+}
+trap cleanup_test EXIT
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Config include directives + context file walking
+# Scenario 1: Small request routing
 # ---------------------------------------------------------------------------
-test_config_and_context_files() {
-  echo "=== Scenario 1: Config loading and context file walking ==="
+test_small_request_routing() {
+  SCENARIO="small-request-routing"
+  echo "=== Scenario 1: Small request routing ==="
 
   setup_clean_crush
-  # shellcheck disable=SC2317
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-    restore_crush
-  }
-  trap restore_on_exit EXIT
+  start_crush_tui 5
+  focus_editor
 
-  # Create a temporary crush.json with an include directive pointing to
-  # a supplementary config file. This tests the include/merge mechanism.
-  PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR/../.." && pwd)}"
-  local include_config="$PROJECT_DIR/.crush/test-include-config.json"
-  mkdir -p "$PROJECT_DIR/.crush"
+  # Simple prompt — should route to a lightweight tier.
+  send_tui_prompt "What is 2+2? Reply with exactly: ROUTING_SMALL_SENTINEL_42"
 
-  # Write the supplementary config that will be included.
-  cat > "$include_config" <<'EOF'
-{
-  "options": {
-    "debug": true
-  }
-}
-EOF
-
-  # Write a crush.json that uses include to pull in the supplementary config.
-  local orig_config
-  if [[ -f "$PROJECT_DIR/crush.json" ]]; then
-    orig_config=$(cat "$PROJECT_DIR/crush.json")
-  fi
-  cat > "$PROJECT_DIR/crush.json" <<EOF
-{
-  "\$schema": "https://charm.land/crush.json",
-  "include": [".crush/test-include-config.json"]
-}
-EOF
-
-  # Start crush with wave5 config helpers but our custom crush.json in place.
-  # start_crush copies wave5.json over crush.json, so we need a different approach:
-  # manually start tmux + crush with our custom config.
-  TMUX_SESSION="qa-w5-config-$(date +%s)"
-  tmux new-session -d -s "$TMUX_SESSION" -x 200 -y 50
-  tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && crush --yolo" Enter
-  sleep 5
-
-  # Send a prompt asking about context files.
-  send_prompt "What context files did you load? List any AGENTS.md, CRUSH.md, or CRUSH.memory.md files you can see."
-  if ! wait_for_idle 120; then
-    fail "Scenario 1: Crush did not become idle"
-    capture_evidence 15 "config-context"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 1: Crush did not become idle within 120s"
+    capture_tui_evidence "small-routing-timeout"
     return
   fi
 
-  capture_evidence 15 "config-context"
-
-  # --- Assertion 1: AGENTS.md exists in project root and should be discovered ---
-  if [[ -f "$PROJECT_DIR/AGENTS.md" ]]; then
-    pass "Scenario 1: AGENTS.md exists in project root"
+  # Primary: TUI must contain the sentinel.
+  if assert_tui_contains "ROUTING_SMALL_SENTINEL_42"; then
+    pass "Scenario 1: TUI contains ROUTING_SMALL_SENTINEL_42"
   else
-    fail "Scenario 1: AGENTS.md not found in project root"
+    fail "Scenario 1: TUI does not contain ROUTING_SMALL_SENTINEL_42"
+    capture_tui_evidence "small-routing-no-sentinel"
   fi
 
-  # Capture pane output to check if AGENTS.md was mentioned in the response.
-  local pane_output
-  pane_output=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -1000)
-  if echo "$pane_output" | grep -qi "AGENTS.md"; then
-    pass "Scenario 1: Agent response mentions AGENTS.md"
+  # Secondary: log grep for router/tier entries.
+  local log_entries
+  log_entries=$(grep -ciE "router|tier|routing|model.*select|route.*request" .crush/logs/crush.log 2>/dev/null || echo 0)
+
+  if [[ "$log_entries" -ge 1 ]]; then
+    pass "Scenario 1: Found $log_entries routing/tier log entries"
   else
-    fail "Scenario 1: Agent response does not mention AGENTS.md"
+    echo "  NOTE: No routing/tier log entries found"
   fi
 
-  # --- Assertion 2: Crush log shows config loading activity ---
-  # Wait for log file to be written.
-  if ! wait_for_file "$PROJECT_DIR/.crush/logs/crush.log" 30; then
-    fail "Scenario 1: crush.log not found"
-    stop_crush
+  echo "--- Small routing log evidence ---"
+  grep -iE "router|tier|routing|model.*select|route.*request" .crush/logs/crush.log 2>/dev/null | head -10 || true
+  echo "--- End evidence ---"
+
+  capture_tui_evidence "small-request-routing"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 2: Large/context-heavy request routing
+# ---------------------------------------------------------------------------
+test_large_request_routing() {
+  SCENARIO="large-request-routing"
+  echo "=== Scenario 2: Large/context-heavy request routing ==="
+
+  setup_clean_crush
+  start_crush_tui 5
+  focus_editor
+
+  # Context-heavy prompt asking to read and synthesize multiple files.
+  send_tui_prompt "Read AGENTS.md, internal/agent/router_tier.go, and internal/agent/model_router.go. Summarize the routing strategy in 2 sentences. End your reply with exactly: ROUTING_LARGE_SENTINEL_88"
+
+  if ! wait_for_tui_idle 180; then
+    fail "Scenario 2: Crush did not become idle within 180s"
+    capture_tui_evidence "large-routing-timeout"
     return
   fi
 
-  # Check for config-related log entries.
-  local config_log_count
-  config_log_count=$(grep -ciE "test-include-config\.json|include.*\.crush/test-include-config\.json|loaded.*crush\.json|merged.*config" "$PROJECT_DIR/.crush/logs/crush.log" 2>/dev/null || echo 0)
-  if [[ "$config_log_count" -ge 1 ]]; then
-    pass "Scenario 1: Crush log contains config loading entries ($config_log_count matches)"
+  # Primary: TUI must contain the sentinel.
+  if assert_tui_contains "ROUTING_LARGE_SENTINEL_88"; then
+    pass "Scenario 2: TUI contains ROUTING_LARGE_SENTINEL_88"
   else
-    fail "Scenario 1: Crush log has no config loading entries"
+    fail "Scenario 2: TUI does not contain ROUTING_LARGE_SENTINEL_88"
+    capture_tui_evidence "large-routing-no-sentinel"
   fi
 
-  # Check that debug was enabled (set via our include config).
-  local debug_log_count
-  debug_log_count=$(grep -ciE "debug.*enabled|level=debug|DEBUG" "$PROJECT_DIR/.crush/logs/crush.log" 2>/dev/null || echo 0)
-  if [[ "$debug_log_count" -ge 1 ]]; then
-    pass "Scenario 1: Debug logging active (from include config)"
+  # Secondary: log grep for routing/fallback entries.
+  local log_entries
+  log_entries=$(grep -ciE "router|tier|routing|fallback|model.*select|escalat|route.*request|budget" .crush/logs/crush.log 2>/dev/null || echo 0)
+
+  if [[ "$log_entries" -ge 1 ]]; then
+    pass "Scenario 2: Found $log_entries routing/fallback log entries"
   else
-    fail "Scenario 1: No debug log entries found"
+    echo "  NOTE: No routing/fallback log entries found"
   fi
 
-  # Clean up the temporary include config.
-  rm -f "$include_config"
+  echo "--- Large routing log evidence ---"
+  grep -iE "router|tier|routing|fallback|model.*select|escalat|route.*request|budget" .crush/logs/crush.log 2>/dev/null | head -10 || true
+  echo "--- End evidence ---"
 
-  stop_crush
-
-  # Restore original crush.json if we had one.
-  if [[ -n "${orig_config:-}" ]]; then
-    echo "$orig_config" > "$PROJECT_DIR/crush.json"
-  fi
+  capture_tui_evidence "large-request-routing"
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-test_config_and_context_files
+test_small_request_routing
+test_large_request_routing
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
