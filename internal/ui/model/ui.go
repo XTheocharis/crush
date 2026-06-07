@@ -1599,6 +1599,35 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			return util.NewInfoMsg("Transparent background " + status)
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionEnableArchitect:
+		cmds = append(cmds, func() tea.Msg {
+			cfg := m.com.Config()
+			if cfg == nil {
+				return util.ReportError(errors.New("configuration not found"))()
+			}
+
+			agentCfg, ok := cfg.Agents[config.AgentCoder]
+			if !ok {
+				return util.ReportError(errors.New("agent configuration not found"))()
+			}
+
+			archModel := cfg.Models[agentCfg.Model]
+			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.architect_model", archModel); err != nil {
+				return util.ReportError(err)()
+			}
+
+			// Architect only activates for CategoryFeature prompts (shouldUseTwoPhase).
+			return util.NewInfoMsg("Architect mode enabled (activates on next feature prompt)")
+		})
+		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionDisableArchitect:
+		cmds = append(cmds, func() tea.Msg {
+			if err := m.com.Workspace.RemoveConfigField(config.ScopeGlobal, "options.architect_model"); err != nil {
+				return util.ReportError(err)()
+			}
+			return util.NewInfoMsg("Architect mode disabled")
+		})
+		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionQuit:
 		cmds = append(cmds, tea.Quit)
 	case dialog.ActionEnableDockerMCP:

@@ -103,6 +103,11 @@ type (
 	ActionRunEval struct {
 		SessionID string
 	}
+	// ActionEnableArchitect enables the architect planning phase using the
+	// current session model as the architect model.
+	ActionEnableArchitect struct{}
+	// ActionDisableArchitect disables the architect planning phase.
+	ActionDisableArchitect struct{}
 )
 
 // Messages for API key input dialog.

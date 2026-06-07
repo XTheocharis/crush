@@ -500,6 +500,12 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "disable_docker_mcp", "Disable Docker MCP Catalog", "", ActionDisableDockerMCP{}))
 	}
 
+	if cfg.Options != nil && cfg.Options.ArchitectModel != nil {
+		commands = append(commands, NewCommandItem(c.com.Styles, "disable_architect", "Disable Architect", "", ActionDisableArchitect{}))
+	} else {
+		commands = append(commands, NewCommandItem(c.com.Styles, "enable_architect", "Enable Architect", "", ActionEnableArchitect{}))
+	}
+
 	if c.hasTodos || c.hasQueue {
 		var label string
 		switch {
