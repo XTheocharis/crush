@@ -27,6 +27,7 @@ test_compaction_then_routing() {
 
   setup_clean_crush
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT
@@ -214,6 +215,7 @@ test_post_compaction_routing_persistence() {
 
   setup_clean_crush
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT

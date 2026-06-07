@@ -19,7 +19,7 @@ FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
-cleanup_test() { restore_crush; }
+cleanup_test() { cleanup_tui; restore_crush; }
 trap cleanup_test EXIT
 
 # ---------------------------------------------------------------------------

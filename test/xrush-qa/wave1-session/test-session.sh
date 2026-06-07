@@ -26,6 +26,7 @@ test_session_created() {
 
   setup_clean_crush
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT
@@ -176,6 +177,7 @@ test_multiple_distinct_sessions() {
 
   setup_clean_crush
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT

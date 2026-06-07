@@ -16,16 +16,16 @@ LSP_TEST_FILE=""
 
 pass() {
   echo "  PASS: $1"
-  ((PASS++))
+  PASS=$((PASS + 1))
 }
 
 fail() {
   echo "  FAIL: $1" >&2
-  ((FAIL++))
+  FAIL=$((FAIL + 1))
 }
 
 cleanup_test() {
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   # Remove any temp Go files created during the test.
   [[ -n "$LSP_TEST_FILE" && -f "$LSP_TEST_FILE" ]] && rm -f "$LSP_TEST_FILE"
   # Also clean up test helper files if present.

@@ -26,9 +26,7 @@ test_read_files_tracking() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
-    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
-    sleep 0.3
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
@@ -93,9 +91,7 @@ test_written_files_tracking() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
-    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
-    sleep 0.3
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)

@@ -25,7 +25,7 @@ test_explorer_semantic_quality() {
   SCENARIO="explorer-semantic"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui "$WAVE"

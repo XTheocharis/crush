@@ -24,7 +24,7 @@ test_explorer_dispatch_code_file() {
   SCENARIO="explorer-dispatch"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui "$WAVE"
@@ -80,7 +80,7 @@ test_explorer_noncode_file() {
   SCENARIO="explorer-noncode"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui "$WAVE"

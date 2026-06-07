@@ -27,7 +27,7 @@ test_architect_plan() {
   SCENARIO="architect-plan"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui 4

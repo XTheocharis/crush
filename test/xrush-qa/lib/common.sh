@@ -76,7 +76,7 @@ wait_for_file() {
       return 1
     fi
     sleep 1
-    ((elapsed++))
+    elapsed=$((elapsed + 1))
   done
 }
 
@@ -189,7 +189,7 @@ cleanup_tui() {
       break
     fi
     sleep 1
-    ((retries++))
+    retries=$((retries + 1))
   done
 
   local backup
@@ -250,14 +250,15 @@ start_crush_tui() {
   _QA_FOCUS_STATE="editor"
 
   local waited=0
-  while [[ $waited -lt 15 ]]; do
+  while [[ $waited -lt 30 ]]; do
     local pane_content
     pane_content=$(tmux capture-pane -t "$TMUX_SESSION" -p 2>/dev/null || true)
-    if [[ -n "$pane_content" && "$pane_content" != *[[:space:]]* ]]; then
+    # Wait for Crush TUI to render its actual UI (not just the typed command echo).
+    if printf '%s' "$pane_content" | grep -qi 'yolo\|Model.*:\|ctrl+c quit\|commands'; then
       break
     fi
     sleep 1
-    ((waited++))
+    waited=$((waited + 1))
   done
 }
 

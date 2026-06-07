@@ -30,6 +30,7 @@ test_architect_operator_pipeline() {
   setup_clean_crush
   cleanup_test() {
     rm -rf "$TARGET_DIR"
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT

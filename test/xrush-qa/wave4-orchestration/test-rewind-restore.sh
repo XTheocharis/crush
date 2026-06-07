@@ -27,9 +27,7 @@ test_code_restore() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
-    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
-    sleep 0.3
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
@@ -105,7 +103,6 @@ test_code_restore() {
   # Navigate to the assistant message from turn 2 (offset 0 = last message,
   # which is the assistant's V2 response at the bottom).
   select_message_by_offset 0
-  sleep 0.3
   capture_tui_evidence "before-o-key"
 
   # Press 'o' to open message options dialog.
@@ -172,9 +169,7 @@ test_conversation_truncation() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
-    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
-    sleep 0.3
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
@@ -259,7 +254,6 @@ test_conversation_truncation() {
 
   # Navigate to the assistant message from turn 3 (offset 0 = last message).
   select_message_by_offset 0
-  sleep 0.3
   capture_tui_evidence "convo-before-o-key"
 
   # Press 'o' to open message options dialog.

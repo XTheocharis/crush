@@ -27,6 +27,7 @@ test_repomap_cache() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT

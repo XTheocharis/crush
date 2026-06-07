@@ -26,9 +26,7 @@ test_single_code_rewind() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
-    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
-    sleep 0.3
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
@@ -96,7 +94,6 @@ test_single_code_rewind() {
 
   # Navigate to the assistant message (offset 0 = bottom of chat list).
   select_message_by_offset 0
-  sleep 0.3
   capture_tui_evidence "before-o-key"
 
   # Press 'o' to open message options dialog.

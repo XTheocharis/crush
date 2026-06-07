@@ -25,6 +25,7 @@ test_rankings_positive_scores() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT
@@ -98,6 +99,7 @@ test_import_graph_edges() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT

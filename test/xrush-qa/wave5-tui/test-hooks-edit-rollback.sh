@@ -32,7 +32,7 @@ BLOCK_MARKER="/tmp/qa-block-edit-marker.txt"
 ROLLBACK_MARKER="/tmp/qa-rollback-edit-marker.txt"
 
 cleanup_test() {
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   local _bak
   _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
   [[ -n "$_bak" ]] && mv "$_bak" crush.json

@@ -26,9 +26,7 @@ test_message_parts_types() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
-    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
-    sleep 0.3
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
@@ -109,9 +107,7 @@ test_message_parts_timestamps() {
   setup_clean_crush
   # shellcheck disable=SC2317
   cleanup_test() {
-    tmux send-keys -t "$TMUX_SESSION" C-c 2>/dev/null || true
-    sleep 0.3
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
     restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
@@ -178,7 +174,7 @@ test_message_parts_timestamps() {
         seq_ok=false
         break
       fi
-      ((expected++))
+      expected=$((expected + 1))
     done <<< "$parts"
   done <<< "$msg_ids"
 

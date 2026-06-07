@@ -29,6 +29,7 @@ test_lcm_session_config() {
 
   setup_clean_crush
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT
@@ -165,7 +166,7 @@ test_context_items() {
       seq_ok=false
       fail "Scenario 2: Expected position $expected, got $pos"
     fi
-    ((expected++))
+    expected=$((expected + 1))
   done <<< "$positions"
   if [[ "$seq_ok" == "true" ]]; then
     pass "Scenario 2: Positions are sequential (0..$((expected - 1)))"

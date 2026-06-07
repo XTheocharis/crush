@@ -28,6 +28,7 @@ test_sentinel_survives_compaction() {
 
   setup_clean_crush
   cleanup_test() {
+    cleanup_tui
     restore_crush
   }
   trap cleanup_test EXIT

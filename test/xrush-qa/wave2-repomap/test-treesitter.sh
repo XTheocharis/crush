@@ -24,7 +24,7 @@ test_go_tags_extracted() {
   SCENARIO="treesitter-tags"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui "$WAVE"
@@ -93,7 +93,7 @@ test_imports_populated() {
   SCENARIO="treesitter-imports"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui "$WAVE"

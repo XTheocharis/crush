@@ -16,7 +16,7 @@ pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
 cleanup_test() {
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   local _bak
   _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
   [[ -n "$_bak" ]] && mv "$_bak" crush.json
@@ -98,7 +98,7 @@ test_compact_mode() {
   mv "$tmp_config" "$PROJECT_DIR/crush.json"
 
   # Restart with compact config.
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   TMUX_SESSION="qa-w5-compact-$(date +%s)"
   tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 50
   tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && crush --yolo" Enter

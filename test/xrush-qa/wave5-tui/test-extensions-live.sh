@@ -14,7 +14,7 @@ pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
 cleanup_test() {
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   local _bak
   _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
   [[ -n "$_bak" ]] && mv "$_bak" crush.json

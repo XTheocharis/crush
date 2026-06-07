@@ -21,7 +21,7 @@ FIXTURE_DIR=""
 FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/qa-edit-tools-XXXXXX")
 
 cleanup_test() {
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   local _bak
   _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
   [[ -n "$_bak" ]] && mv "$_bak" crush.json
@@ -132,7 +132,7 @@ Content for section C — original text.
 EOF
 
   # Kill previous session and start fresh.
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   start_crush_tui 5
   focus_editor
 
@@ -213,7 +213,7 @@ ROLLBACK_ORIG
   orig_rollback=$(cat "$fr_dir/rollback.txt")
 
   # Kill previous session and start fresh.
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    cleanup_tui
   start_crush_tui 5
   focus_editor
 

@@ -28,7 +28,7 @@ test_lcm_grep_sentinel() {
   SCENARIO="lcm-grep-sentinel"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui 3
@@ -115,7 +115,7 @@ test_lcm_describe_facts() {
   SCENARIO="lcm-describe-facts"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui 3
@@ -227,7 +227,7 @@ test_lcm_expand_after_compaction() {
   SCENARIO="lcm-expand-compaction"
 
   setup_clean_crush
-  cleanup_test() { restore_crush; }
+  cleanup_test() { cleanup_tui; restore_crush; }
   trap cleanup_test EXIT
 
   start_crush_tui 3

@@ -19,7 +19,7 @@ fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 # Shared session ID from Scenario 1.
 SID=""
 
-cleanup_test() { restore_crush; }
+cleanup_test() { cleanup_tui; restore_crush; }
 trap cleanup_test EXIT
 
 # ---------------------------------------------------------------------------
