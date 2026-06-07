@@ -6,11 +6,15 @@ set -euo pipefail
 # shellcheck source=global-config.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/global-config.sh"
 
+# Maximum wall-clock time (seconds) for a single test before it is considered hung.
+MAX_TEST_TIMEOUT=${MAX_TEST_TIMEOUT:-300}
+
 # Test result counters and reporting functions.
 # Tests that define their own PASS/FAIL counters will shadow these.
 # Tests that don't define pass()/fail() will inherit these.
 PASS=${PASS:-0}
 FAIL=${FAIL:-0}
+PROVIDER_FAILURES=${PROVIDER_FAILURES:-0}
 pass() { echo "  PASS: $1"; ((PASS += 1)); }
 fail() { echo "  FAIL: $1" >&2; ((FAIL += 1)); }
 
@@ -371,9 +375,19 @@ wait_for_tui_idle() {
       return 0
     fi
 
+    if ! check_provider_available; then
+      echo "FAIL: wait_for_tui_idle: provider unavailability detected" >&2
+      return 2
+    fi
+
     if [[ "$elapsed" -ge "$timeout" ]]; then
       tmux capture-pane -t "$TMUX_SESSION" -p -S -1000 > /tmp/tmux-idle-timeout-"$TMUX_SESSION".txt 2>/dev/null || true
       echo "FAIL: wait_for_tui_idle: Crush still busy after ${timeout}s (baseline=$baseline)" >&2
+      return 1
+    fi
+
+    if [[ "$elapsed" -ge "$MAX_TEST_TIMEOUT" ]]; then
+      echo "FAIL: wait_for_tui_idle: exceeded MAX_TEST_TIMEOUT (${MAX_TEST_TIMEOUT}s)" >&2
       return 1
     fi
 
@@ -528,6 +542,35 @@ mask_secret() {
     -e 's/\(api_key\|apiKey\|API_KEY\)[[:space:]]*[:=][[:space:]]*"[^"]\{10,\}"/\1: "REDACTED"/g' \
     -e 's/token[[:space:]]*[:=][[:space:]]*"[a-zA-Z0-9]\{10,\}"/token: "REDACTED"/gi' \
     -e 's/bearer[[:space:]]\+[a-zA-Z0-9._-]\{20,\}/Bearer REDACTED/gi'
+}
+
+# Check TUI output for provider connection errors.
+# If the TUI shows provider unavailability, exits with code 2.
+# Usage: check_provider_available
+check_provider_available() {
+  if [[ -z "${TMUX_SESSION:-}" ]]; then
+    return 0
+  fi
+  local pane
+  pane=$(tmux capture-pane -t "$TMUX_SESSION" -p 2>/dev/null | strip_ansi || true)
+  if printf '%s' "$pane" | grep -qi 'provider.*error\|provider.*unavailable\|connection.*refused\|authentication.*failed\|invalid.*api.key\|api.key.*invalid'; then
+    echo "ERROR: Provider unavailability detected in TUI" >&2
+    ((PROVIDER_FAILURES += 1))
+    return 1
+  fi
+}
+
+# Enforce MAX_TEST_TIMEOUT for a test scenario.
+# Usage: enforce_test_timeout <start_epoch_seconds>
+enforce_test_timeout() {
+  local start="$1"
+  local now
+  now=$(date +%s)
+  local elapsed=$((now - start))
+  if [[ "$elapsed" -ge "$MAX_TEST_TIMEOUT" ]]; then
+    echo "FAIL: Test exceeded MAX_TEST_TIMEOUT (${MAX_TEST_TIMEOUT}s)" >&2
+    return 1
+  fi
 }
 
 # Record test result to the reports file.

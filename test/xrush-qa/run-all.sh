@@ -5,6 +5,16 @@ QA_DIR=$(cd "$(dirname "$0")" && pwd)
 source "$QA_DIR/lib/common.sh"
 source "$QA_DIR/lib/db-schema.sh"
 
+# Cleanup: kill any tmux sessions created by the QA suite on exit.
+cleanup() {
+  local sessions
+  sessions=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^qa-' || true)
+  for s in $sessions; do
+    tmux kill-session -t "$s" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT
+
 WAVE=""
 CLEAN=false
 
@@ -46,8 +56,13 @@ run_wave() {
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $wave PASS" >> "$QA_DIR/reports/results.txt"
     else
       status=$?
-      echo "=== $wave: FAIL (exit $status) ==="
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $wave FAIL" >> "$QA_DIR/reports/results.txt"
+      if [[ "$status" -eq 2 ]]; then
+        echo "=== $wave: PROVIDER UNAVAILABLE (exit $status) ==="
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $wave PROVIDER_UNAVAILABLE" >> "$QA_DIR/reports/results.txt"
+      else
+        echo "=== $wave: FAIL (exit $status) ==="
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $wave FAIL" >> "$QA_DIR/reports/results.txt"
+      fi
       FAILURES=$((FAILURES + 1))
     fi
   else
