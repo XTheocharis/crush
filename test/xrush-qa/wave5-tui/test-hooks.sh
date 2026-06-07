@@ -40,26 +40,42 @@ echo "HOOK_PRETOOL_SENTINEL_42" > /tmp/qa-pretool-marker-42.txt
 HOOK_EOF
   chmod +x "$HOOK_SCRIPT"
 
-  # Build hooks config by extending the wave5 base with a PreToolUse hook.
   QA_DIR_RESOLVED="${QA_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
   PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR_RESOLVED/../.." && pwd)}"
+  TMUX_SESSION="qa-w5-$(date +%s)"
 
-  local hooks_config="$PROJECT_DIR/crush.json"
-  if [[ -f "$hooks_config" ]]; then
-    cp "$hooks_config" "$hooks_config.bak.$(date +%s)"
+  # Resolve providers and generate base wave-5 config.
+  resolve_global_config
+  if [[ -f "$PROJECT_DIR/crush.json" ]]; then
+    cp "$PROJECT_DIR/crush.json" "$PROJECT_DIR/crush.json.bak.$(date +%s)"
   fi
+  generate_project_config 5 "$PROJECT_DIR/crush.json"
 
+  # Patch hooks into the generated config BEFORE launching Crush.
   local tmp_config
   tmp_config=$(mktemp)
   jq --arg script "$HOOK_SCRIPT" \
     '. + {"hooks":{"PreToolUse":[{"matcher":"^bash$","command":$script}]}}' \
-    "$QA_DIR_RESOLVED/wave5.json" > "$tmp_config"
-  mv "$tmp_config" "$hooks_config"
+    "$PROJECT_DIR/crush.json" > "$tmp_config"
+  mv "$tmp_config" "$PROJECT_DIR/crush.json"
 
   rm -f "$HOOK_MARKER"
 
-  start_crush_tui 5
-  focus_editor
+  # Launch Crush TUI manually (inlined to ensure hooks are in config before startup).
+  tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 50
+  tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && crush --yolo" Enter
+  _QA_IDLE_BASELINE=0
+  _QA_FOCUS_STATE="editor"
+  local waited=0
+  while [[ $waited -lt 30 ]]; do
+    local pane_content
+    pane_content=$(tmux capture-pane -t "$TMUX_SESSION" -p 2>/dev/null || true)
+    if printf '%s' "$pane_content" | grep -qi 'ctrl+c quit\|HEY!\|Charm.*v[0-9]'; then
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
 
   # Prompt that triggers the bash tool.
   send_tui_prompt "Run the command: echo HOOK_PRETOOL_SENTINEL_42"
@@ -118,23 +134,40 @@ HOOK_EOF
 
   QA_DIR_RESOLVED="${QA_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
   PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR_RESOLVED/../.." && pwd)}"
+  TMUX_SESSION="qa-w5-$(date +%s)"
 
-  local hooks_config="$PROJECT_DIR/crush.json"
-  if [[ -f "$hooks_config" ]]; then
-    cp "$hooks_config" "$hooks_config.bak.$(date +%s)"
+  # Resolve providers and generate base wave-5 config.
+  resolve_global_config
+  if [[ -f "$PROJECT_DIR/crush.json" ]]; then
+    cp "$PROJECT_DIR/crush.json" "$PROJECT_DIR/crush.json.bak.$(date +%s)"
   fi
+  generate_project_config 5 "$PROJECT_DIR/crush.json"
 
+  # Patch hooks into the generated config BEFORE launching Crush.
   local tmp_config
   tmp_config=$(mktemp)
   jq --arg script "$HOOK_SCRIPT" \
     '. + {"hooks":{"PreToolUse":[{"matcher":"^bash$","command":$script}]}}' \
-    "$QA_DIR_RESOLVED/wave5.json" > "$tmp_config"
-  mv "$tmp_config" "$hooks_config"
+    "$PROJECT_DIR/crush.json" > "$tmp_config"
+  mv "$tmp_config" "$PROJECT_DIR/crush.json"
 
   rm -f "$HOOK_MARKER" "$env_marker"
 
-  start_crush_tui 5
-  focus_editor
+  # Launch Crush TUI manually (inlined to ensure hooks are in config before startup).
+  tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 50
+  tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && crush --yolo" Enter
+  _QA_IDLE_BASELINE=0
+  _QA_FOCUS_STATE="editor"
+  local waited=0
+  while [[ $waited -lt 30 ]]; do
+    local pane_content
+    pane_content=$(tmux capture-pane -t "$TMUX_SESSION" -p 2>/dev/null || true)
+    if printf '%s' "$pane_content" | grep -qi 'ctrl+c quit\|HEY!\|Charm.*v[0-9]'; then
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
 
   send_tui_prompt "List files in the current directory"
 
