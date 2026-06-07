@@ -666,6 +666,20 @@ uses the `view` tool or processes large tool output.
 }
 ```
 
+### Output Contract
+
+The explorer returns structured metadata, not log lines. Results are persisted
+in the `lcm_large_files` SQLite table with two columns:
+
+- `explorer_used` (TEXT): identifier of the handler that processed the file
+  (e.g., `"TreeSitter"`, `"Binary"`, `"Fallback"`).
+- `exploration_summary` (TEXT): structured summary of the file's content,
+  format varies by handler type.
+
+When the `explorer_output_profile` is set to `"parity"`, these columns are not
+populated (the explorer performs structured extraction only without persisting
+results). Tests should assert on these DB artifacts rather than log output.
+
 ### Usage
 
 The Explorer activates automatically when the agent views files or processes
@@ -1063,10 +1077,12 @@ Disable the pipeline:
 ### Usage
 
 The processor pipeline is configured exclusively through `crush.json`. There
-are no CLI commands or keybindings. Once configured, processors run
-automatically on every LLM request and response. The `skills` processor must
-precede `skill_search` in the list to ensure skill definitions are loaded
-before search is attempted.
+are no CLI commands or keybindings. The pipeline has no TUI observability
+surface. Configuration-only through `options.processors` in crush.json. No
+TUI surface is planned unless product decides otherwise. Once configured,
+processors run automatically on every LLM request and response. The `skills`
+processor must precede `skill_search` in the list to ensure skill definitions
+are loaded before search is attempted.
 
 ### Default Behavior
 
@@ -1693,9 +1709,11 @@ crush eval --dataset path/to/dataset.jsonl --scorer build_success --output repor
 
 ### Default Behavior
 
-No configuration is needed. The eval framework is entirely CLI-driven and
-does not affect normal Crush operation. It activates only when the `crush eval`
-command is invoked.
+No configuration is needed. The eval framework is fully functional via the CLI
+(`crush eval`). A TUI palette entry `Run Evaluation` exists
+(`internal/ui/dialog/commands.go:441`) but its handler returns the stub message
+"Evaluation: feature coming soon" (`internal/ui/model/ui.go:1532-1537`). It
+activates only when the `crush eval` command is invoked.
 
 ---
 
@@ -2297,7 +2315,7 @@ explicit `url` and `sha256` configuration per server.
 
 ### Fork-New Tools
 
-> **Tool surface**: The fork registers 59 tools via `tool_surface.go:registerDefaults()`, plus 4 additional tools via `OrchestrationExtension.Tools()` (`send_message`, `task_stop`, `team_create`, `task_delete`). Of the 59 in registerDefaults, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built by extension; 2 additional from coordinator = 17 total registered; `lsp_restart` also upstream), and `ExtraAgentTools()` (15: 5 via toolFactory + 10 including Compact). The 59 tools from registerDefaults include `agent`, `agentic_fetch`, `productive_execute`, and `swarm_execute`. Four additional tools (`send_message`, `task_stop`, `team_create`, `task_delete`) come from `OrchestrationExtension` and are NOT in registerDefaults. In total, the full tool surface comprises 63 unique tool names (59 registerDefaults + 4 OrchestrationExtension).
+> **Tool surface**: The fork registers 63 tools via `tool_surface.go:registerDefaults()` (lines 120-192). Of these, 23 are inherited from upstream. The fork adds tools via three mechanisms: `xrushToolNames()` (25 standard), `LSPToolsExtension.buildLSPTools()` (15 built by extension; 2 additional from coordinator = 17 total registered; `lsp_restart` also upstream), and `ExtraAgentTools()` (15: 5 via toolFactory + 10 including Compact). All 63 tools, including `send_message`, `task_stop`, `team_create`, `task_delete`, `agent`, `agentic_fetch`, `productive_execute`, and `swarm_execute`, are registered in `registerDefaults`. There is no separate OrchestrationExtension registration; those four orchestration tools are included in the 63.
 
 #### Registered Agent Tools (32)
 
@@ -2336,12 +2354,15 @@ explicit `url` and `sha256` configuration per server.
 | `sourcegraph` | Search | Sourcegraph code search integration |
 | `list_mcp_resources` | MCP | List available MCP server resources |
 
-#### LCM Retrieval Tools (15 tools via `ExtraAgentTools()`: 5 via toolFactory + 9 retrieval + 1 manual compact)
+#### LCM Retrieval Tools (9 retrieval tools via `ExtraAgentTools()`)
 
 `lcm_bindle`, `lcm_ancestry`, `lcm_dolt`, `lcm_archive`, `lcm_sprig`,
 `lcm_time_query`, `lcm_file_search`, `lcm_active_context`, `lcm_lineage`
 
-#### Not Agent Tools (Internal Helpers)
+Plus `lcm_compact` (manual compaction trigger), `lcm_grep`, `lcm_describe`,
+`lcm_expand`, `lcm_active_context` (also registered independently in
+registerDefaults), `llm_map`, `agentic_map`, and `map_refresh` which are
+registered directly in registerDefaults rather than via ExtraAgentTools.
 
 ### Persistent Map State
 
@@ -2399,9 +2420,12 @@ tools work identically with or without persistence.
 
 #### Not Agent Tools (Internal Helpers)
 
+The following components are internal helpers with no `New*Tool` constructors.
+They are not registered in the agent tool surface and cannot be invoked by the
+LLM. They support registered tools behind the scenes.
+
 `diag_autofix` and `diag_gate` are internal helper types used by the
-AutoFix and DiagGate extension systems. They have no `New*Tool`
-constructors and are not registered in the agent tool surface.
+AutoFix and DiagGate extension systems.
 
 `diag_cascade` (304L) provides diagnostic cascading: after editing a
 file, it runs LSP diagnostics and recursively checks importing files
@@ -2420,15 +2444,37 @@ Complemented by `ForwardImportResolution` (T13, see Fork-New Edit Support
 table above) which resolves project-local imports to exported symbols
 for one level of forward analysis.
 
+`edit_anchors` provides FNV-1a hash-based content-addressed anchors for
+drift-tolerant edits. Used as a fallback by the standard edit tool and
+`edit_batch_tool` when a plain string edit fails to match.
+
+`edit_anchor_ops` implements anchor edit operations (insert_before,
+insert_after, replace_range, delete_range) that operate against
+content-addressed hash anchors rather than line numbers.
+
+`edit_anchors_cache` caches anchor hash maps to avoid re-scanning files
+on subsequent edits.
+
+`anchor_state_manager` uses the Myers diff algorithm to track anchor
+hash map drift across file modifications. Build-tagged: `treesitter` with
+stub fallback.
+
+`edit_fuzzy` provides whitespace-normalized fuzzy string matching for
+approximate edit targets.
+
+`validation_handler` is the post-edit validation pipeline that
+orchestrates `validate` and `rollback` stages after edits.
+
+`diag_watcher` (248L) is a background `fsnotify`-based monitor for file
+changes that proactively runs LSP diagnostics on affected files.
+
 `search` (219L) provides DuckDuckGo HTML scraping via
-`lite.duckduckgo.com` with randomized headers and rate limiting. It has
-no `New*Tool` constructor; the `web_search` tool (`NewWebSearchTool`)
-delegates to it.
+`lite.duckduckgo.com` with randomized headers and rate limiting. The
+`web_search` tool delegates to it.
 
 `safe` (90L) provides a whitelist of read-only shell commands (e.g.
-`git status`, `ls`, `ps`) and command-chaining detection. It has no
-`New*Tool` constructor; the `bash` tool (`NewBashTool`) uses it to
-auto-approve safe commands.
+`git status`, `ls`, `ps`) and command-chaining detection. The `bash`
+tool uses it to auto-approve safe commands.
 
 ### Fork-New Edit Support
 
@@ -2449,7 +2495,7 @@ auto-approve safe commands.
 
 ### User-Facing Description
 
-The fork provides 63 unique tools across all registration mechanisms: 59 via registerDefaults (23 inherited from upstream) plus 4 via OrchestrationExtension (`send_message`, `task_stop`, `team_create`, `task_delete`). Tools `agent`, `agentic_fetch`, `productive_execute`, and `swarm_execute` are in registerDefaults; `send_message`, `task_stop`, `team_create`, and `task_delete` are NOT in registerDefaults — they are provided exclusively by `OrchestrationExtension.Tools()`. Extension-provided tools (e.g., swarm_execute) are factory-wired post-bootstrap. Tools with overlapping names (e.g., lsp_restart) are counted once. The
+The fork provides 63 tools registered in `tool_surface.go:registerDefaults()` (lines 120-192). All tools, including `agent`, `agentic_fetch`, `productive_execute`, `swarm_execute`, `send_message`, `task_stop`, `team_create`, and `task_delete`, are in registerDefaults. Extension-provided tools (e.g., swarm_execute) are factory-wired post-bootstrap. Tools with overlapping names (e.g., lsp_restart) are counted once. The
 enhanced edit subsystem introduces anchor-based edits (content-addressed hashes
 that survive minor file changes), fuzzy string matching for approximate edit
 targets with tree-sitter symbol resolution (T12), atomic multi-file batch
@@ -3396,7 +3442,7 @@ side-by-side. Syntax highlighting in diffs and markdown is always active.
 | `RateLimiting` (180L) | Reactive 429-backoff rate limit coordination |
 | `ModelRouter` + `TierRouter` | Model routing with tier-based selection; `ModelRouter` deprecated, `TierRouter` active |
 | `ConfigLoader` (253L) | Dynamic agent configuration from `crush.json` |
-| `ToolSurface` (421L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; 63 tools registered (59 via registerDefaults + 4 via OrchestrationExtension) |
+| `ToolSurface` (421L) | Tool registry with 6-capability bitmask, 6 behavioral markers, dynamic visibility, and phase filtering; 63 tools registered in `registerDefaults()` (`tool_surface.go:120-192`) |
 | `Session` (349L) | Session management (`session/session.go`) |
 | `Completer` (88L) | Shell command completion |
 | `WrittenFiles` (79L) | Track files written during a session |
