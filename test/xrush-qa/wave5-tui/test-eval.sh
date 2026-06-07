@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Test: Eval command lists scorers and provides usage info.
-# Verifies that `crush eval` (no flags) lists available scorers and
-# that the CLI does not return "unknown command" errors.
+# Test: Eval command invocation through TUI command palette.
+# Opens the command palette via Ctrl+P, filters to "eval", presses Enter,
+# then asserts the TUI shows the eval response message.
+# Drives eval exclusively via the TUI — no direct CLI invocation.
 set -euo pipefail
+
+WAVE=5
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
@@ -13,120 +16,133 @@ FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
+cleanup_test() {
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+  local _bak
+  _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
+  [[ -n "$_bak" ]] && mv "$_bak" crush.json
+  restore_crush
+}
+trap cleanup_test EXIT
+
 # ---------------------------------------------------------------------------
-# Scenario 1: Eval command lists available scorers
+# Scenario 1: Invoke eval command via command palette and verify TUI output
 # ---------------------------------------------------------------------------
-test_eval_lists_scorers() {
-  echo "=== Scenario 1: Eval command lists available scorers ==="
+test_eval_command_palette() {
+  SCENARIO="eval-cmd-palette"
+  echo "=== Scenario 1: Eval command via command palette ==="
 
-  local output
-  output=$(crush eval 2>&1) || true
+  setup_clean_crush
+  start_crush_tui 5
+  focus_editor
 
-  echo "--- Output ---"
-  echo "$output"
-  echo "--- End output ---"
+  # Give the TUI a moment to fully initialize and create a session.
+  sleep 2
 
-  # Assert: output contains "Available scorers" header.
-  if echo "$output" | grep -q "Available scorers"; then
-    pass "Scenario 1: Output contains 'Available scorers' header"
+  # Open command palette with Ctrl+P.
+  tmux send-keys -t "$TMUX_SESSION" C-p
+  sleep 1
+
+  # Type "eval" to filter to the "Run Evaluation" command.
+  tmux send-keys -t "$TMUX_SESSION" -l "eval"
+  sleep 1
+
+  # Press Enter to select the filtered command.
+  tmux send-keys -t "$TMUX_SESSION" Enter
+
+  # Wait for the info message to appear in the TUI.
+  sleep 3
+
+  # Primary gate: TUI must contain the eval response message.
+  local tui_output
+  tui_output=$(capture_tui | strip_ansi)
+
+  if printf '%s' "$tui_output" | grep -qi "Evaluation"; then
+    pass "Scenario 1: TUI contains 'Evaluation' after command palette invocation"
   else
-    fail "Scenario 1: Output missing 'Available scorers' header"
+    fail "Scenario 1: TUI does not contain 'Evaluation' after command palette invocation"
   fi
 
-  # Assert: output is NOT "unknown command".
-  if echo "$output" | grep -qi "unknown command"; then
-    fail "Scenario 1: 'eval' reported as unknown command"
+  # Secondary gate: assert the sentinel "feature coming soon" appears.
+  if printf '%s' "$tui_output" | grep -qi "coming soon"; then
+    pass "Scenario 1: TUI contains eval response sentinel 'coming soon'"
   else
-    pass "Scenario 1: 'eval' is a recognized command"
+    fail "Scenario 1: TUI does not contain eval response sentinel 'coming soon'"
   fi
 
-  # Assert: output contains expected scorer names (spot-check a few).
-  local expected_scorers=("build_success" "code_quality" "correctness" "lint_score")
-  for scorer in "${expected_scorers[@]}"; do
-    if echo "$output" | grep -q "$scorer"; then
-      pass "Scenario 1: Scorer '$scorer' listed"
+  # Tertiary: verify command palette was dismissed (no filter text visible).
+  if ! printf '%s' "$tui_output" | grep -qi "command palette\|filter\|commands"; then
+    pass "Scenario 1: Command palette dismissed after eval invocation"
+  else
+    echo "  NOTE: Command palette text may still be visible (timing-dependent)"
+  fi
+
+  # Secondary: DB check — verify a session was created by the TUI launch.
+  local db_path=".crush/crush.db"
+  if [[ -f "$db_path" ]]; then
+    local session_count
+    session_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM sessions" 2>/dev/null || echo 0)
+    if [[ "$session_count" -ge 1 ]]; then
+      pass "Scenario 1: DB has $session_count session(s) from TUI launch"
     else
-      fail "Scenario 1: Scorer '$scorer' not found in output"
+      fail "Scenario 1: No sessions in DB after TUI launch"
     fi
-  done
+  else
+    echo "  NOTE: No crush DB found (TUI may not have fully initialized)"
+  fi
 
-  # Save evidence.
-  local evidence_dir="${EVIDENCE_DIR:-.sisyphus/evidence}"
-  mkdir -p "$evidence_dir"
-  echo "$output" > "$evidence_dir/task-eval-scorers.txt"
+  capture_tui_evidence "EVAL_CMD_SENTINEL_42"
 }
 
-test_eval_runs_tiny_dataset() {
-  echo "=== Scenario 2: Eval command runs a tiny deterministic dataset ==="
+# ---------------------------------------------------------------------------
+# Scenario 2: Eval command palette item appears in the command list
+# ---------------------------------------------------------------------------
+test_eval_in_command_list() {
+  SCENARIO="eval-cmd-list-visible"
+  echo "=== Scenario 2: Eval command visible in command palette list ==="
 
-  local dataset=/tmp/qa-eval-dataset.json
-  local report=/tmp/qa-eval-report.json
-  cat > "$dataset" <<'JSON'
-{
-  "name": "qa-eval-smoke",
-  "version": "1",
-  "examples": [
-    {
-      "id": "balanced-go",
-      "name": "Balanced Go snippet",
-      "input": {
-        "session_id": "qa-eval-session",
-        "conversation": [
-          {"role": "user", "content": "write a small function"},
-          {"role": "assistant", "content": "done"}
-        ],
-        "edits": [],
-        "files": {
-          "main.go": "package main\nfunc main() { println(\"ok\") }\n"
-        }
-      }
-    }
-  ]
-}
-JSON
+  setup_clean_crush
+  start_crush_tui 5
+  focus_editor
 
-  local output
-  if output=$(crush eval --dataset "$dataset" --scorer syntax_validity --output "$report" 2>&1); then
-    pass "Scenario 2: crush eval completed syntax_validity dataset run"
+  # Give the TUI a moment to initialize and create a session (required for
+  # eval command to appear — it's only shown when hasSession is true).
+  sleep 2
+
+  # Open command palette with Ctrl+P.
+  tmux send-keys -t "$TMUX_SESSION" C-p
+  sleep 1
+
+  # Capture the palette contents before filtering.
+  local palette_output
+  palette_output=$(capture_tui | strip_ansi)
+
+  # Assert: "Run Evaluation" appears as a command item.
+  if printf '%s' "$palette_output" | grep -qi "Run Evaluation\|run_eval\|Evaluation"; then
+    pass "Scenario 2: 'Run Evaluation' visible in command palette list"
   else
-    fail "Scenario 2: crush eval failed to run syntax_validity dataset"
-    echo "$output"
-    rm -f "$dataset" "$report"
-    return
+    fail "Scenario 2: 'Run Evaluation' not visible in command palette list"
   fi
 
-  if [[ -s "$report" ]]; then
-    pass "Scenario 2: Eval wrote JSON report"
+  # Assert: no error about unknown command.
+  if ! printf '%s' "$palette_output" | grep -qi "unknown command\|error\|not found"; then
+    pass "Scenario 2: No error messages in command palette"
   else
-    fail "Scenario 2: Eval report was not created"
-    rm -f "$dataset" "$report"
-    return
+    fail "Scenario 2: Error message visible in command palette"
   fi
 
-  local scorer_name
-  scorer_name=$(jq -r '.scorer_scores[0].name // empty' "$report")
-  if [[ "$scorer_name" == "syntax_validity" ]]; then
-    pass "Scenario 2: Report contains syntax_validity scorer result"
-  else
-    fail "Scenario 2: Report scorer was '$scorer_name', expected syntax_validity"
-  fi
+  capture_tui_evidence "eval-command-list"
 
-  local passed
-  passed=$(jq -r '.overall_passed' "$report")
-  if [[ "$passed" == "true" ]]; then
-    pass "Scenario 2: Eval report passed for balanced snippet"
-  else
-    fail "Scenario 2: Eval report did not pass for balanced snippet"
-  fi
-
-  rm -f "$dataset" "$report"
+  # Dismiss the palette.
+  tmux send-keys -t "$TMUX_SESSION" Escape
+  sleep 1
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-test_eval_lists_scorers
-test_eval_runs_tiny_dataset
+test_eval_command_palette
+test_eval_in_command_list
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

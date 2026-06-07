@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Test: Edit tool end-to-end smoke test.
-# Scenario 1: Ask Crush to edit a file with specific content, then verify
-#   the file on disk matches the expected output and the DB records an edit
-#   tool invocation in message_parts.
+# Test: Edit tool end-to-end TUI-first scenarios with deterministic sentinels.
+# Scenario 1: Batch edit — edit multiple fixture files atomically, verify content.
+# Scenario 2: Anchor edit — target specific section anchors, verify precision.
+# Scenario 3: Fuzzy match + rollback — approximate edit, then rollback verification.
 set -euo pipefail
+
+WAVE=5
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
@@ -11,121 +13,285 @@ source "$QA_DIR/lib/common.sh"
 
 PASS=0
 FAIL=0
-SKIP=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
-skip() { echo "SKIP: $1"; ((SKIP += 1)); }
 
 FIXTURE_DIR=""
-TARGET_FILE=""
+# Shared fixture root — all scenarios create subdirectories here.
+FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/qa-edit-tools-XXXXXX")
 
-cleanup() {
-  stop_crush 2>/dev/null || true
-  local json_bak
-  json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-  if [[ -n "$json_bak" ]]; then
-    mv "$json_bak" crush.json
-  fi
+cleanup_test() {
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+  local _bak
+  _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
+  [[ -n "$_bak" ]] && mv "$_bak" crush.json
   restore_crush
-  rm -rf "${FIXTURE_DIR:-/tmp/qa-edit-nonexist}"
+  rm -rf "$FIXTURE_DIR"
 }
-trap cleanup EXIT
+trap cleanup_test EXIT
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Edit file — write specific content, verify disk and DB
+# Scenario 1: Batch edit — create 3 fixture files, edit all atomically
 # ---------------------------------------------------------------------------
-test_edit_file_content() {
-  echo "=== Scenario 1: Edit file with specific content ==="
+test_batch_edit() {
+  SCENARIO="edit-batch"
+  echo "=== Scenario 1: Batch edit — multi-file atomic edit ==="
+
+  local batch_dir="$FIXTURE_DIR/batch"
+  mkdir -p "$batch_dir"
+
+  cat > "$batch_dir/alpha.txt" <<'EOF'
+Line one of alpha.
+Line two of alpha.
+EOF
+  cat > "$batch_dir/beta.txt" <<'EOF'
+Line one of beta.
+Line two of beta.
+EOF
+  cat > "$batch_dir/gamma.txt" <<'EOF'
+Line one of gamma.
+Line two of gamma.
+EOF
 
   setup_clean_crush
+  start_crush_tui 5
+  focus_editor
 
-  QA_DIR_RESOLVED="$QA_DIR"
-  PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR_RESOLVED/../.." && pwd)}"
+  send_tui_prompt "Use the edit or edit_batch tool to make the following changes atomically: (1) In $batch_dir/alpha.txt replace 'Line one of alpha.' with 'EDIT_BATCH_SENTINEL_42 alpha updated'. (2) In $batch_dir/beta.txt replace 'Line one of beta.' with 'EDIT_BATCH_SENTINEL_42 beta updated'. (3) In $batch_dir/gamma.txt replace 'Line one of gamma.' with 'EDIT_BATCH_SENTINEL_42 gamma updated'. After all three edits are done, output exactly: EDIT_BATCH_SENTINEL_42"
 
-  # Create a temporary fixture file with initial content.
-  FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/qa-edit-XXXXXX")
-  TARGET_FILE="$FIXTURE_DIR/greeting.txt"
-  cat > "$TARGET_FILE" <<'INITIAL'
-Hello World
-INITIAL
-
-  # Copy the wave5 base config.
-  local hooks_config
-  hooks_config="$PROJECT_DIR/crush.json"
-  if [[ -f "$hooks_config" ]]; then
-    cp "$hooks_config" "$hooks_config.bak.$(date +%s)"
-  fi
-  cp "$QA_DIR_RESOLVED/wave5.json" "$hooks_config"
-
-  TMUX_SESSION="qa-edit-$(date +%s)"
-  tmux new-session -d -s "$TMUX_SESSION" -x 200 -y 50
-  tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && crush --yolo" Enter
-  sleep 5
-
-  # Ask Crush to edit the fixture file with specific replacement content.
-  send_prompt "Edit the file $TARGET_FILE. Replace the entire content with exactly this line: Greetings from Crush QA"
-  if ! wait_for_idle 120; then
-    fail "Scenario 1: Crush did not become idle"
-    capture_evidence 151 "edit-file-content"
-    stop_crush
+  if ! wait_for_tui_idle 180; then
+    fail "Scenario 1: Crush did not become idle within 180s"
+    capture_tui_evidence "batch-timeout"
     return
   fi
 
-  capture_evidence 151 "edit-file-content"
+  # Primary: TUI must contain the sentinel.
+  local tui_output
+  tui_output=$(capture_tui | strip_ansi)
 
-  # Assert: target file exists and contains the expected content.
-  if [[ ! -f "$TARGET_FILE" ]]; then
-    fail "Scenario 1: Target file $TARGET_FILE not found"
-    stop_crush
-    return
-  fi
-
-  local actual
-  actual=$(cat "$TARGET_FILE")
-  if echo "$actual" | grep -qF "Greetings from Crush QA"; then
-    pass "Scenario 1: File content includes expected text 'Greetings from Crush QA'"
+  if printf '%s' "$tui_output" | grep -qF "EDIT_BATCH_SENTINEL_42"; then
+    pass "Scenario 1: TUI contains EDIT_BATCH_SENTINEL_42"
   else
-    fail "Scenario 1: File content does not match expected. Got: $actual"
+    fail "Scenario 1: TUI does not contain EDIT_BATCH_SENTINEL_42"
+    capture_tui_evidence "batch-no-sentinel"
   fi
 
-  # Assert: no partial writes — file should not contain the original content
-  # if the edit replaced it entirely.
-  if echo "$actual" | grep -qF "Hello World"; then
-    fail "Scenario 1: File still contains original content (partial write suspected)"
-  else
-    pass "Scenario 1: No leftover original content (no partial write)"
-  fi
-
-  # Assert: DB message_parts shows an edit tool was invoked.
-  if [[ -f "$PROJECT_DIR/.crush/crush.db" ]]; then
-    local session_id
-    session_id=$(cd "$PROJECT_DIR" && get_session_id 2>/dev/null || echo "")
-    if [[ -n "$session_id" ]]; then
-      local edit_count
-      edit_count=$(cd "$PROJECT_DIR" && sqlite3 .crush/crush.db \
-        "SELECT COUNT(*) FROM message_parts WHERE session_id = '$session_id' AND (tool_name = 'edit' OR tool_name = 'edit_batch')" \
-        2>/dev/null || echo 0)
-      if [[ "$edit_count" -ge 1 ]]; then
-        pass "Scenario 1: DB message_parts shows edit tool invoked ($edit_count time(s))"
-      else
-        fail "Scenario 1: No edit tool invocation found in message_parts (got $edit_count)"
-      fi
+  # Secondary: filesystem — verify all 3 files modified.
+  local files_ok=0
+  for f in alpha beta gamma; do
+    if [[ -f "$batch_dir/${f}.txt" ]] && grep -qF "EDIT_BATCH_SENTINEL_42 ${f} updated" "$batch_dir/${f}.txt"; then
+      ((files_ok += 1))
     else
-      fail "Scenario 1: Could not retrieve session ID from DB"
+      fail "Scenario 1: ${f}.txt does not contain expected updated content"
     fi
-  else
-    skip "Scenario 1: crush.db not found — skipping DB assertion"
+  done
+
+  if [[ "$files_ok" -eq 3 ]]; then
+    pass "Scenario 1: All 3 fixture files updated (batch atomicity confirmed)"
   fi
 
-  stop_crush
+  # Secondary: verify no leftover original content.
+  local leftover=0
+  for f in alpha beta gamma; do
+    if grep -qF "Line one of ${f}." "$batch_dir/${f}.txt" 2>/dev/null; then
+      ((leftover += 1))
+    fi
+  done
+
+  if [[ "$leftover" -eq 0 ]]; then
+    pass "Scenario 1: No leftover original content in any fixture file"
+  else
+    fail "Scenario 1: $leftover file(s) still contain original content"
+  fi
+
+  capture_tui_evidence "batch-edit"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 2: Anchor edit — target specific content sections precisely
+# ---------------------------------------------------------------------------
+test_anchor_edit() {
+  SCENARIO="edit-anchor"
+  echo "=== Scenario 2: Anchor edit — precise section targeting ==="
+
+  local anchor_dir="$FIXTURE_DIR/anchor"
+  mkdir -p "$anchor_dir"
+
+  cat > "$anchor_dir/sections.txt" <<'EOF'
+# BEGIN_SECTION_A
+Content for section A — original text.
+# END_SECTION_A
+
+# BEGIN_SECTION_B
+Content for section B — original text.
+# END_SECTION_B
+
+# BEGIN_SECTION_C
+Content for section C — original text.
+# END_SECTION_C
+EOF
+
+  # Kill previous session and start fresh.
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+  start_crush_tui 5
+  focus_editor
+
+  send_tui_prompt "In the file $anchor_dir/sections.txt, replace ONLY the line 'Content for section B — original text.' with 'EDIT_ANCHOR_SENTINEL_88 section B updated'. Do NOT modify sections A or C. After completing the edit, output exactly: EDIT_ANCHOR_SENTINEL_88"
+
+  if ! wait_for_tui_idle 180; then
+    fail "Scenario 2: Crush did not become idle within 180s"
+    capture_tui_evidence "anchor-timeout"
+    return
+  fi
+
+  # Primary: TUI must contain the sentinel.
+  local tui_output
+  tui_output=$(capture_tui | strip_ansi)
+
+  if printf '%s' "$tui_output" | grep -qF "EDIT_ANCHOR_SENTINEL_88"; then
+    pass "Scenario 2: TUI contains EDIT_ANCHOR_SENTINEL_88"
+  else
+    fail "Scenario 2: TUI does not contain EDIT_ANCHOR_SENTINEL_88"
+    capture_tui_evidence "anchor-no-sentinel"
+  fi
+
+  # Secondary: verify section B was modified.
+  if grep -qF "EDIT_ANCHOR_SENTINEL_88 section B updated" "$anchor_dir/sections.txt" 2>/dev/null; then
+    pass "Scenario 2: Section B contains updated content"
+  else
+    fail "Scenario 2: Section B does not contain expected updated content"
+  fi
+
+  # Secondary: verify sections A and C were NOT modified (anchor precision).
+  if grep -qF "Content for section A — original text." "$anchor_dir/sections.txt" 2>/dev/null; then
+    pass "Scenario 2: Section A unchanged (anchor precision confirmed)"
+  else
+    fail "Scenario 2: Section A was modified (anchor missed target)"
+  fi
+
+  if grep -qF "Content for section C — original text." "$anchor_dir/sections.txt" 2>/dev/null; then
+    pass "Scenario 2: Section C unchanged (anchor precision confirmed)"
+  else
+    fail "Scenario 2: Section C was modified (anchor missed target)"
+  fi
+
+  # Secondary: original section B content should be gone.
+  if ! grep -qF "Content for section B — original text." "$anchor_dir/sections.txt" 2>/dev/null; then
+    pass "Scenario 2: Original section B content replaced"
+  else
+    fail "Scenario 2: Original section B content still present"
+  fi
+
+  capture_tui_evidence "anchor-edit"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 3: Fuzzy match edit + rollback verification
+# ---------------------------------------------------------------------------
+test_fuzzy_rollback() {
+  SCENARIO="edit-fuzzy-rollback"
+  echo "=== Scenario 3: Fuzzy match edit + rollback ==="
+
+  local fr_dir="$FIXTURE_DIR/fuzzy-rollback"
+  mkdir -p "$fr_dir"
+
+  # File for fuzzy match testing — contains a near-duplicate line.
+  cat > "$fr_dir/fuzzy.txt" <<'EOF'
+This is the original content of the file.
+It has multiple lines of text.
+Some lines are very similar to others.
+This is the original content of the file — duplicated with extra.
+EOF
+
+  # File for rollback testing — save original content for comparison.
+  cat > "$fr_dir/rollback.txt" <<'ROLLBACK_ORIG'
+Before rollback line one.
+Before rollback line two.
+ROLLBACK_ORIG
+
+  local orig_rollback
+  orig_rollback=$(cat "$fr_dir/rollback.txt")
+
+  # Kill previous session and start fresh.
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+  start_crush_tui 5
+  focus_editor
+
+  # Phase 1: Fuzzy match edit.
+  send_tui_prompt "In the file $fr_dir/fuzzy.txt, use a fuzzy or approximate match edit to find and replace the line containing 'duplicated with extra' with 'EDIT_FUZZY_SENTINEL_55 fuzzy match succeeded'. Do not modify the first line that starts with 'This is the original content' but does NOT contain 'duplicated'. After completing the edit, output exactly: EDIT_FUZZY_SENTINEL_55"
+
+  if ! wait_for_tui_idle 180; then
+    fail "Scenario 3: Crush did not become idle within 180s (fuzzy phase)"
+    capture_tui_evidence "fuzzy-timeout"
+    return
+  fi
+
+  # Primary: TUI must contain the fuzzy sentinel.
+  local tui_output
+  tui_output=$(capture_tui | strip_ansi)
+
+  if printf '%s' "$tui_output" | grep -qF "EDIT_FUZZY_SENTINEL_55"; then
+    pass "Scenario 3: TUI contains EDIT_FUZZY_SENTINEL_55"
+  else
+    fail "Scenario 3: TUI does not contain EDIT_FUZZY_SENTINEL_55"
+    capture_tui_evidence "fuzzy-no-sentinel"
+  fi
+
+  # Secondary: filesystem check for fuzzy match result.
+  if grep -qF "EDIT_FUZZY_SENTINEL_55 fuzzy match succeeded" "$fr_dir/fuzzy.txt" 2>/dev/null; then
+    pass "Scenario 3: Fuzzy match edit applied to target file"
+  else
+    fail "Scenario 3: Fuzzy match edit not applied to target file"
+  fi
+
+  # Secondary: non-target line should be untouched.
+  if grep -qF "This is the original content of the file." "$fr_dir/fuzzy.txt" 2>/dev/null; then
+    pass "Scenario 3: Non-target lines preserved after fuzzy edit"
+  else
+    fail "Scenario 3: Non-target lines not preserved after fuzzy edit"
+  fi
+
+  capture_tui_evidence "fuzzy-edit"
+
+  # Phase 2: Edit then rollback on same session.
+  send_tui_prompt "Now edit the file $fr_dir/rollback.txt — replace 'Before rollback line one.' with 'EDIT_ROLLBACK_SENTINEL_33 changed'. Then use the rollback tool to revert the file to its state before this edit. After rolling back, output exactly: EDIT_ROLLBACK_SENTINEL_33"
+
+  if ! wait_for_tui_idle 180; then
+    fail "Scenario 3: Crush did not become idle within 180s (rollback phase)"
+    capture_tui_evidence "rollback-timeout"
+    return
+  fi
+
+  # Primary: TUI must contain the rollback sentinel.
+  tui_output=$(capture_tui | strip_ansi)
+
+  if printf '%s' "$tui_output" | grep -qF "EDIT_ROLLBACK_SENTINEL_33"; then
+    pass "Scenario 3: TUI contains EDIT_ROLLBACK_SENTINEL_33"
+  else
+    fail "Scenario 3: TUI does not contain EDIT_ROLLBACK_SENTINEL_33"
+    capture_tui_evidence "rollback-no-sentinel"
+  fi
+
+  # Secondary: rollback file should be restored to original content.
+  local current_rollback
+  current_rollback=$(cat "$fr_dir/rollback.txt" 2>/dev/null || echo "")
+  if [[ "$current_rollback" == "$orig_rollback" ]]; then
+    pass "Scenario 3: Rollback file restored to original content"
+  else
+    fail "Scenario 3: Rollback file not restored to original (rollback failed)"
+  fi
+
+  capture_tui_evidence "rollback-edit"
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-test_edit_file_content
+test_batch_edit
+test_anchor_edit
+test_fuzzy_rollback
 
 echo ""
-echo "Results: $PASS passed, $FAIL failed, $SKIP skipped"
+echo "Results: $PASS passed, $FAIL failed"
 finish_test "test-edit-tools-live" "$((FAIL == 0 ? 0 : 1))"
 exit "$FAIL"

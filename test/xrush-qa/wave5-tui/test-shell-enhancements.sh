@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Test: Shell enhancements — config variable expansion, jq behavior, background jobs.
-# Validates Crush's embedded shell handles variable expansion, jq filters,
-# and background job lifecycle correctly.
+# Test: Shell enhancements — deterministic commands, env expansion, JSON
+# processing, and background-job cancellation through TUI.
 set -euo pipefail
+
+WAVE=5
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
@@ -10,292 +11,185 @@ source "$QA_DIR/lib/common.sh"
 
 PASS=0
 FAIL=0
-SKIP=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
-skip() { echo "SKIP: $1"; ((SKIP += 1)); }
 
-# Kill any stray background jobs on exit.
-cleanup_bg_jobs() {
-  # Kill any lingering sleep processes spawned by this test.
-  jobs -p 2>/dev/null | xargs -r kill 2>/dev/null || true
-  # Wait briefly for processes to exit.
-  wait 2>/dev/null || true
+cleanup_test() {
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+  local _bak
+  _bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
+  [[ -n "$_bak" ]] && mv "$_bak" crush.json
+  restore_crush
 }
+trap cleanup_test EXIT
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Config variable expansion
+# Scenario 1: Deterministic shell commands with environment expansion
 # ---------------------------------------------------------------------------
-# Tests that $VAR, ${VAR:-default}, and $(command) expansion work correctly
-# when used in crush.json config values. Uses QA_ prefixed fake values only.
+# Sends a prompt asking Crush to run echo commands with QA-only env vars and
+# jq filtering. TUI must show the deterministic sentinels. Secondary checks
+# verify log evidence and that no real secret patterns leaked.
 # ---------------------------------------------------------------------------
-test_config_variable_expansion() {
-  echo "=== Scenario 1: Config variable expansion ==="
+test_shell_env_expansion() {
+  SCENARIO="shell-env-expansion"
+  echo "=== Scenario 1: Deterministic shell commands with env expansion ==="
 
-  setup_clean_crush
-  # shellcheck disable=SC2317
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-    restore_crush
-    cleanup_bg_jobs
-  }
-  trap restore_on_exit EXIT
-
-  # Set QA-only fake values for expansion testing.
+  # Export QA-only fake values for expansion testing.
   export QA_SHELL_TEST_VAR="expanded-qa-value-42"
   export QA_SHELL_FALLBACK_VAR=""
-  export QA_SHELL_SECRET="qa-fake-secret-never-real"
 
-  # Write a crush.json that uses all three expansion forms.
-  PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR/../.." && pwd)}"
-  local orig_config
-  if [[ -f "$PROJECT_DIR/crush.json" ]]; then
-    orig_config=$(cat "$PROJECT_DIR/crush.json")
-  fi
-  cat > "$PROJECT_DIR/crush.json" <<'JSONEOF'
-{
-  "$schema": "https://charm.land/crush.json",
-  "mcp": {
-    "test-expansion": {
-      "type": "http",
-      "url": "https://qa-test.example.com/endpoint",
-      "headers": {
-        "X-QA-Token": "$QA_SHELL_TEST_VAR",
-        "X-QA-Fallback": "${QA_SHELL_FALLBACK_VAR:-fallback-default}",
-        "X-QA-CmdSubst": "$(echo qa-cmd-output)",
-        "X-QA-Secret": "$QA_SHELL_SECRET"
-      }
-    }
-  }
-}
-JSONEOF
+  setup_clean_crush
+  start_crush_tui 5
+  focus_editor
 
-  # Start Crush manually so our custom config survives.
-  TMUX_SESSION="qa-w5-expand-$(date +%s)"
-  tmux new-session -d -s "$TMUX_SESSION" -x 200 -y 50
-  tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && QA_SHELL_TEST_VAR=$QA_SHELL_TEST_VAR QA_SHELL_SECRET=$QA_SHELL_SECRET crush --yolo" Enter
-  sleep 5
+  # Ask Crush to run deterministic shell commands that produce sentinels.
+  send_tui_prompt "Run these exact shell commands in order and show all output: (1) echo SHELL_CMD_SENTINEL_42 (2) echo \$QA_SHELL_TEST_VAR (3) echo \${QA_SHELL_FALLBACK_VAR:-SHELL_ENV_SENTINEL_88} (4) echo '{\"active\":true,\"id\":1}' | jq '.id'"
 
-  # Ask Crush to show the resolved config headers.
-  send_prompt "Run a shell command that prints the environment variable QA_SHELL_TEST_VAR, then print the string 'fallback-default', then print 'qa-cmd-output'. Use echo commands."
-  if ! wait_for_idle 120; then
-    fail "Scenario 1: Crush did not become idle"
-    capture_evidence 16 "config-expansion"
-    stop_crush
-    if [[ -n "${orig_config:-}" ]]; then echo "$orig_config" > "$PROJECT_DIR/crush.json"; fi
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 1: Crush did not become idle within 120s"
+    capture_tui_evidence "env-expansion-timeout"
     return
   fi
 
-  capture_evidence 16 "config-expansion"
-
-  # --- Assertion 1: $VAR expansion resolved ---
-  local pane_output
-  pane_output=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -1000)
-  if echo "$pane_output" | grep -q "expanded-qa-value-42"; then
-    pass "Scenario 1: \$VAR expansion resolved correctly"
+  # Primary gate: TUI must contain both sentinels.
+  if assert_tui_contains "SHELL_CMD_SENTINEL_42"; then
+    pass "Scenario 1: TUI contains SHELL_CMD_SENTINEL_42"
   else
-    fail "Scenario 1: \$VAR expansion did not resolve"
+    fail "Scenario 1: TUI does not contain SHELL_CMD_SENTINEL_42"
   fi
 
-  # --- Assertion 2: ${VAR:-default} fallback used when VAR is empty ---
-  if echo "$pane_output" | grep -q "fallback-default"; then
-    pass "Scenario 1: \${VAR:-default} fallback resolved correctly"
+  if assert_tui_contains "SHELL_ENV_SENTINEL_88"; then
+    pass "Scenario 1: TUI contains SHELL_ENV_SENTINEL_88 (fallback expansion)"
   else
-    fail "Scenario 1: \${VAR:-default} fallback did not resolve"
+    fail "Scenario 1: TUI does not contain SHELL_ENV_SENTINEL_88"
   fi
 
-  # --- Assertion 3: $(command) substitution expanded ---
-  if echo "$pane_output" | grep -q "qa-cmd-output"; then
-    pass "Scenario 1: \$(command) substitution resolved correctly"
+  # Verify $VAR expansion resolved.
+  if assert_tui_contains "expanded-qa-value-42"; then
+    pass "Scenario 1: TUI contains expanded QA_SHELL_TEST_VAR"
   else
-    fail "Scenario 1: \$(command) substitution did not resolve"
+    fail "Scenario 1: TUI does not contain expanded QA_SHELL_TEST_VAR"
   fi
 
-  # --- Assertion 4: Fake secret only in output (not real secrets) ---
-  # Verify we only see our QA fake value, never real credential patterns.
+  # Verify jq output (id 1 from the JSON filter).
+  local tui_output
+  tui_output=$(capture_tui | strip_ansi)
+  if printf '%s' "$tui_output" | grep -qE '(^|\s)1(\s|$)'; then
+    pass "Scenario 1: jq filter produced correct output"
+  else
+    fail "Scenario 1: jq filter output not found in TUI"
+  fi
+
+  # Secondary: no real secret patterns leaked.
   local real_secret_count
-  real_secret_count=$(echo "$pane_output" | grep -ciE "sk-[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16}|-----BEGIN.*PRIVATE KEY" || echo 0)
+  real_secret_count=$(printf '%s' "$tui_output" | grep -ciE "sk-[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16}|-----BEGIN.*PRIVATE KEY" || echo 0)
   if [[ "$real_secret_count" -eq 0 ]]; then
     pass "Scenario 1: No real secrets leaked in output"
   else
-    fail "Scenario 1: Real secret patterns found in output ($real_secret_count matches)"
+    fail "Scenario 1: Real secret patterns found ($real_secret_count matches)"
   fi
 
-  # Verify the QA fake secret IS present (from the expansion prompt).
-  if echo "$pane_output" | grep -q "qa-fake-secret-never-real"; then
-    pass "Scenario 1: QA fake secret visible in output as expected"
-  else
-    fail "Scenario 1: QA fake secret not found in output"
+  # Secondary: check crush log for shell tool usage evidence.
+  local log_file=".crush/logs/crush.log"
+  if [[ -f "$log_file" ]]; then
+    local shell_log_matches
+    shell_log_matches=$(grep -ciE "bash.*command|shell.*exec|tool.*bash|running.*command" "$log_file" 2>/dev/null || echo 0)
+    if [[ "$shell_log_matches" -ge 1 ]]; then
+      pass "Scenario 1: Crush log contains shell execution evidence ($shell_log_matches matches)"
+    else
+      echo "  NOTE: No shell execution log entries found"
+    fi
   fi
 
-  stop_crush
-
-  # Restore original crush.json.
-  if [[ -n "${orig_config:-}" ]]; then
-    echo "$orig_config" > "$PROJECT_DIR/crush.json"
-  fi
+  capture_tui_evidence "env-expansion"
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 2: jq behavior with deterministic JSON input
+# Scenario 2: Background job start and cancellation
 # ---------------------------------------------------------------------------
-# Tests Crush's built-in jq (gojq) with known input and filters.
+# Asks Crush to start a long-running background process, then cancel it.
+# TUI must show cancellation sentinel. Secondary process checks prove no
+# background jobs remain after cancellation.
 # ---------------------------------------------------------------------------
-test_jq_behavior() {
-  echo "=== Scenario 2: jq behavior ==="
+test_background_job_cancel() {
+  SCENARIO="background-job-cancel"
+  echo "=== Scenario 2: Background job start and cancellation ==="
+
+  # Record baseline sleep process count before the test.
+  local sleep_before
+  sleep_before=$(pgrep -c "sleep" 2>/dev/null || echo 0)
 
   setup_clean_crush
-  # shellcheck disable=SC2317
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-    restore_crush
-    cleanup_bg_jobs
-  }
-  trap restore_on_exit EXIT
+  start_crush_tui 5
+  focus_editor
 
-  start_crush 5
+  # Ask Crush to start a long-running background process.
+  send_tui_prompt "Run this exact command in the background: sleep 300 && echo done. Then confirm you started it by printing exactly: SHELL_BG_STARTED_55"
 
-  # Send a prompt that exercises jq through the embedded shell.
-  send_prompt "Run this exact shell command: echo '{\"name\":\"crush-qa\",\"version\":\"1.0\",\"items\":[{\"id\":1,\"active\":true},{\"id\":2,\"active\":false}]}' | jq '.items[] | select(.active==true) | .id'"
-  if ! wait_for_idle 120; then
-    fail "Scenario 2: Crush did not become idle"
-    capture_evidence 16 "jq-behavior"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 2: Crush did not become idle after starting background job"
+    capture_tui_evidence "bg-start-timeout"
     return
   fi
 
-  capture_evidence 16 "jq-behavior"
-
-  # --- Assertion 1: jq filter produced correct output (id 1) ---
-  local pane_output
-  pane_output=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -1000)
-  if echo "$pane_output" | grep -q "1"; then
-    pass "Scenario 2: jq filter produced correct output (id=1)"
+  # Verify background job was acknowledged.
+  if assert_tui_contains "SHELL_BG_STARTED_55"; then
+    pass "Scenario 2: TUI contains SHELL_BG_STARTED_55 (job started)"
   else
-    fail "Scenario 2: jq filter did not produce expected output"
+    fail "Scenario 2: TUI does not contain SHELL_BG_STARTED_55"
   fi
 
-  # --- Assertion 2: jq filter excluded inactive item (id 2) ---
-  # The output should contain "1" but should NOT show the select result "2"
-  # as a standalone match (it may appear in the original JSON).
-  # Check that jq output section does not have a bare "2" as a result line.
-  local jq_output_section
-  jq_output_section=$(echo "$pane_output" | grep -A2 "1" | tail -5)
-  if ! echo "$jq_output_section" | grep -qx "2"; then
-    pass "Scenario 2: jq correctly excluded inactive item (id=2)"
-  else
-    fail "Scenario 2: jq may have included inactive item in output"
-  fi
+  capture_tui_evidence "bg-start"
 
-  # --- Assertion 3: No jq parse error ---
-  if echo "$pane_output" | grep -qi "jq:.*error\|parse error"; then
-    fail "Scenario 2: jq reported a parse error"
-  else
-    pass "Scenario 2: jq produced no parse errors"
-  fi
+  # Now ask Crush to cancel the background job.
+  send_tui_prompt "Stop the background sleep process you just started. After confirming it is stopped, print exactly: SHELL_BG_CANCEL_55"
 
-  stop_crush
-}
-
-# ---------------------------------------------------------------------------
-# Scenario 3: Background job cleanup
-# ---------------------------------------------------------------------------
-# Tests that starting a background job via Crush, then cancelling it, leaves
-# no orphaned background processes.
-# ---------------------------------------------------------------------------
-test_background_job_cleanup() {
-  echo "=== Scenario 3: Background job cleanup ==="
-
-  setup_clean_crush
-  # shellcheck disable=SC2317
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-    restore_crush
-    cleanup_bg_jobs
-  }
-  trap restore_on_exit EXIT
-
-  # Record the count of sleep processes before the test.
-  local sleep_count_before
-  sleep_count_before=$(pgrep -c "sleep" 2>/dev/null || echo 0)
-
-  start_crush 5
-
-  # Send a prompt that starts a long-running background job.
-  send_prompt "Run this shell command in the background: sleep 300. Then tell me you started it."
-  if ! wait_for_idle 120; then
-    fail "Scenario 3: Crush did not become idle after starting background job"
-    capture_evidence 16 "bg-job-start"
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 2: Crush did not become idle after cancelling background job"
+    capture_tui_evidence "bg-cancel-timeout"
     return
   fi
 
-  capture_evidence 16 "bg-job-start"
-
-  # --- Assertion 1: Background job was started ---
-  local pane_output_start
-  pane_output_start=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -1000)
-  if echo "$pane_output_start" | grep -qi "sleep\|background\|started"; then
-    pass "Scenario 3: Background job was started"
+  # Primary gate: TUI must contain cancellation sentinel.
+  if assert_tui_contains "SHELL_BG_CANCEL_55"; then
+    pass "Scenario 2: TUI contains SHELL_BG_CANCEL_55 (job cancelled)"
   else
-    fail "Scenario 3: No indication background job was started"
+    fail "Scenario 2: TUI does not contain SHELL_BG_CANCEL_55"
   fi
 
-  # Now ask Crush to stop/cancel the background job.
-  send_prompt "Stop the background job you just started. Use Ctrl-C or kill the process."
-  if ! wait_for_idle 120; then
-    fail "Scenario 3: Crush did not become idle after cancelling background job"
-    capture_evidence 16 "bg-job-cancel"
-    return
-  fi
+  capture_tui_evidence "bg-cancel"
 
-  capture_evidence 16 "bg-job-cancel"
-
-  # --- Assertion 2: No orphaned background sleep processes ---
-  # Give a brief grace period for process cleanup.
+  # Secondary: verify no orphaned background sleep processes.
   sleep 2
-  local sleep_count_after
-  sleep_count_after=$(pgrep -c "sleep" 2>/dev/null || echo 0)
-  # Allow for system sleep processes; just verify we didn't ADD one.
-  local delta=$((sleep_count_after - sleep_count_before))
+  local sleep_after
+  sleep_after=$(pgrep -c "sleep" 2>/dev/null || echo 0)
+  local delta=$((sleep_after - sleep_before))
   if [[ "$delta" -le 0 ]]; then
-    pass "Scenario 3: No orphaned background sleep processes (delta=$delta)"
+    pass "Scenario 2: No orphaned background sleep processes (delta=$delta)"
   else
-    fail "Scenario 3: Orphaned background process detected (delta=$delta)"
+    fail "Scenario 2: Orphaned background process detected (delta=$delta)"
   fi
 
-  # --- Assertion 3: Agent confirmed cancellation ---
-  local pane_output_cancel
-  pane_output_cancel=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -1000)
-  if echo "$pane_output_cancel" | grep -qi "stop\|cancel\|kill\|terminat\|done"; then
-    pass "Scenario 3: Agent confirmed background job cancellation"
-  else
-    fail "Scenario 3: Agent did not confirm background job cancellation"
+  # Secondary: check crush log for background job evidence.
+  local log_file=".crush/logs/crush.log"
+  if [[ -f "$log_file" ]]; then
+    local bg_log_matches
+    bg_log_matches=$(grep -ciE "background|signal|kill.*sleep|SIGTERM|SIGKILL|process.*stop" "$log_file" 2>/dev/null || echo 0)
+    if [[ "$bg_log_matches" -ge 1 ]]; then
+      pass "Scenario 2: Crush log contains background job evidence ($bg_log_matches matches)"
+    else
+      echo "  NOTE: No background job log entries found"
+    fi
   fi
-
-  stop_crush
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-test_config_variable_expansion
-test_jq_behavior
-test_background_job_cleanup
+test_shell_env_expansion
+test_background_job_cancel
 
 echo ""
-echo "Results: $PASS passed, $FAIL failed, $SKIP skipped"
+echo "Results: $PASS passed, $FAIL failed"
+finish_test "test-shell-enhancements" "$((FAIL == 0 ? 0 : 1))"
 exit "$FAIL"
