@@ -41,7 +41,7 @@ HOOK_EOF
   chmod +x "$HOOK_SCRIPT"
 
   # Build hooks config by extending the wave5 base with a PreToolUse hook.
-  QA_DIR_RESOLVED="${QA_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
+  QA_DIR_RESOLVED="${QA_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
   PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR_RESOLVED/../.." && pwd)}"
 
   local hooks_config="$PROJECT_DIR/crush.json"
@@ -87,7 +87,7 @@ HOOK_EOF
 
   # Tertiary: log grep for hook execution.
   local log_entries
-  log_entries=$(grep -ciE "hook.*PreToolUse|PreToolUse.*hook|running hook" .crush/logs/crush.log 2>/dev/null || echo 0)
+  log_entries=$(grep -ciE "hook.*PreToolUse|PreToolUse.*hook|running hook" .crush/logs/crush.log 2>/dev/null ) || log_entries=0
   if [[ "$log_entries" -ge 1 ]]; then
     pass "Scenario 1: Found $log_entries hook-related log entries"
   else
@@ -116,7 +116,7 @@ echo "HOOK_PRETOOL_SENTINEL_42" > /tmp/qa-pretool-marker-42.txt
 HOOK_EOF
   chmod +x "$HOOK_SCRIPT"
 
-  QA_DIR_RESOLVED="${QA_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
+  QA_DIR_RESOLVED="${QA_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
   PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR_RESOLVED/../.." && pwd)}"
 
   local hooks_config="$PROJECT_DIR/crush.json"

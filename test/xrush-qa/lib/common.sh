@@ -6,6 +6,14 @@ set -euo pipefail
 # shellcheck source=global-config.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/global-config.sh"
 
+# Test result counters and reporting functions.
+# Tests that define their own PASS/FAIL counters will shadow these.
+# Tests that don't define pass()/fail() will inherit these.
+PASS=${PASS:-0}
+FAIL=${FAIL:-0}
+pass() { echo "  PASS: $1"; ((PASS += 1)); }
+fail() { echo "  FAIL: $1" >&2; ((FAIL += 1)); }
+
 # Backup existing .crush/ directory and create a fresh one.
 setup_clean_crush() {
   if [[ -d .crush ]]; then
@@ -57,7 +65,7 @@ assert_log_contains() {
   local pattern="$1"
   local min_count="${2:-1}"
   local count
-  count=$(grep -c "$pattern" .crush/logs/crush.log 2>/dev/null || echo 0)
+  count=$(grep -c "$pattern" .crush/logs/crush.log 2>/dev/null) || count=0
   if [[ "$count" -lt "$min_count" ]]; then
     echo "FAIL: assert_log_contains: expected at least $min_count matches for '$pattern', got $count" >&2
     return 1
@@ -276,6 +284,11 @@ start_crush_tui() {
 
   tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && $launch_cmd" Enter
 
+  # Reset idle baseline for the new TUI session so the first wait_for_tui_idle
+  # correctly waits for a NEW assistant message rather than comparing against a
+  # stale baseline from a previous scenario.
+  _QA_IDLE_BASELINE=0
+
   _QA_FOCUS_STATE="editor"
 
   local waited=0
@@ -302,15 +315,32 @@ send_tui_prompt() {
   tmux send-keys -t "$TMUX_SESSION" Enter
 }
 
+# Snapshot the current count of finished assistant messages for idle baseline.
+# Call this BEFORE sending a prompt so wait_for_tui_idle can detect NEW responses.
+# Usage: snapshot_idle
+_QA_IDLE_BASELINE=0
+snapshot_idle() {
+  local db_path=".crush/crush.db"
+  _QA_IDLE_BASELINE=0
+  if [[ -f "$db_path" ]]; then
+    local session_id
+    session_id=$(sqlite3 "$db_path" "SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1" 2>/dev/null || true)
+    if [[ -n "$session_id" ]]; then
+      _QA_IDLE_BASELINE=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE role='assistant' AND session_id='$session_id' AND finished_at IS NOT NULL AND finished_at > 0" 2>/dev/null || echo 0)
+    fi
+  fi
+}
+
 # Wait for Crush TUI to become idle using composite polling.
-# Polls DB for assistant message with finished_at > 0.
-# Polls log for turn-end event.
+# Polls DB for a NEW assistant message with finished_at > 0 (count must exceed
+# the baseline set by snapshot_idle). Polls log for turn-end event.
 # Usage: wait_for_tui_idle [timeout_seconds]
 wait_for_tui_idle() {
   local timeout="${1:-120}"
   local elapsed=0
   local db_path=".crush/crush.db"
   local log_path=".crush/logs/crush.log"
+  local baseline="${_QA_IDLE_BASELINE:-0}"
 
   while true; do
     local db_idle=false
@@ -322,7 +352,7 @@ wait_for_tui_idle() {
       if [[ -n "$session_id" ]]; then
         local msg_count
         msg_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE role='assistant' AND session_id='$session_id' AND finished_at IS NOT NULL AND finished_at > 0" 2>/dev/null || echo 0)
-        if [[ "$msg_count" -gt 0 ]]; then
+        if [[ "$msg_count" -gt "$baseline" ]]; then
           db_idle=true
         fi
       fi
@@ -335,12 +365,15 @@ wait_for_tui_idle() {
     fi
 
     if $db_idle || $log_idle; then
+      # Update baseline so consecutive wait_for_tui_idle calls work correctly
+      # if snapshot_idle is not called again.
+      _QA_IDLE_BASELINE=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE role='assistant' AND session_id='$session_id' AND finished_at IS NOT NULL AND finished_at > 0" 2>/dev/null || echo 0)
       return 0
     fi
 
     if [[ "$elapsed" -ge "$timeout" ]]; then
       tmux capture-pane -t "$TMUX_SESSION" -p -S -1000 > /tmp/tmux-idle-timeout-"$TMUX_SESSION".txt 2>/dev/null || true
-      echo "FAIL: wait_for_tui_idle: Crush still busy after ${timeout}s" >&2
+      echo "FAIL: wait_for_tui_idle: Crush still busy after ${timeout}s (baseline=$baseline)" >&2
       return 1
     fi
 
@@ -463,7 +496,7 @@ dump_session_state() {
   while IFS= read -r table; do
     # Only dump tables that have a session_id column.
     local has_col
-    has_col=$(sqlite3 .crush/crush.db "PRAGMA table_info($table)" | grep -c "session_id" || echo 0)
+    has_col=$(sqlite3 .crush/crush.db "PRAGMA table_info($table)" | grep -c "session_id") || has_col=0
     if [[ "$has_col" -gt 0 ]]; then
       if [[ "$first" == "true" ]]; then
         first=false
