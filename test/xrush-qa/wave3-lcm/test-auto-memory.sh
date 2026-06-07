@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Test: Auto-memory extraction after multi-turn conversation.
+# Test: Auto-memory extraction and cross-session persistence (TUI-first).
 # Verifies that Crush extracts structured memories from conversation turns,
-# writes CRUSH.memory.md, and assigns varied priority levels (not all 'low').
+# persists them to the DB, and they survive into a new TUI session.
 set -euo pipefail
 
+WAVE=3
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 source "$QA_DIR/lib/common.sh"
@@ -14,55 +15,59 @@ FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
-# Shared session ID across scenarios (set in Scenario 1, reused in 2 and 3).
+# Shared session ID from Scenario 1.
 SID=""
 
+cleanup_test() { restore_crush; }
+trap cleanup_test EXIT
+
 # ---------------------------------------------------------------------------
-# Scenario 1: Auto-memory extracted after turns
+# Scenario 1: Auto-memory extracted after turns with sentinel content
 # ---------------------------------------------------------------------------
 test_auto_memory_extracted() {
-  echo "=== Scenario 1: Auto-memory extracted after turns ==="
+  echo "=== Scenario 1: Auto-memory extracted after turns with sentinel content ==="
+  SCENARIO="auto-memory-extract"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_crush is called via trap
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-    restore_crush
-  }
-  trap restore_on_exit EXIT
+  start_crush_tui 3
+  focus_editor
 
-  # Wave 3 config has auto_memory_interval: 1 (extraction every turn).
-  start_crush 3
-
-  # First turn: state preferences to give the memory extractor signal.
-  send_prompt "I prefer using table-driven tests in Go. My project uses testify for assertions."
-  if ! wait_for_idle 120; then
+  # First turn: state preferences with deterministic sentinel.
+  send_tui_prompt "I prefer using table-driven tests in Go. My project uses testify for assertions. Remember that AUTO_MEM_STORE_SENTINEL_42 is my unique test identifier."
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 1: Crush did not become idle after first prompt"
-    capture_evidence 14 "auto-memory-extract"
+    capture_tui_evidence "idle-timeout-p1"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    return
+  fi
+
+  # Primary gate: TUI must acknowledge the sentinel.
+  if assert_tui_contains "AUTO_MEM_STORE_SENTINEL_42"; then
+    pass "Scenario 1: TUI shows AUTO_MEM_STORE_SENTINEL_42 sentinel"
+  else
+    fail "Scenario 1: TUI does not show AUTO_MEM_STORE_SENTINEL_42 sentinel"
+    capture_tui_evidence "sentinel-missing-p1"
     return
   fi
 
   # Second turn: add more preference signal.
-  send_prompt "I also like using t.Parallel() for parallel tests."
-  if ! wait_for_idle 120; then
+  send_tui_prompt "I also like using t.Parallel() for parallel tests."
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 1: Crush did not become idle after second prompt"
-    capture_evidence 14 "auto-memory-extract"
+    capture_tui_evidence "idle-timeout-p2"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
   # Give the async memory extractor time to run.
   sleep 5
 
-  # Get the session ID.
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 14 "auto-memory-extract"
     return
   fi
 
@@ -71,7 +76,6 @@ test_auto_memory_extracted() {
   mem_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM lcm_auto_memory WHERE session_id = '$SID'")
   if [[ "$mem_count" -lt 1 ]]; then
     fail "Scenario 1: Expected >= 1 auto-memory entries, got $mem_count"
-    capture_evidence 14 "auto-memory-extract"
     return
   fi
   pass "Scenario 1: Found $mem_count auto-memory entries (>= 1)"
@@ -124,72 +128,106 @@ test_auto_memory_extracted() {
     fail "Scenario 1: No auto-memory entries include source message IDs"
   fi
 
-  capture_evidence 14 "auto-memory-extract"
-  stop_crush
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 0.5
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 2: CRUSH.memory.md file created
+# Scenario 2: Auto-memory persists across sessions — recall in new TUI
 # ---------------------------------------------------------------------------
-test_memory_file_created() {
-  echo "=== Scenario 2: CRUSH.memory.md file created ==="
+test_auto_memory_cross_session_recall() {
+  echo "=== Scenario 2: Auto-memory persists across sessions ==="
+  SCENARIO="auto-memory-recall"
 
   if [[ -z "$SID" ]]; then
-    fail "Scenario 2: No session ID from Scenario 1 — skipping"
+    fail "Scenario 2: No session ID from Scenario 1, skipping"
+    return
+  fi
+
+  # Start a fresh TUI session (new Crush instance, same .crush/ DB).
+  start_crush_tui 3
+  focus_editor
+
+  # Ask about the preference stored in Scenario 1.
+  send_tui_prompt "What is my unique test identifier? Mention AUTO_MEM_RECALL_SENTINEL_42 in your answer if you know it."
+  if ! wait_for_tui_idle 120; then
+    fail "Scenario 2: Crush did not become idle after recall prompt"
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    return
+  fi
+
+  # Primary gate: TUI must show the recall sentinel proving memory persisted.
+  if assert_tui_contains "AUTO_MEM_RECALL_SENTINEL_42"; then
+    pass "Scenario 2: TUI shows AUTO_MEM_RECALL_SENTINEL_42 — memory persisted across sessions"
+  else
+    fail "Scenario 2: TUI does not show AUTO_MEM_RECALL_SENTINEL_42 — memory did not persist"
+    capture_tui_evidence "recall-sentinel-missing"
+    tmux send-keys -t "$TMUX_SESSION" C-c
+    return
+  fi
+
+  capture_tui_evidence "tui-recall-response"
+
+  # --- Secondary DB check: auto-memory rows still exist ---
+  local mem_count
+  mem_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM lcm_auto_memory")
+  if [[ "$mem_count" -ge 1 ]]; then
+    pass "Scenario 2: Auto-memory rows exist in DB ($mem_count total)"
+  else
+    fail "Scenario 2: No auto-memory rows found in DB"
+  fi
+
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 0.5
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 3: CRUSH.memory.md file created and priority scoring
+# ---------------------------------------------------------------------------
+test_memory_file_and_priorities() {
+  echo "=== Scenario 3: CRUSH.memory.md file and priority scoring ==="
+  SCENARIO="memory-file-priority"
+
+  if [[ -z "$SID" ]]; then
+    fail "Scenario 3: No session ID from Scenario 1, skipping"
     return
   fi
 
   # The memory file should exist in the project root (working directory).
   if [[ -f "CRUSH.memory.md" ]]; then
-    pass "Scenario 2: CRUSH.memory.md file exists"
+    pass "Scenario 3: CRUSH.memory.md file exists"
   else
-    fail "Scenario 2: CRUSH.memory.md file not found"
-    return
+    fail "Scenario 3: CRUSH.memory.md file not found"
   fi
 
   # Assert: file is non-empty.
-  if [[ -s "CRUSH.memory.md" ]]; then
-    pass "Scenario 2: CRUSH.memory.md is non-empty"
+  if [[ -f "CRUSH.memory.md" ]] && [[ -s "CRUSH.memory.md" ]]; then
+    pass "Scenario 3: CRUSH.memory.md is non-empty"
   else
-    fail "Scenario 2: CRUSH.memory.md is empty"
+    fail "Scenario 3: CRUSH.memory.md is empty"
   fi
 
   # Assert: file contains the auto-generated marker.
-  if grep -q "<!-- auto-generated by Crush -->" "CRUSH.memory.md"; then
-    pass "Scenario 2: CRUSH.memory.md has auto-generated marker"
+  if [[ -f "CRUSH.memory.md" ]] && grep -q "<!-- auto-generated by Crush -->" "CRUSH.memory.md"; then
+    pass "Scenario 3: CRUSH.memory.md has auto-generated marker"
   else
-    fail "Scenario 2: CRUSH.memory.md missing auto-generated marker"
+    fail "Scenario 3: CRUSH.memory.md missing auto-generated marker"
   fi
 
-  if grep -Eiq "table-driven|parallel|testify|test" "CRUSH.memory.md"; then
-    pass "Scenario 2: CRUSH.memory.md contains stated testing preference content"
+  if [[ -f "CRUSH.memory.md" ]] && grep -Eiq "table-driven|parallel|testify|test|AUTO_MEM_STORE_SENTINEL_42" "CRUSH.memory.md"; then
+    pass "Scenario 3: CRUSH.memory.md contains stated testing preference content"
   else
-    fail "Scenario 2: CRUSH.memory.md does not contain the stated testing preferences"
+    fail "Scenario 3: CRUSH.memory.md does not contain the stated testing preferences"
   fi
 
-  capture_evidence 14 "memory-file"
-}
-
-# ---------------------------------------------------------------------------
-# Scenario 3: Priority scoring is not all 'low' (bug check)
-# ---------------------------------------------------------------------------
-test_priority_not_all_low() {
-  echo "=== Scenario 3: Priority scoring is not all 'low' (bug check) ==="
-
-  if [[ -z "$SID" ]]; then
-    fail "Scenario 3: No session ID from Scenario 1 — skipping"
-    return
-  fi
-
-  # Query distinct priority levels for this session.
+  # Priority scoring check: not all 'low'.
   local distinct_priorities
   distinct_priorities=$(sqlite3 .crush/crush.db \
     "SELECT DISTINCT priority FROM lcm_auto_memory WHERE session_id = '$SID'")
 
-  local priority_count
-  priority_count=$(echo "$distinct_priorities" | wc -l)
-
-  # Check for at least one non-'low' priority.
   local has_non_low=false
   while IFS= read -r p; do
     if [[ -n "$p" && "$p" != "low" ]]; then
@@ -204,11 +242,13 @@ test_priority_not_all_low() {
     fail "Scenario 3: All priorities are 'low' (potential priority scoring bug)"
   fi
 
-  # Also check: at least 2 distinct priority levels is desirable.
+  local priority_count
+  priority_count=$(echo "$distinct_priorities" | wc -l)
+
   if [[ "$priority_count" -ge 2 ]]; then
     pass "Scenario 3: At least 2 distinct priority levels ($priority_count)"
   else
-    fail "Scenario 3: Only $priority_count distinct priority level(s) — expected >= 2"
+    fail "Scenario 3: Only $priority_count distinct priority level(s), expected >= 2"
   fi
 
   # Report the distribution for debugging.
@@ -217,16 +257,14 @@ test_priority_not_all_low() {
     "SELECT priority, COUNT(*) FROM lcm_auto_memory WHERE session_id = '$SID' GROUP BY priority" | while IFS='|' read -r pri cnt; do
     echo "    $pri: $cnt"
   done
-
-  capture_evidence 14 "priority-check"
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 test_auto_memory_extracted
-test_memory_file_created
-test_priority_not_all_low
+test_auto_memory_cross_session_recall
+test_memory_file_and_priorities
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

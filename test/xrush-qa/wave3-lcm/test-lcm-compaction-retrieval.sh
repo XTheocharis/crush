@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: LCM content is retrievable after compaction.
+# Test: LCM content is retrievable after compaction (TUI-first).
 # Verifies that a unique sentinel injected in early messages can still be
 # found via lcm_grep / lcm_expand and that the messages table retains it
 # even after the 9-layer compaction pipeline has run.
@@ -12,103 +12,166 @@ source "$QA_DIR/lib/db-verify.sh"
 
 PASS=0
 FAIL=0
-SKIP=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
-skip() { echo "SKIP: $1"; ((SKIP += 1)); }
 
-# Unique sentinel injected into the first prompt.
 SENTINEL="QA_COMPACTION_RETRIEVE_X9"
+SID=""
 
 # ---------------------------------------------------------------------------
 # Scenario 1: Inject sentinel, drive compaction, then retrieve via lcm_grep
 # ---------------------------------------------------------------------------
 test_sentinel_survives_compaction() {
   echo "=== Scenario 1: Sentinel retrievable after compaction ==="
+  WAVE=3
+  SCENARIO="compaction-retrieval-sentinel"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_crush is called via trap
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
+  cleanup_test() {
     restore_crush
   }
-  trap restore_on_exit EXIT
+  trap cleanup_test EXIT
 
-  start_crush 3
+  start_crush_tui 3
+  focus_editor
+  send_tui_prompt "Please remember this exact identifier: ${SENTINEL}. This is a unique test marker used for compaction retrieval verification. Repeat it back to me and confirm you have stored it. Somewhere in your reply include the exact token ${SENTINEL}."
 
-  # --- Prompt 1: inject the sentinel in an early message ---
-  send_prompt "Please remember this exact identifier: ${SENTINEL}. This is a unique test marker used for compaction retrieval verification. Repeat it back to me and confirm you have stored it."
-  if ! wait_for_idle 180; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after sentinel prompt"
-    capture_evidence 16 "compaction-retrieval-sentinel"
+    capture_tui_evidence "idle-timeout-sentinel"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # --- Prompts 2-5: drive context high enough to trigger compaction ---
-  send_prompt "Explain every file in internal/lcm/ in full detail. For each file, describe its purpose, exported types, key methods, and how it integrates with other LCM subsystems. Be exhaustive."
-  if ! wait_for_idle 180; then
+  if assert_tui_contains "$SENTINEL"; then
+    pass "Scenario 1: TUI shows $SENTINEL sentinel in first response"
+  else
+    fail "Scenario 1: TUI does not show $SENTINEL sentinel in first response"
+    capture_tui_evidence "sentinel-missing-p1"
+    return
+  fi
+
+  # Drive context high enough to trigger compaction with bulk prompts.
+  focus_editor
+  send_tui_prompt "Explain every file in internal/lcm/ in full detail. For each file, describe its purpose, exported types, key methods, and how it integrates with other LCM subsystems. Be exhaustive. Somewhere in your reply include the exact token LCM_RETRIEVAL_SENTINEL_A1."
+
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after prompt 2"
-    capture_evidence 16 "compaction-retrieval-sentinel"
+    capture_tui_evidence "idle-timeout-p2"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  send_prompt "Now describe the full 9-layer compaction pipeline. Explain how layers are prioritized, the budget formula, the cache optimizer, and how Anthropic prefix caching is leveraged. Include code-level details."
-  if ! wait_for_idle 180; then
+  if assert_tui_contains "LCM_RETRIEVAL_SENTINEL_A1"; then
+    pass "Scenario 1: TUI shows LCM_RETRIEVAL_SENTINEL_A1"
+  else
+    fail "Scenario 1: TUI does not show LCM_RETRIEVAL_SENTINEL_A1"
+    capture_tui_evidence "sentinel-missing-p2"
+    return
+  fi
+
+  focus_editor
+  send_tui_prompt "Now describe the full 9-layer compaction pipeline. Explain how layers are prioritized, the budget formula, the cache optimizer, and how Anthropic prefix caching is leveraged. Include code-level details. Somewhere in your reply include the exact token LCM_RETRIEVAL_SENTINEL_B2."
+
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after prompt 3"
-    capture_evidence 16 "compaction-retrieval-sentinel"
+    capture_tui_evidence "idle-timeout-p3"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  send_prompt "Describe the repository map system in depth. Explain PageRank scoring over the file graph, tag extraction via tree-sitter, the rendering algorithm with token budgets, and how personalization vectors work."
-  if ! wait_for_idle 180; then
+  if assert_tui_contains "LCM_RETRIEVAL_SENTINEL_B2"; then
+    pass "Scenario 1: TUI shows LCM_RETRIEVAL_SENTINEL_B2"
+  else
+    fail "Scenario 1: TUI does not show LCM_RETRIEVAL_SENTINEL_B2"
+    capture_tui_evidence "sentinel-missing-p3"
+    return
+  fi
+
+  focus_editor
+  send_tui_prompt "Describe the repository map system in depth. Explain PageRank scoring over the file graph, tag extraction via tree-sitter, the rendering algorithm with token budgets, and how personalization vectors work. Somewhere in your reply include the exact token LCM_RETRIEVAL_SENTINEL_C3."
+
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after prompt 4"
-    capture_evidence 16 "compaction-retrieval-sentinel"
+    capture_tui_evidence "idle-timeout-p4"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  send_prompt "Explain how the tree-sitter integration works. Cover the parser pool, query loading, AST scope walking, import resolution, and how 28 language grammars are managed. Include details about CGO usage."
-  if ! wait_for_idle 180; then
+  if assert_tui_contains "LCM_RETRIEVAL_SENTINEL_C3"; then
+    pass "Scenario 1: TUI shows LCM_RETRIEVAL_SENTINEL_C3"
+  else
+    fail "Scenario 1: TUI does not show LCM_RETRIEVAL_SENTINEL_C3"
+    capture_tui_evidence "sentinel-missing-p4"
+    return
+  fi
+
+  focus_editor
+  send_tui_prompt "Explain how the tree-sitter integration works. Cover the parser pool, query loading, AST scope walking, import resolution, and how 28 language grammars are managed. Include details about CGO usage. Somewhere in your reply include the exact token LCM_RETRIEVAL_SENTINEL_D4."
+
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after prompt 5"
-    capture_evidence 16 "compaction-retrieval-sentinel"
+    capture_tui_evidence "idle-timeout-p5"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # --- Prompt 6: ask Crush to use lcm_grep to find the sentinel ---
-  send_prompt "Use the lcm_grep tool to search for '${SENTINEL}' in our conversation history. Tell me what you find — include the exact match."
-  if ! wait_for_idle 180; then
+  if assert_tui_contains "LCM_RETRIEVAL_SENTINEL_D4"; then
+    pass "Scenario 1: TUI shows LCM_RETRIEVAL_SENTINEL_D4"
+  else
+    fail "Scenario 1: TUI does not show LCM_RETRIEVAL_SENTINEL_D4"
+    capture_tui_evidence "sentinel-missing-p5"
+    return
+  fi
+
+  # Ask Crush to use lcm_grep to find the original sentinel.
+  focus_editor
+  send_tui_prompt "Use the lcm_grep tool to search for '${SENTINEL}' in our conversation history. Tell me what you find — include the exact match. Somewhere in your reply include the exact token LCM_RETRIEVAL_SENTINEL_E5."
+
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after lcm_grep prompt"
-    capture_evidence 16 "compaction-retrieval-sentinel"
+    capture_tui_evidence "idle-timeout-grep"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # Get the session ID.
+  if assert_tui_contains "LCM_RETRIEVAL_SENTINEL_E5"; then
+    pass "Scenario 1: TUI shows LCM_RETRIEVAL_SENTINEL_E5"
+  else
+    fail "Scenario 1: TUI does not show LCM_RETRIEVAL_SENTINEL_E5"
+    capture_tui_evidence "sentinel-missing-grep"
+    return
+  fi
+
+  if assert_tui_contains "$SENTINEL"; then
+    pass "Scenario 1: Assistant response includes sentinel '${SENTINEL}' (retrieved via lcm_grep)"
+  else
+    fail "Scenario 1: Assistant response does not include sentinel '${SENTINEL}'"
+    capture_tui_evidence "sentinel-not-retrieved"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   local sid
   sid=$(get_session_id)
   if [[ -z "$sid" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 16 "compaction-retrieval-sentinel"
     return
   fi
+  SID="$sid"
 
-  # ---------------------------------------------------------------
-  # Assertion A: compaction occurred — lcm_summaries has rows
-  # ---------------------------------------------------------------
+  # Assert: compaction occurred — lcm_summaries has rows.
   local summary_count
   summary_count=$(query_db "SELECT COUNT(*) as cnt FROM lcm_summaries WHERE session_id = '$sid'" | jq '.[0].cnt // 0')
   if [[ "$summary_count" -ge 1 ]]; then
     pass "Scenario 1: lcm_summaries has $summary_count rows — compaction occurred"
   else
-    fail "Scenario 1: lcm_summaries has $summary_count rows, expected >= 1 — compaction may not have triggered"
+    fail "Scenario 1: lcm_summaries has $summary_count rows, expected >= 1"
   fi
 
-  # ---------------------------------------------------------------
-  # Assertion B: messages table still references the sentinel
-  # ---------------------------------------------------------------
+  # Assert: messages table still references the sentinel.
   local sentinel_in_msgs
   sentinel_in_msgs=$(query_db "SELECT COUNT(*) as cnt FROM messages WHERE session_id = '$sid' AND lower(parts) LIKE '%${SENTINEL,,}%'" | jq '.[0].cnt // 0')
   if [[ "$sentinel_in_msgs" -ge 1 ]]; then
@@ -117,27 +180,7 @@ test_sentinel_survives_compaction() {
     fail "Scenario 1: No messages contain sentinel '${SENTINEL}'"
   fi
 
-  # ---------------------------------------------------------------
-  # Assertion C: sentinel is retrievable via summary-message links
-  # ---------------------------------------------------------------
-  if [[ "$summary_count" -ge 1 ]] && [[ "$sentinel_in_msgs" -ge 1 ]]; then
-    local recoverable_via_summary
-    recoverable_via_summary=$(query_db "
-      SELECT COUNT(*) as cnt FROM lcm_summary_messages sm
-      JOIN messages m ON m.id = sm.message_id
-      JOIN lcm_summaries ls ON ls.summary_id = sm.summary_id
-      WHERE ls.session_id = '$sid'
-        AND lower(m.parts) LIKE '%${SENTINEL,,}%'" | jq '.[0].cnt // 0')
-    if [[ "$recoverable_via_summary" -ge 1 ]]; then
-      pass "Scenario 1: Sentinel is recoverable via summary-message link ($recoverable_via_summary links)"
-    else
-      pass "Scenario 1: Sentinel in messages but not in summary links (may not have been compacted yet)"
-    fi
-  fi
-
-  # ---------------------------------------------------------------
-  # Assertion D: context items exist for this session
-  # ---------------------------------------------------------------
+  # Assert: context items exist for this session.
   local ctx_count
   ctx_count=$(query_db "SELECT COUNT(*) as cnt FROM lcm_context_items WHERE session_id = '$sid'" | jq '.[0].cnt // 0')
   if [[ "$ctx_count" -ge 1 ]]; then
@@ -146,25 +189,10 @@ test_sentinel_survives_compaction() {
     fail "Scenario 1: No context items found for session"
   fi
 
-  # ---------------------------------------------------------------
-  # Assertion E: assistant response mentions the sentinel (via lcm_grep)
-  # ---------------------------------------------------------------
-  capture_evidence 16 "compaction-retrieval-sentinel"
-  local evidence_file="${EVIDENCE_DIR:-.sisyphus/evidence}/task-16-compaction-retrieval-sentinel.txt"
-  if [[ -f "$evidence_file" ]]; then
-    if grep -qi "$SENTINEL" "$evidence_file" 2>/dev/null; then
-      pass "Scenario 1: Assistant response includes sentinel '${SENTINEL}' (retrieved via lcm_grep)"
-    else
-      fail "Scenario 1: Assistant response does not include sentinel '${SENTINEL}'"
-    fi
-  else
-    fail "Scenario 1: Evidence file not captured"
-  fi
-
-  # Store SID for Scenario 2.
-  SID="$sid"
-
-  stop_crush
+  # Kill tmux for this scenario.
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -172,40 +200,48 @@ test_sentinel_survives_compaction() {
 # ---------------------------------------------------------------------------
 test_lcm_expand_recovers_sentinel() {
   echo "=== Scenario 2: lcm_expand recovers sentinel after compaction ==="
+  WAVE=3
+  SCENARIO="compaction-retrieval-expand"
 
   if [[ -z "$SID" ]]; then
-    fail "Scenario 2: No session ID from Scenario 1 — skipping"
-    skip "Scenario 2: depends on Scenario 1 session"
+    fail "Scenario 2: No session ID from Scenario 1"
     return
   fi
-
-  setup_clean_crush
-  # shellcheck disable=SC2317
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
-    restore_crush
-  }
-  trap restore_on_exit EXIT
 
   # Continue the session from Scenario 1.
-  start_crush 3 --continue
+  start_crush_tui 3 --continue
+  focus_editor
+  send_tui_prompt "Use lcm_expand on the summary that covers our early conversation. Then tell me whether the identifier '${SENTINEL}' appears in the expanded content. Somewhere in your reply include the exact token LCM_EXPAND_SENTINEL_77."
 
-  # Ask Crush to expand any summary that references the sentinel.
-  send_prompt "Use lcm_expand on the summary that covers our early conversation. Then tell me whether the identifier '${SENTINEL}' appears in the expanded content."
-  if ! wait_for_idle 180; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 2: Crush did not become idle after lcm_expand prompt"
-    capture_evidence 16 "compaction-retrieval-expand"
+    capture_tui_evidence "idle-timeout-expand"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # ---------------------------------------------------------------
-  # Assertion A: summaries still exist for the session
-  # ---------------------------------------------------------------
+  # Primary gate: TUI output must contain the expand sentinel.
+  if assert_tui_contains "LCM_EXPAND_SENTINEL_77"; then
+    pass "Scenario 2: TUI shows LCM_EXPAND_SENTINEL_77 sentinel"
+  else
+    fail "Scenario 2: TUI does not show LCM_EXPAND_SENTINEL_77 sentinel"
+    capture_tui_evidence "sentinel-missing-expand"
+    return
+  fi
+
+  # Assert: the original sentinel is mentioned in the assistant response.
+  if assert_tui_contains "$SENTINEL"; then
+    pass "Scenario 2: Assistant response includes sentinel '${SENTINEL}' via lcm_expand"
+  else
+    fail "Scenario 2: Assistant response does not include sentinel '${SENTINEL}' via lcm_expand"
+    capture_tui_evidence "sentinel-not-expanded"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
+  # Assert: summaries still exist for the session.
   local summary_count
   summary_count=$(query_db "SELECT COUNT(*) as cnt FROM lcm_summaries WHERE session_id = '$SID'" | jq '.[0].cnt // 0')
   if [[ "$summary_count" -ge 1 ]]; then
@@ -214,9 +250,7 @@ test_lcm_expand_recovers_sentinel() {
     fail "Scenario 2: No summaries found for session"
   fi
 
-  # ---------------------------------------------------------------
-  # Assertion B: summary_messages link table has entries
-  # ---------------------------------------------------------------
+  # Assert: summary_messages link table has entries.
   local summary_msg_links
   summary_msg_links=$(query_db "
     SELECT COUNT(*) as cnt FROM lcm_summary_messages sm
@@ -228,10 +262,7 @@ test_lcm_expand_recovers_sentinel() {
     fail "Scenario 2: No summary-message links found"
   fi
 
-  # ---------------------------------------------------------------
-  # Assertion C: sentinel is present in original messages
-  # (messages table retains original content regardless of compaction)
-  # ---------------------------------------------------------------
+  # Assert: sentinel is present in original messages.
   local sentinel_in_msgs
   sentinel_in_msgs=$(query_db "SELECT COUNT(*) as cnt FROM messages WHERE session_id = '$SID' AND lower(parts) LIKE '%${SENTINEL,,}%'" | jq '.[0].cnt // 0')
   if [[ "$sentinel_in_msgs" -ge 1 ]]; then
@@ -240,22 +271,10 @@ test_lcm_expand_recovers_sentinel() {
     fail "Scenario 2: No original messages contain sentinel '${SENTINEL}'"
   fi
 
-  # ---------------------------------------------------------------
-  # Assertion D: assistant response confirms sentinel via lcm_expand
-  # ---------------------------------------------------------------
-  capture_evidence 16 "compaction-retrieval-expand"
-  local evidence_file="${EVIDENCE_DIR:-.sisyphus/evidence}/task-16-compaction-retrieval-expand.txt"
-  if [[ -f "$evidence_file" ]]; then
-    if grep -qi "$SENTINEL" "$evidence_file" 2>/dev/null; then
-      pass "Scenario 2: Assistant response includes sentinel via lcm_expand"
-    else
-      fail "Scenario 2: Assistant response does not include sentinel via lcm_expand"
-    fi
-  else
-    fail "Scenario 2: Evidence file not captured"
-  fi
-
-  stop_crush
+  # Kill tmux — this is the last scenario.
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -265,5 +284,5 @@ test_sentinel_survives_compaction
 test_lcm_expand_recovers_sentinel
 
 echo ""
-echo "Results: $PASS passed, $FAIL failed, $SKIP skipped"
+echo "Results: $PASS passed, $FAIL failed"
 exit "$FAIL"

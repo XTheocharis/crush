@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Test: LCM compaction triggers when context exceeds lowered threshold.
+# Test: LCM compaction triggers when context exceeds lowered threshold (TUI-first).
 # Verifies that summaries are created and context items reference them
-# after multi-turn conversations drive past the 10% cutoff.
+# after multi-turn conversations drive past the cutoff.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -14,59 +14,83 @@ FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }
 fail() { echo "FAIL: $1" >&2; ((FAIL += 1)); }
 
-# Shared session ID across scenarios (set in Scenario 1, reused in Scenario 2).
 SID=""
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Compaction triggered by lowered threshold
+# Scenario 1: Compaction triggered by multi-turn conversation
 # ---------------------------------------------------------------------------
 test_compaction_triggered() {
-  echo "=== Scenario 1: Compaction triggered by lowered threshold ==="
+  echo "=== Scenario 1: Compaction triggered by multi-turn conversation ==="
+  WAVE=3
+  SCENARIO="compaction-triggered"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_crush is called via trap
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
+  cleanup_test() {
     restore_crush
   }
-  trap restore_on_exit EXIT
+  trap cleanup_test EXIT
 
-  start_crush 3
+  start_crush_tui 3
+  focus_editor
+  send_tui_prompt "Explain every Go file in internal/lcm/ in detail, one by one. For each file, describe its purpose, key functions, and how it interacts with other parts of the LCM system. Somewhere in your reply include the exact token LCM_COMPACTION_SENTINEL_01."
 
-  # Send a long prompt to generate substantial output.
-  send_prompt "Explain every Go file in internal/lcm/ in detail, one by one. For each file, describe its purpose, key functions, and how it interacts with other parts of the LCM system."
-  if ! wait_for_idle 180; then
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after first prompt"
-    capture_evidence 14 "compaction-trigger"
+    capture_tui_evidence "idle-timeout-p1"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # Send a second long prompt to push context past the 10% threshold.
-  send_prompt "Now describe the compaction pipeline in detail. Explain each of the 9 compaction layers, their priorities, and when each one triggers. Include code examples where relevant."
-  if ! wait_for_idle 180; then
+  if assert_tui_contains "LCM_COMPACTION_SENTINEL_01"; then
+    pass "Scenario 1: TUI shows LCM_COMPACTION_SENTINEL_01 sentinel"
+  else
+    fail "Scenario 1: TUI does not show LCM_COMPACTION_SENTINEL_01 sentinel"
+    capture_tui_evidence "sentinel-missing-p1"
+    return
+  fi
+
+  focus_editor
+  send_tui_prompt "Now describe the compaction pipeline in detail. Explain each of the 9 compaction layers, their priorities, and when each one triggers. Include code examples where relevant. Somewhere in your reply include the exact token LCM_COMPACTION_SENTINEL_02."
+
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after second prompt"
-    capture_evidence 14 "compaction-trigger"
+    capture_tui_evidence "idle-timeout-p2"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # Send a third prompt to ensure we have enough token usage for compaction.
-  send_prompt "List all the LCM agent tools and explain how each one works, including their parameters and return types. Also explain how the LCM explorer subsystem works."
-  if ! wait_for_idle 180; then
+  if assert_tui_contains "LCM_COMPACTION_SENTINEL_02"; then
+    pass "Scenario 1: TUI shows LCM_COMPACTION_SENTINEL_02 sentinel"
+  else
+    fail "Scenario 1: TUI does not show LCM_COMPACTION_SENTINEL_02 sentinel"
+    capture_tui_evidence "sentinel-missing-p2"
+    return
+  fi
+
+  focus_editor
+  send_tui_prompt "List all the LCM agent tools and explain how each one works, including their parameters and return types. Also explain how the LCM explorer subsystem works. Somewhere in your reply include the exact token LCM_COMPACTION_SENTINEL_03."
+
+  if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle after third prompt"
-    capture_evidence 14 "compaction-trigger"
+    capture_tui_evidence "idle-timeout-p3"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # Get the session ID.
+  if assert_tui_contains "LCM_COMPACTION_SENTINEL_03"; then
+    pass "Scenario 1: TUI shows LCM_COMPACTION_SENTINEL_03 sentinel"
+  else
+    fail "Scenario 1: TUI does not show LCM_COMPACTION_SENTINEL_03 sentinel"
+    capture_tui_evidence "sentinel-missing-p3"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 14 "compaction-trigger"
     return
   fi
 
@@ -79,7 +103,7 @@ test_compaction_triggered() {
     fail "Scenario 1: lcm_summaries has $summary_count rows, expected >= 1"
   fi
 
-  # Assert: summary kind values are valid (leaf, condensed, or session).
+  # Assert: summary kind values are valid.
   local kinds
   kinds=$(query_db "SELECT DISTINCT kind FROM lcm_summaries WHERE session_id = '$SID'" | jq -r '.[].kind')
   local kinds_ok=true
@@ -110,7 +134,7 @@ test_compaction_triggered() {
     fail "Scenario 1: $zero_token_summaries summaries have token_count <= 0"
   fi
 
-  # Assert: total tokens in summaries are reasonable (each > 0).
+  # Assert: minimum summary token count > 0.
   local summary_tokens
   summary_tokens=$(query_db "SELECT MIN(token_count) as min_tokens FROM lcm_summaries WHERE session_id = '$SID'" | jq '.[0].min_tokens // 0')
   if [[ "$summary_tokens" -gt 0 ]]; then
@@ -119,6 +143,7 @@ test_compaction_triggered() {
     fail "Scenario 1: Minimum summary token_count is $summary_tokens, expected > 0"
   fi
 
+  # Assert: at least one summary contains LCM-related content.
   local relevant_summary_count
   relevant_summary_count=$(query_db "SELECT COUNT(*) as cnt FROM lcm_summaries WHERE session_id = '$SID' AND (lower(content) LIKE '%lcm%' OR lower(content) LIKE '%compaction%' OR lower(content) LIKE '%summary%')" | jq '.[0].cnt // 0')
   if [[ "$relevant_summary_count" -ge 1 ]]; then
@@ -126,9 +151,6 @@ test_compaction_triggered() {
   else
     fail "Scenario 1: No summary content mentions LCM, compaction, or summary topics"
   fi
-
-  capture_evidence 14 "compaction-trigger"
-  stop_crush
 }
 
 # ---------------------------------------------------------------------------
@@ -136,9 +158,11 @@ test_compaction_triggered() {
 # ---------------------------------------------------------------------------
 test_context_items_reference_summaries() {
   echo "=== Scenario 2: Compacted context items reference summaries ==="
+  WAVE=3
+  SCENARIO="compaction-context-references"
 
   if [[ -z "$SID" ]]; then
-    fail "Scenario 2: No session ID from Scenario 1 — skipping"
+    fail "Scenario 2: No session ID from Scenario 1"
     return
   fi
 
@@ -197,7 +221,12 @@ test_context_items_reference_summaries() {
     fail "Scenario 2: Summary context items do not link to substantive summary content"
   fi
 
-  capture_evidence 14 "context-references"
+  capture_tui_evidence "context-references"
+
+  # Kill tmux — this is the last scenario.
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------

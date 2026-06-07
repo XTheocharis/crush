@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: LCM session configuration and context tracking basics.
+# Test: LCM session configuration and context tracking basics (TUI-first).
 # Verifies that Crush creates LCM session config rows, tracks context items,
 # and that token counts grow across multi-turn conversations.
 set -euo pipefail
@@ -24,33 +24,41 @@ TOKENS_AFTER_S1=0
 # ---------------------------------------------------------------------------
 test_lcm_session_config() {
   echo "=== Scenario 1: LCM session config created on session start ==="
+  WAVE=3
+  SCENARIO="lcm-session-config"
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_crush is called via trap
-  restore_on_exit() {
-    stop_crush 2>/dev/null || true
-    local json_bak
-    json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
-    if [[ -n "$json_bak" ]]; then
-      mv "$json_bak" crush.json
-    fi
+  cleanup_test() {
     restore_crush
   }
-  trap restore_on_exit EXIT
+  trap cleanup_test EXIT
 
-  start_crush 3
-  send_prompt "Hello"
-  if ! wait_for_idle 120; then
+  start_crush_tui 3
+  focus_editor
+  send_tui_prompt "Hello. Please reply with exactly the token LCM_BASIC_SENTINEL_42 and nothing else."
+
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 1: Crush did not become idle"
-    capture_evidence 13 "lcm-config"
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # Get the session ID.
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "LCM_BASIC_SENTINEL_42"; then
+    pass "Scenario 1: TUI shows LCM_BASIC_SENTINEL_42 sentinel"
+  else
+    fail "Scenario 1: TUI does not show LCM_BASIC_SENTINEL_42 sentinel"
+    capture_tui_evidence "sentinel-missing"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   SID=$(get_session_id)
   if [[ -z "$SID" ]]; then
     fail "Scenario 1: No session ID found in DB"
-    capture_evidence 13 "lcm-config"
     return
   fi
 
@@ -59,7 +67,6 @@ test_lcm_session_config() {
   config=$(query_db "SELECT model_ctx_max_tokens, ctx_cutoff_threshold, soft_threshold_tokens, hard_threshold_tokens FROM lcm_session_config WHERE session_id = '$SID'")
   if [[ -z "$config" ]] || [[ "$config" == "[]" ]]; then
     fail "Scenario 1: No lcm_session_config row for session $SID"
-    capture_evidence 13 "lcm-config"
     return
   fi
 
@@ -75,12 +82,10 @@ test_lcm_session_config() {
   # Assert: ctx_cutoff_threshold > 0 AND <= 1.
   local cutoff
   cutoff=$(echo "$config" | jq '.[0].ctx_cutoff_threshold // 0')
-  # Use string comparison for the floating-point check.
   local cutoff_ok=true
   if [[ "$cutoff" == "0" ]] || [[ "$cutoff" == "null" ]]; then
     cutoff_ok=false
   fi
-  # Check <= 1 via awk.
   local above_one
   above_one=$(awk -v c="$cutoff" 'BEGIN { print (c > 1) ? 1 : 0 }')
   if [[ "$above_one" == "1" ]]; then
@@ -106,9 +111,6 @@ test_lcm_session_config() {
   else
     fail "Scenario 1: hard_threshold_tokens is $hard_tokens, expected > 0"
   fi
-
-  capture_evidence 13 "lcm-config"
-  stop_crush
 }
 
 # ---------------------------------------------------------------------------
@@ -116,9 +118,11 @@ test_lcm_session_config() {
 # ---------------------------------------------------------------------------
 test_context_items() {
   echo "=== Scenario 2: Context items track conversation tokens ==="
+  WAVE=3
+  SCENARIO="lcm-context-items"
 
   if [[ -z "$SID" ]]; then
-    fail "Scenario 2: No session ID from Scenario 1 — skipping"
+    fail "Scenario 2: No session ID from Scenario 1"
     return
   fi
 
@@ -167,7 +171,7 @@ test_context_items() {
     pass "Scenario 2: Positions are sequential (0..$((expected - 1)))"
   fi
 
-  capture_evidence 13 "context-items"
+  capture_tui_evidence "context-items"
 }
 
 # ---------------------------------------------------------------------------
@@ -175,23 +179,37 @@ test_context_items() {
 # ---------------------------------------------------------------------------
 test_token_growth() {
   echo "=== Scenario 3: Token counts increase with multi-turn conversation ==="
+  WAVE=3
+  SCENARIO="lcm-token-growth"
 
   if [[ -z "$SID" ]]; then
-    fail "Scenario 3: No session ID from Scenario 1 — skipping"
+    fail "Scenario 3: No session ID from Scenario 1"
     return
   fi
 
-  # Reuse the SAME .crush/ from Scenario 1 — do NOT call setup_clean_crush.
-  start_crush 3 --session "$SID"
-  send_prompt "Tell me about Go programming"
-  if ! wait_for_idle 120; then
+  # Send a follow-up prompt in the same session.
+  focus_editor
+  send_tui_prompt "Tell me about Go programming. Somewhere in your reply include the exact token LCM_GROWTH_SENTINEL_88."
+
+  if ! wait_for_tui_idle 120; then
     fail "Scenario 3: Crush did not become idle on second turn"
-    capture_evidence 13 "token-growth"
-    stop_crush
+    capture_tui_evidence "idle-timeout"
+    tmux send-keys -t "$TMUX_SESSION" C-c
     return
   fi
 
-  # Query token counts again.
+  # Primary gate: TUI output must contain the sentinel.
+  if assert_tui_contains "LCM_GROWTH_SENTINEL_88"; then
+    pass "Scenario 3: TUI shows LCM_GROWTH_SENTINEL_88 sentinel"
+  else
+    fail "Scenario 3: TUI does not show LCM_GROWTH_SENTINEL_88 sentinel"
+    capture_tui_evidence "sentinel-missing"
+    return
+  fi
+
+  capture_tui_evidence "tui-response"
+
+  # --- Secondary DB checks ---
   local new_stats
   new_stats=$(query_db "SELECT COUNT(*) as item_count, SUM(token_count) as total_tokens FROM lcm_context_items WHERE session_id = '$SID' AND item_type = 'message'")
   local new_total
@@ -204,8 +222,10 @@ test_token_growth() {
     fail "Scenario 3: Tokens did not grow ($TOKENS_AFTER_S1 -> $new_total)"
   fi
 
-  capture_evidence 13 "token-growth"
-  stop_crush
+  # Kill tmux — this is the last scenario.
+  tmux send-keys -t "$TMUX_SESSION" C-c
+  sleep 1
+  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
