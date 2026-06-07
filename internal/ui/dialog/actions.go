@@ -99,6 +99,10 @@ type (
 	ActionEnableDockerMCP struct{}
 	// ActionDisableDockerMCP is a message to disable Docker MCP.
 	ActionDisableDockerMCP struct{}
+	// ActionRunEval is a message to run an evaluation.
+	ActionRunEval struct {
+		SessionID string
+	}
 )
 
 // Messages for API key input dialog.

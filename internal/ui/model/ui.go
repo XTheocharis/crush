@@ -1529,6 +1529,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionRefreshRepoMap:
 		cmds = append(cmds, m.executeRepoMapRefresh(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionRunEval:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, util.CmdHandler(util.InfoMsg{
+			Type: util.InfoTypeWarn,
+			Msg:  "Evaluation: feature coming soon",
+		}))
 	case dialog.ActionToggleHelp:
 		m.status.ToggleHelp()
 		m.dialog.CloseDialog(dialog.CommandsID)

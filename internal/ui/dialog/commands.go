@@ -438,6 +438,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}))
 		commands = append(commands, NewCommandItem(c.com.Styles, "refresh_repomap", "Refresh Repository Map", "", ActionRefreshRepoMap{SessionID: c.sessionID}))
+		commands = append(commands, NewCommandItem(c.com.Styles, "run_eval", "Run Evaluation", "", ActionRunEval{SessionID: c.sessionID}))
 	}
 
 	// Add reasoning toggle for models that support it

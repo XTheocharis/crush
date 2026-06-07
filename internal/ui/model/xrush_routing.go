@@ -103,7 +103,7 @@ func (m *Chat) dispatchXrushMessageOptions(selectedItem list.Item) (bool, tea.Cm
 
 func isXrushDialogAction(action dialog.Action) bool {
 	switch action.(type) {
-	case dialog.ActionOpenMessageOptions, dialog.ActionRewind, dialog.ActionFork, dialog.ActionEditMessage:
+	case dialog.ActionOpenMessageOptions, dialog.ActionRewind, dialog.ActionFork, dialog.ActionEditMessage, dialog.ActionRunEval:
 		return true
 	}
 	return false
