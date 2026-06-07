@@ -107,6 +107,11 @@ type (
 	ActionEnableArchitect struct{}
 	// ActionDisableArchitect disables the architect planning phase.
 	ActionDisableArchitect struct{}
+	// ActionToggleAutoFix toggles the auto-fix validation pipeline on/off.
+	ActionToggleAutoFix struct{}
+	// ActionToggleOperationalMemory toggles the LCM operational memory
+	// feature on/off.
+	ActionToggleOperationalMemory struct{}
 )
 
 // Messages for API key input dialog.

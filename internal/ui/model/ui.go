@@ -1629,6 +1629,56 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionToggleProcessorDebug:
 		m.showProcessorDebug = !m.showProcessorDebug
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionToggleAutoFix:
+		cmds = append(cmds, func() tea.Msg {
+			cfg := m.com.Config()
+			if cfg == nil {
+				return util.ReportError(errors.New("configuration not found"))()
+			}
+			enabled := cfg.Options != nil && cfg.Options.Validation != nil && cfg.Options.Validation.AutoFix
+			if enabled {
+				if err := m.com.Workspace.RemoveConfigField(config.ScopeGlobal, "options.validation.auto_fix"); err != nil {
+					return util.ReportError(err)()
+				}
+				if err := m.com.Workspace.RemoveConfigField(config.ScopeGlobal, "options.validation.autofix_loop_enabled"); err != nil {
+					return util.ReportError(err)()
+				}
+				return util.NewInfoMsg("AutoFix disabled")
+			}
+			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.validation.auto_fix", true); err != nil {
+				return util.ReportError(err)()
+			}
+			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.validation.autofix_loop_enabled", true); err != nil {
+				return util.ReportError(err)()
+			}
+			return util.NewInfoMsg("AutoFix enabled")
+		})
+		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionToggleOperationalMemory:
+		cmds = append(cmds, func() tea.Msg {
+			cfg := m.com.Config()
+			if cfg == nil {
+				return util.ReportError(errors.New("configuration not found"))()
+			}
+			enabled := cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.OperationalMemoryEnabled
+			if enabled {
+				if err := m.com.Workspace.RemoveConfigField(config.ScopeGlobal, "options.lcm.operational_memory_enabled"); err != nil {
+					return util.ReportError(err)()
+				}
+				if err := m.com.Workspace.SetOperationalMemoryEnabled(false); err != nil {
+					return util.ReportError(err)()
+				}
+				return util.NewInfoMsg("Operational Memory disabled")
+			}
+			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.lcm.operational_memory_enabled", true); err != nil {
+				return util.ReportError(err)()
+			}
+			if err := m.com.Workspace.SetOperationalMemoryEnabled(true); err != nil {
+				return util.ReportError(err)()
+			}
+			return util.NewInfoMsg("Operational Memory enabled")
+		})
+		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionQuit:
 		cmds = append(cmds, tea.Quit)
 	case dialog.ActionEnableDockerMCP:

@@ -507,6 +507,20 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "enable_architect", "Enable Architect", "", ActionEnableArchitect{}))
 	}
 
+	autoFixEnabled := cfg.Options != nil && cfg.Options.Validation != nil && cfg.Options.Validation.AutoFix
+	autoFixLabel := "Enable AutoFix"
+	if autoFixEnabled {
+		autoFixLabel = "Disable AutoFix"
+	}
+	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_autofix", autoFixLabel, "", ActionToggleAutoFix{}))
+
+	omEnabled := cfg.Options != nil && cfg.Options.LCM != nil && cfg.Options.LCM.OperationalMemoryEnabled
+	omLabel := "Enable Operational Memory"
+	if omEnabled {
+		omLabel = "Disable Operational Memory"
+	}
+	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_operational_memory", omLabel, "", ActionToggleOperationalMemory{}))
+
 	processorDebugLabel := "Show Processor Debug"
 	if c.showProcessorDebug {
 		processorDebugLabel = "Hide Processor Debug"

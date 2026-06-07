@@ -1059,7 +1059,7 @@ func TestConfigMerging(t *testing.T) {
 		require.True(t, c.Options.LCM.OperationalMemoryEnabled)
 	})
 
-	t.Run("lcm_operational_memory_default_false", func(t *testing.T) {
+	t.Run("lcm_operational_memory_merge_zero_values_false", func(t *testing.T) {
 		c := exerciseMerge(t, Config{
 			Options: &Options{
 				LCM: &LCMOptions{},
@@ -1073,7 +1073,8 @@ func TestConfigMerging(t *testing.T) {
 		})
 
 		require.NotNil(t, c)
-		require.False(t, c.Options.LCM.OperationalMemoryEnabled)
+		require.False(t, c.Options.LCM.OperationalMemoryEnabled,
+			"OR-merge of two zero-value LCM configs should still be false")
 	})
 
 	t.Run("validation_defaults_to_disabled", func(t *testing.T) {
@@ -1666,6 +1667,17 @@ func TestProcessorsEnabledByDefault(t *testing.T) {
 	if c.Options.Processors != nil {
 		require.Nil(t, c.Options.Processors.Enabled)
 	}
+}
+
+func TestDefaultLCMOptions(t *testing.T) {
+	t.Parallel()
+
+	opts := DefaultLCMOptions()
+	require.True(t, opts.OperationalMemoryEnabled,
+		"OperationalMemoryEnabled should default to true")
+	require.InDelta(t, 0.6, opts.CtxCutoffThreshold, 0.001)
+	require.Equal(t, 10000, opts.LargeToolOutputTokenThreshold)
+	require.Equal(t, "enhancement", opts.ExplorerOutputProfile)
 }
 
 func exerciseMerge(tb testing.TB, confs ...Config) *Config {

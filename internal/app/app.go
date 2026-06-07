@@ -74,6 +74,7 @@ type App struct {
 	ExtHost *ext.ExtensionHost // XRUSH: extension host
 
 	config *config.ConfigStore
+	DB     *sql.DB
 
 	serviceEventsWG *sync.WaitGroup
 	eventsCtx       context.Context
@@ -115,6 +116,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		globalCtx: ctx,
 
 		config: store,
+		DB:     conn,
 
 		events:             pubsub.NewBroker[tea.Msg](),
 		serviceEventsWG:    &sync.WaitGroup{},

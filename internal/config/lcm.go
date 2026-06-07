@@ -33,8 +33,8 @@ type LCMOptions struct {
 
 	// OperationalMemoryEnabled wires the session operational memory store into
 	// the LCM manager so that PostCompactionHook and PostTurnHook persist
-	// extracted observations. Defaults to false (off, zero overhead).
-	OperationalMemoryEnabled bool `json:"operational_memory_enabled,omitempty" jsonschema:"description=Enable operational memory persistence from LCM lifecycle hooks,default=false"`
+	// extracted observations. Defaults to true (enabled).
+	OperationalMemoryEnabled bool `json:"operational_memory_enabled,omitempty" jsonschema:"description=Enable operational memory persistence from LCM lifecycle hooks,default=true"`
 
 	// PostCompactMaxFiles limits how many files are re-injected after
 	// compaction. Default: 0 (unlimited).
@@ -134,5 +134,6 @@ func DefaultLCMOptions() LCMOptions {
 		CtxCutoffThreshold:            0.6,
 		LargeToolOutputTokenThreshold: 10000,
 		ExplorerOutputProfile:         "enhancement",
+		OperationalMemoryEnabled:      true,
 	}
 }

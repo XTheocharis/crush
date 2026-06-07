@@ -166,6 +166,11 @@ type Workspace interface {
 	// XRUSH: repomap command palette bridge
 	RepoMapRefresh(ctx context.Context, sessionID string) error
 
+	// SetOperationalMemoryEnabled enables or disables the LCM operational
+	// memory store at runtime. When enabling for the first time, it creates
+	// the OperationalMemory store and wires it into the LCM manager.
+	SetOperationalMemoryEnabled(enabled bool) error
+
 	// Events
 	Subscribe(program *tea.Program)
 	Shutdown()
