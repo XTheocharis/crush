@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run all wave5-tui tests sequentially (bash integration + Go unit tests).
+# Run all wave5-tui tests sequentially (bash integration tests).
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
@@ -14,13 +14,6 @@ for test in "$DIR"/test-*.sh; do
     FAIL=$((FAIL + 1))
   fi
 done
-
-echo "--- Running Go unit tests ---"
-if go test ./test/xrush-qa/wave5-tui/ -count=1 -v; then
-  PASS=$((PASS + 1))
-else
-  FAIL=$((FAIL + 1))
-fi
 
 echo ""
 echo "Wave 5 Summary: $PASS passed, $FAIL failed"

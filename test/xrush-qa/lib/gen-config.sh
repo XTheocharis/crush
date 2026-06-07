@@ -8,6 +8,7 @@ set -euo pipefail
 #
 # Waves 1–5 each apply layer-specific overrides on top of the base config.
 # Additional --override key=value pairs are merged last (highest priority).
+# Does NOT include a providers block — providers come from global config.
 
 usage() {
   cat <<'EOF'
@@ -78,44 +79,6 @@ fi
 
 read -r -d '' BASE_JSON <<'JSONEOF' || true
 {
-  "providers": {
-    "zai": {
-      "id": "zai",
-      "name": "Z.AI Coding Plan (Primary)",
-      "base_url": "https://api.z.ai/api/coding/paas/v4",
-      "type": "openai-compat",
-      "api_key": "${ZAI_API_KEY}",
-      "disable": false,
-      "flat_rate": true,
-      "models": [
-        {"id": "glm-5.1", "name": "GLM-5.1", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 131072, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-5-turbo", "name": "GLM-5 Turbo", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 131072, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-5", "name": "GLM-5", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 102400, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.7", "name": "GLM-4.7", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 102400, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.6", "name": "GLM-4.6", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 102400, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.5", "name": "GLM-4.5", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 131072, "default_max_tokens": 49152, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.5-air", "name": "GLM-4.5 Air", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 131072, "default_max_tokens": 49152, "can_reason": true, "supports_attachments": false}
-      ]
-    },
-    "zai-2": {
-      "id": "zai-2",
-      "name": "Z.AI Coding Plan (Secondary)",
-      "base_url": "https://api.z.ai/api/coding/paas/v4",
-      "type": "openai-compat",
-      "api_key": "${ZAI_2_API_KEY}",
-      "disable": false,
-      "flat_rate": true,
-      "models": [
-        {"id": "glm-5.1", "name": "GLM-5.1", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 131072, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-5-turbo", "name": "GLM-5 Turbo", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 131072, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-5", "name": "GLM-5", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 102400, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.7", "name": "GLM-4.7", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 102400, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.6", "name": "GLM-4.6", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 200000, "default_max_tokens": 102400, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.5", "name": "GLM-4.5", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 131072, "default_max_tokens": 49152, "can_reason": true, "supports_attachments": false},
-        {"id": "glm-4.5-air", "name": "GLM-4.5 Air", "cost_per_1m_in": 0, "cost_per_1m_out": 0, "context_window": 131072, "default_max_tokens": 49152, "can_reason": true, "supports_attachments": false}
-      ]
-    }
-  },
   "models": {
     "large": "glm-5.1/zai",
     "small": "glm-5-turbo/zai-2"

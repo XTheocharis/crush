@@ -2,6 +2,10 @@
 # Shared helper functions for xrush-qa test suite.
 set -euo pipefail
 
+# Source global config helper for provider resolution.
+# shellcheck source=global-config.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/global-config.sh"
+
 # Backup existing .crush/ directory and create a fresh one.
 setup_clean_crush() {
   if [[ -d .crush ]]; then
@@ -80,6 +84,8 @@ wait_for_file() {
 # Default tmux session name for QA.
 : "${TMUX_SESSION:=qa-crush}"
 
+# DEPRECATED: Use start_crush_tui() instead. This function is preserved for
+# backward compatibility but will be removed in a future release.
 # Start Crush in a tmux session with the specified wave config.
 # Usage: start_crush <wave_number> [--session ID|--continue] [--cwd PATH]
 # Copies test/xrush-qa/waveN.json to crush.json in project root, then launches crush --yolo.
@@ -104,11 +110,12 @@ start_crush() {
   PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR/../.." && pwd)}"
   TMUX_SESSION="qa-w${wave}-$(date +%s)"
 
-  # Generate wave config to project crush.json (backup existing)
+  # Resolve global provider config and generate wave-specific project config.
+  resolve_global_config
   if [[ -f "$PROJECT_DIR/crush.json" ]]; then
     cp "$PROJECT_DIR/crush.json" "$PROJECT_DIR/crush.json.bak.$(date +%s)"
   fi
-  bash "$QA_DIR/lib/provider-setup.sh" "$wave" "$PROJECT_DIR/crush.json" >/dev/null
+  generate_project_config "$wave" "$PROJECT_DIR/crush.json"
 
   # Create tmux session and launch crush
   tmux new-session -d -s "$TMUX_SESSION" -x 200 -y 50
@@ -162,7 +169,203 @@ stop_crush() {
   fi
 }
 
-# Capture current tmux pane output as evidence.
+# --- TUI-only tmux launcher contract ---
+
+# Remove ANSI escape codes from stdin or argument string.
+# Usage: strip_ansi [string]  OR  echo "$text" | strip_ansi
+strip_ansi() {
+  if [[ $# -gt 0 ]]; then
+    printf '%s' "$1" | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+  else
+    sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+  fi
+}
+
+# Start Crush TUI in a tmux session at 160x50 dimensions.
+# Usage: start_crush_tui <wave_number> [--session ID|--continue] [--cwd PATH]
+start_crush_tui() {
+  local wave="${1:-1}"
+  shift || true
+
+  local session_flag=""
+  local continue_flag=""
+  local cwd_flag=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --session) session_flag="--session $2"; shift 2 ;;
+      --continue) continue_flag="--continue"; shift ;;
+      --cwd) cwd_flag="--cwd $2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  QA_DIR="${QA_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR/../.." && pwd)}"
+  TMUX_SESSION="qa-w${wave}-$(date +%s)"
+
+  resolve_global_config
+  if [[ -f "$PROJECT_DIR/crush.json" ]]; then
+    cp "$PROJECT_DIR/crush.json" "$PROJECT_DIR/crush.json.bak.$(date +%s)"
+  fi
+  generate_project_config "$wave" "$PROJECT_DIR/crush.json"
+
+  tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 50
+  local launch_cmd="crush --yolo"
+  [[ -n "$session_flag" ]] && launch_cmd="$launch_cmd $session_flag"
+  [[ -n "$continue_flag" ]] && launch_cmd="$launch_cmd $continue_flag"
+  [[ -n "$cwd_flag" ]] && launch_cmd="$launch_cmd $cwd_flag"
+
+  tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && $launch_cmd" Enter
+
+  local waited=0
+  while [[ $waited -lt 15 ]]; do
+    local pane_content
+    pane_content=$(tmux capture-pane -t "$TMUX_SESSION" -p 2>/dev/null || true)
+    if [[ -n "$pane_content" && "$pane_content" != *[[:space:]]* ]]; then
+      break
+    fi
+    sleep 1
+    ((waited++))
+  done
+}
+
+# Send a text prompt to the running Crush TUI via tmux literal mode.
+# Usage: send_tui_prompt <text>
+send_tui_prompt() {
+  local text="$1"
+  tmux send-keys -t "$TMUX_SESSION" -l "$text"
+  sleep 0.1
+  tmux send-keys -t "$TMUX_SESSION" Enter
+}
+
+# Wait for Crush TUI to become idle using composite polling.
+# Primary: poll tmux pane for spinner patterns to disappear.
+# Augmented: poll DB for assistant message with non-empty content.
+# Augmented: poll log for turn-end event.
+# Usage: wait_for_tui_idle [timeout_seconds]
+wait_for_tui_idle() {
+  local timeout="${1:-120}"
+  local elapsed=0
+  local db_path=".crush/crush.db"
+  local log_path=".crush/logs/crush.log"
+  local session_id=""
+
+  while true; do
+    local pane_idle=true
+    local db_idle=false
+    local log_idle=false
+
+    local pane_output
+    pane_output=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -100 2>/dev/null || true)
+    if printf '%s' "$pane_output" | grep -qi "Processing\|Thinking\|Working"; then
+      pane_idle=false
+    fi
+
+    if [[ -f "$db_path" ]]; then
+      session_id=$(sqlite3 "$db_path" "SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1" 2>/dev/null || true)
+      if [[ -n "$session_id" ]]; then
+        local msg_count
+        msg_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE role='assistant' AND session_id='$session_id' AND content != ''" 2>/dev/null || echo 0)
+        if [[ "$msg_count" -gt 0 ]]; then
+          db_idle=true
+        fi
+      fi
+    fi
+
+    if [[ -f "$log_path" ]]; then
+      if grep -q "turn-end\|turn_end\|Turn complete" "$log_path" 2>/dev/null; then
+        log_idle=true
+      fi
+    fi
+
+    if $pane_idle && ($db_idle || $log_idle); then
+      return 0
+    fi
+
+    if [[ "$elapsed" -ge "$timeout" ]]; then
+      tmux capture-pane -t "$TMUX_SESSION" -p -S -1000 > /tmp/tmux-idle-timeout-"$TMUX_SESSION".txt 2>/dev/null || true
+      echo "FAIL: wait_for_tui_idle: Crush still busy after ${timeout}s" >&2
+      return 1
+    fi
+
+    sleep 2
+    ((elapsed += 2))
+  done
+}
+
+# Capture current tmux pane output (last 1000 lines).
+# Usage: capture_tui
+capture_tui() {
+  tmux capture-pane -t "$TMUX_SESSION" -p -S -1000
+}
+
+# Assert captured TUI output contains a string (after stripping ANSI).
+# Usage: assert_tui_contains <expected_string>
+assert_tui_contains() {
+  local expected="$1"
+  local output
+  output=$(capture_tui | strip_ansi)
+  if ! printf '%s' "$output" | grep -qF "$expected"; then
+    echo "FAIL: assert_tui_contains: expected '$expected' not found in TUI output" >&2
+    return 1
+  fi
+}
+
+# Assert captured TUI output does NOT contain a string (after stripping ANSI).
+# Usage: assert_tui_not_contains <forbidden_string>
+assert_tui_not_contains() {
+  local forbidden="$1"
+  local output
+  output=$(capture_tui | strip_ansi)
+  if printf '%s' "$output" | grep -qF "$forbidden"; then
+    echo "FAIL: assert_tui_not_contains: forbidden '$forbidden' found in TUI output" >&2
+    return 1
+  fi
+}
+
+# Save TUI evidence to test/xrush-qa/reports/<wave>/<scenario>/.
+# Uses WAVE and SCENARIO env vars set by the test harness.
+# Usage: capture_tui_evidence <label>
+capture_tui_evidence() {
+  local label="$1"
+  local wave="${WAVE:-unknown}"
+  local scenario="${SCENARIO:-default}"
+  QA_DIR="${QA_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  local evidence_dir="$QA_DIR/reports/$wave/$scenario"
+  mkdir -p "$evidence_dir"
+  capture_tui > "$evidence_dir/${label}.txt"
+}
+
+# Send Tab key to switch focus to chat list pane.
+# Usage: focus_chat
+focus_chat() {
+  tmux send-keys -t "$TMUX_SESSION" Tab
+}
+
+# Send Tab key to switch focus to editor pane.
+# Usage: focus_editor
+focus_editor() {
+  tmux send-keys -t "$TMUX_SESSION" Tab
+}
+
+# Select a message by offset from the bottom of the chat list.
+# Sends G (go to bottom) then k N times to move up.
+# Usage: select_message_by_offset <offset_from_bottom>
+select_message_by_offset() {
+  local offset="${1:-0}"
+  tmux send-keys -t "$TMUX_SESSION" G
+  sleep 0.2
+  local i
+  for ((i = 0; i < offset; i++)); do
+    tmux send-keys -t "$TMUX_SESSION" k
+    sleep 0.05
+  done
+}
+
+# --- End TUI-only tmux launcher contract ---
+
+# DEPRECATED: Legacy evidence capture using .sisyphus/evidence path.
+# Use capture_tui_evidence() instead.
 # Usage: capture_evidence <task_num> <scenario_name>
 capture_evidence() {
   local task="$1"

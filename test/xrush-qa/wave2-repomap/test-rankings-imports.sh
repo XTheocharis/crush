@@ -22,15 +22,15 @@ test_rankings_positive_scores() {
 
   setup_clean_crush
   # shellcheck disable=SC2317
-  restore_crush() {
-    command restore_crush
+  cleanup_test() {
+    restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
   }
-  trap restore_crush EXIT
+  trap cleanup_test EXIT
 
   start_crush 2
   send_prompt "Tell me about the agent package in this project"

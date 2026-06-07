@@ -52,7 +52,7 @@ test_code_restore() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
     rm -f /tmp/qa-rewind-restore-s1.txt
   }
   trap restore_on_exit EXIT
@@ -159,7 +159,7 @@ test_conversation_truncation() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
   }
   trap restore_on_exit EXIT
 

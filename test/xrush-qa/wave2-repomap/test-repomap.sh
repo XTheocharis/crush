@@ -23,16 +23,16 @@ test_repomap_cache() {
   echo "=== Scenario 1: Repo map file cache populated ==="
 
   setup_clean_crush
-  # shellcheck disable=SC2317  # restore_crush is called below
-  restore_crush() {
-    command restore_crush
+  # shellcheck disable=SC2317  # cleanup_test is called below
+  cleanup_test() {
+    restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
   }
-  trap restore_crush EXIT
+  trap cleanup_test EXIT
 
   start_crush 2
   send_prompt "What files are in this project?"

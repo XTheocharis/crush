@@ -21,15 +21,15 @@ test_explorer_dispatch_code_file() {
   echo "=== Scenario 1: Explorer dispatched during file view ==="
 
   setup_clean_crush
-  restore_crush() {
-    command restore_crush
+  cleanup_test() {
+    restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
   }
-  trap restore_crush EXIT
+  trap cleanup_test EXIT
 
   start_crush 2
   send_prompt "Show me internal/config/config.go"
@@ -66,15 +66,15 @@ test_explorer_noncode_file() {
   echo "=== Scenario 2: Explorer handles non-code file ==="
 
   setup_clean_crush
-  restore_crush() {
-    command restore_crush
+  cleanup_test() {
+    restore_crush
     local json_bak
     json_bak=$(find . -maxdepth 1 -name 'crush.json.bak.*' -type f 2>/dev/null | sort -t. -k5 -n | tail -1)
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
   }
-  trap restore_crush EXIT
+  trap cleanup_test EXIT
 
   start_crush 2
   send_prompt "Show me the README.md file"

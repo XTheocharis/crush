@@ -37,7 +37,7 @@ test_lcm_grep_sentinel() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
   }
   trap restore_on_exit EXIT
 
@@ -132,7 +132,7 @@ test_lcm_describe_facts() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
   }
   trap restore_on_exit EXIT
 
@@ -262,7 +262,7 @@ test_lcm_expand_after_compaction() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
   }
   trap restore_on_exit EXIT
 

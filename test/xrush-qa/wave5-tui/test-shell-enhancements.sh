@@ -41,7 +41,7 @@ test_config_variable_expansion() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
     cleanup_bg_jobs
   }
   trap restore_on_exit EXIT
@@ -158,7 +158,7 @@ test_jq_behavior() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
     cleanup_bg_jobs
   }
   trap restore_on_exit EXIT
@@ -224,7 +224,7 @@ test_background_job_cleanup() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
     cleanup_bg_jobs
   }
   trap restore_on_exit EXIT

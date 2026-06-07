@@ -75,9 +75,10 @@ if [[ -f "$PROJECT_DIR/crush.json" ]]; then
   cp "$PROJECT_DIR/crush.json" "$PROJECT_DIR/crush.json.bak.$(date +%s)"
 fi
 
-# Generate wave 4 config (enables validation + architect + doom-loop intervention,
-# which ensures snapshots are created for rewind).
-bash "$QA_DIR/lib/provider-setup.sh" 4 "$PROJECT_DIR/crush.json" >/dev/null
+# Source global config helper and generate wave 4 project config.
+source "$QA_DIR/lib/global-config.sh"
+resolve_global_config
+generate_project_config 4 "$PROJECT_DIR/crush.json"
 log "Project config generated (wave 4)."
 
 # ── Step 1: Start Crush in tmux ───────────────────────────────────────────────

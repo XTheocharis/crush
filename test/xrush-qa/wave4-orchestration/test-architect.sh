@@ -31,7 +31,7 @@ test_architect_triggers() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
   }
   trap restore_on_exit EXIT
 

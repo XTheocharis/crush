@@ -40,7 +40,7 @@ test_architect_operator_pipeline() {
       mv "$json_bak" crush.json
     fi
     rm -rf "$TARGET_DIR"
-    command restore_crush
+    restore_crush
   }
   trap restore_on_exit EXIT
 

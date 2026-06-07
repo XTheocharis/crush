@@ -30,7 +30,7 @@ test_autofix_syntax_error() {
     if [[ -n "$json_bak" ]]; then
       mv "$json_bak" crush.json
     fi
-    command restore_crush
+    restore_crush
     rm -f /tmp/qa-broken.go
   }
   trap restore_on_exit EXIT
