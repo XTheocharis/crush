@@ -568,3 +568,117 @@ func TestBuildProcessorRunner_LLMProcessors_ConstructWithCompleter(t *testing.T)
 	require.Contains(t, ids, "prompt_injection")
 	require.Contains(t, ids, "language_detector")
 }
+
+func TestGetState_Uninitialized(t *testing.T) {
+	t.Parallel()
+	e := &ProcessorExtension{}
+	snap := e.GetState()
+	require.False(t, snap.Active)
+	require.Nil(t, snap.ProcessorNames)
+	require.Nil(t, snap.LastState)
+	require.Equal(t, 0, snap.TokenBudget)
+}
+
+func TestGetState_AfterInit(t *testing.T) {
+	t.Parallel()
+	e := &ProcessorExtension{}
+	host := &mockHostContext{cfg: &config.Config{}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+
+	snap := e.GetState()
+	require.True(t, snap.Active)
+	require.Equal(t, defaultTokenBudget, snap.TokenBudget)
+	require.NotEmpty(t, snap.ProcessorNames)
+
+	expectedIDs := map[string]bool{"token_limiter": true, "pii_detector": true}
+	for _, name := range snap.ProcessorNames {
+		delete(expectedIDs, name)
+	}
+	require.Empty(t, expectedIDs, "expected processor names to include token_limiter and pii_detector")
+}
+
+func TestGetState_AfterShutdown(t *testing.T) {
+	t.Parallel()
+	e := &ProcessorExtension{}
+	host := &mockHostContext{cfg: &config.Config{}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+
+	err = e.Shutdown(context.Background())
+	require.NoError(t, err)
+
+	snap := e.GetState()
+	require.False(t, snap.Active)
+	require.Nil(t, snap.ProcessorNames)
+	require.Equal(t, 0, snap.TokenBudget)
+}
+
+func TestGetState_CapturesLastPhase(t *testing.T) {
+	t.Parallel()
+	trueVal := true
+	e := &ProcessorExtension{}
+	host := &mockHostContext{cfg: &config.Config{
+		Options: &config.Options{
+			Processors: &config.ProcessorsOptions{
+				Enabled: &trueVal,
+				List:    []string{"token_limiter"},
+			},
+		},
+	}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+
+	snap := e.GetState()
+	require.False(t, snap.Active && snap.LastPhase != processor.ProcessorPhase(0),
+		"last phase should be zero before any processing")
+
+	msgs := []fantasy.Message{
+		{Role: fantasy.MessageRoleUser, Content: []fantasy.MessagePart{
+			fantasy.TextPart{Text: "hello"},
+		}},
+	}
+	_, err = e.processInput(context.Background(), "session", msgs)
+	require.NoError(t, err)
+
+	snap = e.GetState()
+	require.Equal(t, processor.InputPhase, snap.LastPhase)
+}
+
+func TestGetState_SnapshotIsImmutable(t *testing.T) {
+	t.Parallel()
+	e := &ProcessorExtension{}
+	host := &mockHostContext{cfg: &config.Config{}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+
+	snap := e.GetState()
+	names := snap.ProcessorNames
+	names[0] = "tampered"
+	require.NotEqual(t, "tampered", e.GetState().ProcessorNames[0],
+		"modifying snapshot should not affect extension state")
+}
+
+func TestGetState_DisabledExtension(t *testing.T) {
+	t.Parallel()
+	falseVal := false
+	e := &ProcessorExtension{}
+	host := &mockHostContext{cfg: &config.Config{
+		Options: &config.Options{
+			Processors: &config.ProcessorsOptions{
+				Enabled: &falseVal,
+			},
+		},
+	}}
+	err := e.Init(context.Background(), host)
+	require.NoError(t, err)
+
+	snap := e.GetState()
+	require.False(t, snap.Active)
+	require.Nil(t, snap.ProcessorNames)
+}
+
+func TestTheProcessorExtension_Singleton(t *testing.T) {
+	require.NotNil(t, TheProcessorExtension, "singleton should be non-nil")
+	require.Equal(t, "processor", TheProcessorExtension.Name())
+}

@@ -2,6 +2,7 @@ package extensions
 
 import (
 	"context"
+	"maps"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -52,19 +53,45 @@ func (a *completerAdapter) Complete(ctx context.Context, prompt, input string) (
 	return a.fn(ctx, prompt, input)
 }
 
+// TheProcessorExtension is the singleton processor extension instance
+// registered at init. Follows the same pattern as TheLCMExtension.
+var TheProcessorExtension = &ProcessorExtension{}
+
+// ProcessorStateSnapshot is an immutable snapshot of the processor pipeline
+// state at a point in time. Safe to read concurrently without locking.
+type ProcessorStateSnapshot struct {
+	// Active indicates whether the processor pipeline is enabled.
+	Active bool
+	// LastPhase is the most recent processor phase that was executed.
+	// Empty string if no phase has run yet.
+	LastPhase processor.ProcessorPhase
+	// ProcessorNames lists the IDs of all configured processors.
+	ProcessorNames []string
+	// TokenBudget is the configured token budget (0 if unset).
+	TokenBudget int
+	// LastState holds the accumulated processor state from the last
+	// pipeline execution. Nil if no execution has occurred.
+	LastState map[string]any
+}
+
 // ProcessorExtension wires the processor pipeline into the extension host as
 // both a StepHookProvider and RunHookProvider. Config-gated: only active when
 // cfg.Options.Processors.Enabled is nil (default) or explicitly true.
 type ProcessorExtension struct {
-	mu     sync.RWMutex
-	host   ext.HostContext
-	runner *processor.ProcessorRunner
-	active bool
+	mu         sync.RWMutex
+	host       ext.HostContext
+	runner     *processor.ProcessorRunner
+	active     bool
+	lastPhase  processor.ProcessorPhase
+	lastState  map[string]any
+	tokenBudget int
 }
 
 func (e *ProcessorExtension) Name() string { return "processor" }
 
 func (e *ProcessorExtension) Init(_ context.Context, host ext.HostContext) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.host = host
 
 	cfg := host.Config()
@@ -93,6 +120,7 @@ func (e *ProcessorExtension) Init(_ context.Context, host ext.HostContext) error
 
 	e.runner = runner
 	e.active = true
+	e.tokenBudget = defaultTokenBudget
 	return nil
 }
 
@@ -101,7 +129,42 @@ func (e *ProcessorExtension) Shutdown(_ context.Context) error {
 	defer e.mu.Unlock()
 	e.runner = nil
 	e.active = false
+	e.lastPhase = processor.ProcessorPhase(0)
+	e.lastState = nil
+	e.tokenBudget = 0
 	return nil
+}
+
+// GetState returns an immutable snapshot of the current processor pipeline
+// state. Safe to call from any goroutine; returns a zero-value snapshot if
+// the extension has not been initialized.
+func (e *ProcessorExtension) GetState() ProcessorStateSnapshot {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	var names []string
+	if e.runner != nil {
+		all := append(e.runner.InputProcessors, e.runner.OutputProcessors...)
+		all = append(all, e.runner.ErrorProcessors...)
+		names = make([]string, 0, len(all))
+		for _, p := range all {
+			names = append(names, p.ID())
+		}
+	}
+
+	var stateCopy map[string]any
+	if e.lastState != nil {
+		stateCopy = make(map[string]any, len(e.lastState))
+		maps.Copy(stateCopy, e.lastState)
+	}
+
+	return ProcessorStateSnapshot{
+		Active:         e.active,
+		LastPhase:      e.lastPhase,
+		ProcessorNames: names,
+		TokenBudget:    e.tokenBudget,
+		LastState:      stateCopy,
+	}
 }
 
 func (e *ProcessorExtension) StepHooks() []ext.StepHook {
@@ -170,6 +233,13 @@ func (e *ProcessorExtension) processInput(ctx context.Context, _ string, message
 		return messages, nil
 	}
 
+	e.mu.Lock()
+	e.lastPhase = processor.InputPhase
+	if result.State != nil {
+		e.lastState = result.State
+	}
+	e.mu.Unlock()
+
 	// Preserve original fantasy messages to keep rich content (tool
 	// calls, tool results, reasoning) that the flat processor.Message
 	// type cannot represent. Do NOT use processorToFantasyMessages here
@@ -225,6 +295,10 @@ func (e *ProcessorExtension) processOutput(ctx context.Context, _ string, step f
 		slog.Debug("Processor output stream phase failed", "error", err)
 	}
 
+	e.mu.Lock()
+	e.lastPhase = processor.OutputStreamPhase
+	e.mu.Unlock()
+
 	// OutputResultPhase: final assembled output processing.
 	pctx := processor.ProcessorContext{
 		Phase:        processor.OutputResultPhase,
@@ -234,10 +308,17 @@ func (e *ProcessorExtension) processOutput(ctx context.Context, _ string, step f
 		Metadata:     make(map[string]any),
 	}
 
-	_, err = runner.Execute(ctx, processor.OutputResultPhase, pctx)
+	result, err := runner.Execute(ctx, processor.OutputResultPhase, pctx)
 	if err != nil {
 		slog.Debug("Processor output result phase failed", "error", err)
 	}
+
+	e.mu.Lock()
+	e.lastPhase = processor.OutputResultPhase
+	if result.State != nil {
+		e.lastState = result.State
+	}
+	e.mu.Unlock()
 }
 
 func (e *ProcessorExtension) processRunStart(ctx context.Context, _ string, userMessage string) error {

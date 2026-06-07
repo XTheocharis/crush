@@ -27,6 +27,6 @@ func init() {
 	ext.RegisterExtension(&PromptAssemblyExtension{})
 	ext.RegisterExtension(TheOrchestrationExtension)
 	ext.RegisterExtension(&ModelRouterExtension{})
-	ext.RegisterExtension(&ProcessorExtension{})
+	ext.RegisterExtension(TheProcessorExtension)
 	ext.RegisterExtension(TheProductiveExtension)
 }
