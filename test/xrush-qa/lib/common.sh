@@ -137,16 +137,45 @@ send_prompt() {
 }
 
 # Wait for Crush to finish processing (idle detection).
-# Polls tmux capture-pane for Processing/Thinking spinner to disappear.
+# Polls DB for assistant message with finished_at > 0, falls back to log check.
 # Usage: wait_for_idle [timeout_seconds]
 wait_for_idle() {
   local timeout="${1:-120}"
   local elapsed=0
-  while tmux capture-pane -t "$TMUX_SESSION" -p -S -100 | grep -qi "Processing\|Thinking\|Working"; do
+  local db_path=".crush/crush.db"
+  local log_path=".crush/logs/crush.log"
+
+  while true; do
+    local db_idle=false
+    local log_idle=false
+
+    if [[ -f "$db_path" ]]; then
+      local session_id
+      session_id=$(sqlite3 "$db_path" "SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1" 2>/dev/null || true)
+      if [[ -n "$session_id" ]]; then
+        local msg_count
+        msg_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE role='assistant' AND session_id='$session_id' AND finished_at IS NOT NULL AND finished_at > 0" 2>/dev/null || echo 0)
+        if [[ "$msg_count" -gt 0 ]]; then
+          db_idle=true
+        fi
+      fi
+    fi
+
+    if [[ -f "$log_path" ]]; then
+      if grep -q '"Skill turn summary"\|"Plan step marked as completed"' "$log_path" 2>/dev/null; then
+        log_idle=true
+      fi
+    fi
+
+    if $db_idle || $log_idle; then
+      return 0
+    fi
+
     if [[ "$elapsed" -ge "$timeout" ]]; then
       echo "FAIL: wait_for_idle: Crush still busy after ${timeout}s" >&2
       return 1
     fi
+
     sleep 2
     ((elapsed += 2))
   done
@@ -254,7 +283,9 @@ start_crush_tui() {
     local pane_content
     pane_content=$(tmux capture-pane -t "$TMUX_SESSION" -p 2>/dev/null || true)
     # Wait for Crush TUI to render its actual UI (not just the typed command echo).
-    if printf '%s' "$pane_content" | grep -qi 'yolo\|Model.*:\|ctrl+c quit\|commands'; then
+    # "ctrl+c quit" only appears in the TUI footer, never in the typed command.
+    # "HEY!" only appears in the TUI splash screen.
+    if printf '%s' "$pane_content" | grep -qi 'ctrl+c quit\|HEY!\|Charm.*v[0-9]'; then
       break
     fi
     sleep 1
@@ -272,33 +303,25 @@ send_tui_prompt() {
 }
 
 # Wait for Crush TUI to become idle using composite polling.
-# Primary: poll tmux pane for spinner patterns to disappear.
-# Augmented: poll DB for assistant message with non-empty content.
-# Augmented: poll log for turn-end event.
+# Polls DB for assistant message with finished_at > 0.
+# Polls log for turn-end event.
 # Usage: wait_for_tui_idle [timeout_seconds]
 wait_for_tui_idle() {
   local timeout="${1:-120}"
   local elapsed=0
   local db_path=".crush/crush.db"
   local log_path=".crush/logs/crush.log"
-  local session_id=""
 
   while true; do
-    local pane_idle=true
     local db_idle=false
     local log_idle=false
 
-    local pane_output
-    pane_output=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -100 2>/dev/null || true)
-    if printf '%s' "$pane_output" | grep -qi "Processing\|Thinking\|Working"; then
-      pane_idle=false
-    fi
-
     if [[ -f "$db_path" ]]; then
+      local session_id
       session_id=$(sqlite3 "$db_path" "SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1" 2>/dev/null || true)
       if [[ -n "$session_id" ]]; then
         local msg_count
-        msg_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE role='assistant' AND session_id='$session_id' AND content != ''" 2>/dev/null || echo 0)
+        msg_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM messages WHERE role='assistant' AND session_id='$session_id' AND finished_at IS NOT NULL AND finished_at > 0" 2>/dev/null || echo 0)
         if [[ "$msg_count" -gt 0 ]]; then
           db_idle=true
         fi
@@ -306,12 +329,12 @@ wait_for_tui_idle() {
     fi
 
     if [[ -f "$log_path" ]]; then
-      if grep -q "turn-end\|turn_end\|Turn complete" "$log_path" 2>/dev/null; then
+      if grep -q '"Skill turn summary"\|"Plan step marked as completed"' "$log_path" 2>/dev/null; then
         log_idle=true
       fi
     fi
 
-    if $pane_idle && ($db_idle || $log_idle); then
+    if $db_idle || $log_idle; then
       return 0
     fi
 
