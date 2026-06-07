@@ -53,38 +53,34 @@ test_explorer_dispatch_code_file() {
 
   capture_tui_evidence "tui-response"
 
-  # --- Primary: DB metadata. Explorer stores structured data in lcm_large_files ---
+  # --- Primary: DB assertions for tree-sitter analysis ---
   local SID
   SID=$(get_session_id)
   if [[ -n "$SID" ]]; then
     local db_path=".crush/crush.db"
     if [[ -f "$db_path" ]]; then
-      local explorer_used
-      explorer_used=$(sqlite3 "$db_path" "SELECT explorer_used FROM lcm_large_files WHERE session_id='$SID' AND explorer_used IS NOT NULL LIMIT 1" 2>/dev/null || true)
-      if [[ -n "$explorer_used" ]]; then
-        pass "Scenario 1: DB shows explorer_used='$explorer_used' for session"
+      # Verify tree-sitter tags were written (proves parsing occurred).
+      local tags_count
+      tags_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE session_id='$SID'" 2>/dev/null || echo "0")
+      if [[ "$tags_count" -ge 1 ]]; then
+        pass "Scenario 1: repo_map_tags has $tags_count rows for session (tree-sitter parsed)"
       else
-        # LCM may not have stored large files for this prompt — soft failure.
-        echo "  NOTE: No lcm_large_files rows with explorer_used for this session (file may not have triggered LCM large-file path)"
+        fail "Scenario 1: repo_map_tags empty for session (tree-sitter parsing not recorded)"
       fi
-    fi
-  else
-    echo "  NOTE: Could not get session ID for DB explorer check"
-  fi
 
-  # --- Secondary: log grep for explorer activity ---
-  local explorer_lines
-  explorer_lines=$(grep -i "explorer" .crush/logs/crush.log 2>/dev/null | tail -20 || true)
-  if [[ -n "$explorer_lines" ]]; then
-    local match_count
-    match_count=$(echo "$explorer_lines" | grep -ciE "dispatch|processing|explore" ) || match_count=0
-    if [[ "$match_count" -ge 1 ]]; then
-      pass "Scenario 1: Explorer dispatch/processing found in logs ($match_count matches)"
+      # Verify file cache entries exist for tree-sitter analysis.
+      local cache_count
+      cache_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_file_cache WHERE session_id='$SID'" 2>/dev/null || echo "0")
+      if [[ "$cache_count" -ge 1 ]]; then
+        pass "Scenario 1: repo_map_file_cache has $cache_count rows for session"
+      else
+        fail "Scenario 1: repo_map_file_cache empty for session (no tree-sitter analysis cached)"
+      fi
     else
-      fail "Scenario 1: Explorer mentioned in logs but no dispatch/processing keywords"
+      fail "Scenario 1: Database file not found at $db_path"
     fi
   else
-    fail "Scenario 1: No explorer-related log lines found"
+    fail "Scenario 1: Could not get session ID for DB assertions"
   fi
 
   tmux send-keys -t "$TMUX_SESSION" C-c
@@ -128,37 +124,34 @@ test_explorer_noncode_file() {
 
   capture_tui_evidence "tui-response"
 
-  # --- Primary: DB metadata. Explorer stores structured data in lcm_large_files ---
+  # --- Primary: DB assertions for tree-sitter analysis ---
   local SID
   SID=$(get_session_id)
   if [[ -n "$SID" ]]; then
     local db_path=".crush/crush.db"
     if [[ -f "$db_path" ]]; then
-      local explorer_used
-      explorer_used=$(sqlite3 "$db_path" "SELECT explorer_used FROM lcm_large_files WHERE session_id='$SID' AND explorer_used IS NOT NULL LIMIT 1" 2>/dev/null || true)
-      if [[ -n "$explorer_used" ]]; then
-        pass "Scenario 2: DB shows explorer_used='$explorer_used' for session"
+      # Verify tree-sitter tags were written.
+      local tags_count
+      tags_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE session_id='$SID'" 2>/dev/null || echo "0")
+      if [[ "$tags_count" -ge 1 ]]; then
+        pass "Scenario 2: repo_map_tags has $tags_count rows for session"
       else
-        echo "  NOTE: No lcm_large_files rows with explorer_used for this session (file may not have triggered LCM large-file path)"
+        fail "Scenario 2: repo_map_tags empty for session"
       fi
-    fi
-  else
-    echo "  NOTE: Could not get session ID for DB explorer check"
-  fi
 
-  # --- Secondary: log grep for explorer activity ---
-  local explorer_lines
-  explorer_lines=$(grep -i "explorer" .crush/logs/crush.log 2>/dev/null || true)
-  if [[ -n "$explorer_lines" ]]; then
-    local match_count
-    match_count=$(echo "$explorer_lines" | grep -ciE "dispatch|processing|explore" ) || match_count=0
-    if [[ "$match_count" -ge 1 ]]; then
-      pass "Scenario 2: Explorer processing found for non-code file ($match_count matches)"
+      # Verify file cache entries exist.
+      local cache_count
+      cache_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_file_cache WHERE session_id='$SID'" 2>/dev/null || echo "0")
+      if [[ "$cache_count" -ge 1 ]]; then
+        pass "Scenario 2: repo_map_file_cache has $cache_count rows for session"
+      else
+        fail "Scenario 2: repo_map_file_cache empty for session"
+      fi
     else
-      fail "Scenario 2: Explorer mentioned but no processing keywords for non-code file"
+      fail "Scenario 2: Database file not found at $db_path"
     fi
   else
-    fail "Scenario 2: No explorer-related log lines found for non-code file"
+    fail "Scenario 2: Could not get session ID for DB assertions"
   fi
 
   tmux send-keys -t "$TMUX_SESSION" C-c

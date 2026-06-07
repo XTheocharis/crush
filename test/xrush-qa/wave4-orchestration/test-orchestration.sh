@@ -62,16 +62,13 @@ test_orchestration_attempted() {
     fail "Scenario: Expected >= 1 assistant messages, got $msg_count"
   fi
 
-  # Check for child sessions (parent_session_id linkage).
-  local children
-  children=$(run_query "child_sessions_by_parent" "$SID" 2>/dev/null || echo "[]")
-  local child_count
-  child_count=$(echo "$children" | jq 'length')
-  if [[ "$child_count" -ge 1 ]]; then
-    pass "Scenario: Found $child_count child session(s) linked to parent"
+  # Check for sub-agent activity (ForkedAgent uses in-memory sessions, not DB rows).
+  local subagent_log
+  subagent_log=$(grep -iE "StructuredSubagent|ForkedAgent|parallel|sub.agent" .crush/logs/crush.log 2>/dev/null || true)
+  if [[ -n "$subagent_log" ]]; then
+    pass "Scenario: Log shows orchestration/sub-agent activity"
   else
-    # Not a hard failure — the agent may choose not to fork.
-    echo "  INFO: No child sessions found (agent may not have used orchestration)"
+    echo "  INFO: No explicit orchestration log entries found (agent may not have used orchestration)"
   fi
 
   # Verify role distribution in parent session.

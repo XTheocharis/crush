@@ -39,7 +39,7 @@ Traceability matrix mapping every XRUSH feature area to TUI-first test coverage.
 | F15 | Doom Loop | `wave4-orchestration/test-doom-loop.sh` | `reports/wave4-orchestration.txt` | test-doom-loop-intervention.sh | RESOLVED |
 | F16 | Orchestration/Forked Agents | `wave4-orchestration/test-orchestration.sh` | `reports/wave4-orchestration.txt` | test-forked-agents.sh, test-orchestration-contract.sh | RESOLVED |
 | F17 | Rewind | `wave4-orchestration/test-rewind.sh` | `reports/wave4-orchestration.txt` | test-rewind-restore.sh | PENDING |
-| F18 | Extension Host | — | — | — | OPEN |
+| F18 | Extension Host | `wave5-tui/test-extensions-live.sh` | `reports/wave5-tui.txt` | — | PENDING |
 | F19 | LSP Enhancements | — | — | — | OPEN |
 | F20 | Tools Surface | `wave5-tui/test-edit-tools-live.sh` | `reports/wave5-tui.txt` | — | PENDING |
 | F21 | Message Timestamps | `wave1-session/test-message-parts.sh` | `reports/wave1-session.txt` | — | RESOLVED |
@@ -52,7 +52,7 @@ Traceability matrix mapping every XRUSH feature area to TUI-first test coverage.
 |--------|-------|
 | Total feature areas | 23 |
 | RESOLVED (TUI evidence) | 8 (F01, F02, F04, F12, F15, F16, F21, F22) |
-| PENDING (test exists, not yet run) | 11 |
-| OPEN (no test file) | 4 (F08, F18, F19) |
+| PENDING (test exists, not yet run) | 12 |
+| OPEN (no test file) | 3 (F08, F19) |
 
 
