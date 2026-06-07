@@ -121,6 +121,13 @@ func (e *ProcessorExtension) Init(_ context.Context, host ext.HostContext) error
 	e.runner = runner
 	e.active = true
 	e.tokenBudget = defaultTokenBudget
+	if procCfg != nil {
+		if pc, ok := procCfg["token_limiter"].(map[string]any); ok {
+			if v, ok := pc["budget"].(float64); ok && v > 0 {
+				e.tokenBudget = int(v)
+			}
+		}
+	}
 	return nil
 }
 
@@ -371,8 +378,15 @@ func buildProcessorRunner(
 		switch name {
 		// Tier 0 — existing processors.
 		case "token_limiter":
+			budget := defaultTokenBudget
+			pc := perProcessor(cfg, name)
+			if pc != nil {
+				if v, ok := pc["budget"].(float64); ok && v > 0 {
+					budget = int(v)
+				}
+			}
 			inputProcessors = append(inputProcessors, &processor.TokenLimiter{
-				Budget: defaultTokenBudget,
+				Budget: budget,
 			})
 		case "system_prompt_scrubber":
 			if completer == nil {
