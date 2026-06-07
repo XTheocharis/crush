@@ -412,6 +412,19 @@ init_test() {
   QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 }
 
+# Mask potential secrets in a string before writing to evidence files.
+# Replaces API-key-like patterns with REDACTED placeholders.
+# Usage: masked_output=$(echo "$output" | mask_secret)
+mask_secret() {
+  sed \
+    -e 's/sk-[a-zA-Z0-9]\{20,\}/REDACTED_SK/g' \
+    -e 's/api[_-]\?key[[:space:]]*[:=][[:space:]]*"[a-zA-Z0-9]\{10,\}"/api_key: "REDACTED"/gi' \
+    -e 's/api[_-]\?key[[:space:]]*[:=][[:space:]]*[a-zA-Z0-9]\{10,\}/api_key: REDACTED/gi' \
+    -e 's/\(api_key\|apiKey\|API_KEY\)[[:space:]]*[:=][[:space:]]*"[^"]\{10,\}"/\1: "REDACTED"/g' \
+    -e 's/token[[:space:]]*[:=][[:space:]]*"[a-zA-Z0-9]\{10,\}"/token: "REDACTED"/gi' \
+    -e 's/bearer[[:space:]]\+[a-zA-Z0-9._-]\{20,\}/Bearer REDACTED/gi'
+}
+
 # Record test result to the reports file.
 # Usage: finish_test test_name status
 finish_test() {
