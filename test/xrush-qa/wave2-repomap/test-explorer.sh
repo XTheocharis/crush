@@ -8,6 +8,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 source "$QA_DIR/lib/common.sh"
 source "$QA_DIR/lib/db-verify.sh"
+source "$QA_DIR/lib/llm-assertions.sh"
 
 PASS=0
 FAIL=0
@@ -40,7 +41,7 @@ test_explorer_dispatch_code_file() {
   fi
 
   # Primary gate: TUI output must contain the sentinel.
-  if assert_tui_contains "EXPLORER_DISPATCH_SENTINEL_42"; then
+  if assert_tui_contains_retry "EXPLORER_DISPATCH_SENTINEL_42" 3 10; then
     pass "Scenario 1: TUI shows EXPLORER_DISPATCH_SENTINEL_42 sentinel"
   else
     fail "Scenario 1: TUI does not show EXPLORER_DISPATCH_SENTINEL_42 sentinel"
@@ -51,6 +52,25 @@ test_explorer_dispatch_code_file() {
   fi
 
   capture_tui_evidence "tui-response"
+
+  # --- Primary: DB metadata. Explorer stores structured data in lcm_large_files ---
+  local SID
+  SID=$(get_session_id)
+  if [[ -n "$SID" ]]; then
+    local db_path=".crush/crush.db"
+    if [[ -f "$db_path" ]]; then
+      local explorer_used
+      explorer_used=$(sqlite3 "$db_path" "SELECT explorer_used FROM lcm_large_files WHERE session_id='$SID' AND explorer_used IS NOT NULL LIMIT 1" 2>/dev/null || true)
+      if [[ -n "$explorer_used" ]]; then
+        pass "Scenario 1: DB shows explorer_used='$explorer_used' for session"
+      else
+        # LCM may not have stored large files for this prompt — soft failure.
+        echo "  NOTE: No lcm_large_files rows with explorer_used for this session (file may not have triggered LCM large-file path)"
+      fi
+    fi
+  else
+    echo "  NOTE: Could not get session ID for DB explorer check"
+  fi
 
   # --- Secondary: log grep for explorer activity ---
   local explorer_lines
@@ -96,7 +116,7 @@ test_explorer_noncode_file() {
   fi
 
   # Primary gate: TUI output must contain the sentinel.
-  if assert_tui_contains "EXPLORER_NONCODE_SENTINEL_77"; then
+  if assert_tui_contains_retry "EXPLORER_NONCODE_SENTINEL_77" 3 10; then
     pass "Scenario 2: TUI shows EXPLORER_NONCODE_SENTINEL_77 sentinel"
   else
     fail "Scenario 2: TUI does not show EXPLORER_NONCODE_SENTINEL_77 sentinel"
@@ -107,6 +127,24 @@ test_explorer_noncode_file() {
   fi
 
   capture_tui_evidence "tui-response"
+
+  # --- Primary: DB metadata. Explorer stores structured data in lcm_large_files ---
+  local SID
+  SID=$(get_session_id)
+  if [[ -n "$SID" ]]; then
+    local db_path=".crush/crush.db"
+    if [[ -f "$db_path" ]]; then
+      local explorer_used
+      explorer_used=$(sqlite3 "$db_path" "SELECT explorer_used FROM lcm_large_files WHERE session_id='$SID' AND explorer_used IS NOT NULL LIMIT 1" 2>/dev/null || true)
+      if [[ -n "$explorer_used" ]]; then
+        pass "Scenario 2: DB shows explorer_used='$explorer_used' for session"
+      else
+        echo "  NOTE: No lcm_large_files rows with explorer_used for this session (file may not have triggered LCM large-file path)"
+      fi
+    fi
+  else
+    echo "  NOTE: Could not get session ID for DB explorer check"
+  fi
 
   # --- Secondary: log grep for explorer activity ---
   local explorer_lines

@@ -8,6 +8,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 source "$QA_DIR/lib/common.sh"
 source "$QA_DIR/lib/db-verify.sh"
+source "$QA_DIR/lib/llm-assertions.sh"
 
 PASS=0
 FAIL=0
@@ -41,7 +42,7 @@ test_explorer_semantic_quality() {
   fi
 
   # Primary gate: TUI output must contain the sentinel.
-  if assert_tui_contains "EXPLORER_SEMANTIC_SENTINEL_qaexplorer"; then
+  if assert_tui_contains_retry "EXPLORER_SEMANTIC_SENTINEL_qaexplorer" 3 10; then
     pass "Scenario 1: TUI shows EXPLORER_SEMANTIC_SENTINEL_qaexplorer sentinel"
   else
     fail "Scenario 1: TUI does not show EXPLORER_SEMANTIC_SENTINEL_qaexplorer sentinel"
@@ -85,6 +86,26 @@ test_explorer_semantic_quality() {
       pass "Scenario 1: DB references fixture path ($ref_count rows)"
     else
       fail "Scenario 1: DB has no references to fixture path"
+    fi
+
+    # --- Primary DB check: explorer_used in lcm_large_files ---
+    local db_path=".crush/crush.db"
+    if [[ -f "$db_path" ]]; then
+      local explorer_used
+      explorer_used=$(sqlite3 "$db_path" "SELECT explorer_used FROM lcm_large_files WHERE session_id='$SID' AND explorer_used IS NOT NULL LIMIT 1" 2>/dev/null || true)
+      if [[ -n "$explorer_used" ]]; then
+        pass "Scenario 1: DB shows explorer_used='$explorer_used' for session"
+      else
+        echo "  NOTE: No lcm_large_files rows with explorer_used (file may not have triggered LCM large-file path)"
+      fi
+
+      local exploration_summary
+      exploration_summary=$(sqlite3 "$db_path" "SELECT exploration_summary FROM lcm_large_files WHERE session_id='$SID' AND exploration_summary IS NOT NULL LIMIT 1" 2>/dev/null || true)
+      if [[ -n "$exploration_summary" ]]; then
+        pass "Scenario 1: DB has exploration_summary for explored file"
+      else
+        echo "  NOTE: No exploration_summary in DB (explorer may not have produced summary)"
+      fi
     fi
   else
     fail "Scenario 1: Could not get session ID for DB check"

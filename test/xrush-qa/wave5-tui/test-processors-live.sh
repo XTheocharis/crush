@@ -9,6 +9,7 @@ WAVE=5
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 source "$QA_DIR/lib/common.sh"
+source "$QA_DIR/lib/llm-assertions.sh"
 
 PASS=0
 FAIL=0
@@ -70,7 +71,7 @@ test_pii_redaction() {
     if [[ "$pii_log_matches" -ge 1 ]]; then
       pass "Scenario 1: Crush log contains PII redaction evidence ($pii_log_matches matches)"
     else
-      echo "  FAIL: No PII processor log entries found (processor did not trigger)" >&2; return 1
+      fail "Scenario 1: No PII processor log entries found (processor did not trigger)"
     fi
   fi
 
@@ -97,6 +98,9 @@ test_token_limiter() {
   start_crush_tui 5
 
   # Now patch the running config with a tiny token budget to force trimming.
+  # NOTE: options.processors.token_budget is not wired to TokenLimiter.Budget
+  # (hardcoded to 200000 in processor_ext.go). This tests config acceptance only.
+  # Actual token trimming requires a code change to read from per-processor config.
   local tmp_config
   tmp_config=$(mktemp)
   jq '.options.processors.token_budget = 100' "$PROJECT_DIR/crush.json" > "$tmp_config"
@@ -159,7 +163,7 @@ test_token_limiter() {
     if [[ "$tl_log_matches" -ge 1 ]]; then
       pass "Scenario 2: Crush log contains token limiter evidence ($tl_log_matches matches)"
     else
-      echo "  FAIL: No token limiter log entries found (limiter did not trigger)" >&2; return 1
+      fail "Scenario 2: No token limiter log entries found (limiter did not trigger)"
     fi
   fi
 
