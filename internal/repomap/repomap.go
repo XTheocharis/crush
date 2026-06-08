@@ -1075,12 +1075,13 @@ func rankedFilePaths(files []RankedFile) []string {
 }
 
 func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKey string, ranked []RankedFile, readOnlyPaths []string) {
-	if s == nil || s.db == nil || repoKey == "" || strings.TrimSpace(sessionID) == "" {
+	if s == nil || s.db == nil || s.rawDB == nil || repoKey == "" || strings.TrimSpace(sessionID) == "" {
 		slog.Warn("Repomap persistSessionArtifacts: skipped due to guard condition",
 			"session_id", sessionID,
 			"repo_key", repoKey,
 			"service_nil", s == nil,
 			"db_nil", s == nil || s.db == nil,
+			"rawDB_nil", s == nil || s.rawDB == nil,
 			"repo_key_empty", repoKey == "",
 			"session_id_empty", strings.TrimSpace(sessionID) == "",
 		)
@@ -1094,14 +1095,34 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 		"repo_key", repoKey,
 	)
 
-	if err := s.db.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
+	// Wrap delete + upsert in a transaction so rankings are never
+	// partially written if the loop fails partway through.
+	tx, err := s.rawDB.BeginTx(ctx, nil)
+	if err != nil {
+		slog.Warn("Repomap persistSessionArtifacts: failed to begin transaction",
+			"session_id", sessionID,
+			"error", err,
+		)
+		return
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		_ = tx.Rollback()
+	}()
+
+	qtx := s.db.WithTx(tx)
+
+	if err := qtx.DeleteSessionRankings(ctx, db.DeleteSessionRankingsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
 		slog.Warn("Repomap persistSessionArtifacts: failed to delete old rankings",
 			"session_id", sessionID,
 			"error", err,
 		)
 		return
 	}
-	if err := s.db.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
+	if err := qtx.DeleteSessionReadOnlyPaths(ctx, db.DeleteSessionReadOnlyPathsParams{RepoKey: repoKey, SessionID: sessionID}); err != nil {
 		slog.Warn("Repomap persistSessionArtifacts: failed to delete old read-only paths",
 			"session_id", sessionID,
 			"error", err,
@@ -1115,7 +1136,7 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 		if rel == "" {
 			continue
 		}
-		if err := s.db.UpsertSessionRanking(ctx, db.UpsertSessionRankingParams{
+		if err := qtx.UpsertSessionRanking(ctx, db.UpsertSessionRankingParams{
 			RepoKey:   repoKey,
 			SessionID: sessionID,
 			RelPath:   rel,
@@ -1132,7 +1153,7 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 	}
 
 	for _, p := range normalizeUniqueGraphPaths(readOnlyPaths) {
-		if err := s.db.UpsertSessionReadOnlyPath(ctx, db.UpsertSessionReadOnlyPathParams{
+		if err := qtx.UpsertSessionReadOnlyPath(ctx, db.UpsertSessionReadOnlyPathParams{
 			RepoKey:   repoKey,
 			SessionID: sessionID,
 			RelPath:   p,
@@ -1145,6 +1166,15 @@ func (s *Service) persistSessionArtifacts(ctx context.Context, sessionID, repoKe
 			return
 		}
 	}
+
+	if err := tx.Commit(); err != nil {
+		slog.Warn("Repomap persistSessionArtifacts: failed to commit transaction",
+			"session_id", sessionID,
+			"error", err,
+		)
+		return
+	}
+	committed = true
 
 	slog.Info("Repomap persistSessionArtifacts: completed",
 		"session_id", sessionID,

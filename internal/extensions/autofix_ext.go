@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -19,6 +20,8 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/ext"
 	"github.com/charmbracelet/crush/internal/filetracker"
+	"github.com/charmbracelet/crush/internal/lsp"
+	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
 // defaultMaxAutoFixIterations is the fallback when
@@ -28,6 +31,10 @@ const defaultMaxAutoFixIterations = 3
 // convergenceThreshold is the number of consecutive iterations with the same
 // error fingerprint that triggers a non-convergence stop.
 const convergenceThreshold = 2
+
+// maxAutoFixerIterations caps the number of AutoFixer.Run() iterations to
+// prevent autofix-diagnostic feedback loops.
+const maxAutoFixerIterations = 5
 
 // AutofixExtension wraps the auto-fix loop as a RunHookProvider.
 // It runs post-turn validation after each agent run to catch and auto-fix
@@ -39,20 +46,14 @@ type AutofixExtension struct {
 	active bool
 
 	filetracker  filetracker.Service
+	lspManager   *lsp.Manager
 	runStartTime time.Time
 
-	// loopEnabled caches the AutoFixLoopEnabled config value read during
-	// Init. When false (default), the extension runs the existing
-	// lint→format cycle. When true, the full lint→fix→test→reflect
-	// cycle is enabled via fullAutoFixCycle.
-	loopEnabled bool
-
-	// maxIterations caches MaxAutoFixRetries from config, falling back
-	// to defaultMaxAutoFixIterations when unset.
+	loopEnabled   bool
 	maxIterations int
+	autoCommit    bool
 
-	// autoCommit caches the AutoFix flag from config for auto-commit.
-	autoCommit bool
+	autofixEnabled bool
 }
 
 func (e *AutofixExtension) Name() string { return "autofix" }
@@ -61,10 +62,12 @@ func (e *AutofixExtension) Init(_ context.Context, host ext.HostContext) error {
 	e.host = host
 	e.active = true
 	e.filetracker = host.FileTracker()
+	e.lspManager = host.LSP()
 	cfg := host.Config()
 	e.loopEnabled = autofixLoopEnabled(cfg)
 	e.maxIterations = autofixMaxRetries(cfg)
 	e.autoCommit = autofixAutoCommit(cfg)
+	e.autofixEnabled = autofixIsEnabled(cfg)
 	return nil
 }
 
@@ -98,6 +101,17 @@ func autofixAutoCommit(cfg *config.Config) bool {
 	return cfg.Options.Validation.AutoFix
 }
 
+func autofixIsEnabled(cfg *config.Config) bool {
+	if cfg == nil || cfg.Options == nil || cfg.Options.Validation == nil {
+		return true
+	}
+	v := cfg.Options.Validation
+	if v.AutoFixLoopEnabled && !v.AutoFix {
+		return false
+	}
+	return true
+}
+
 func (e *AutofixExtension) Shutdown(_ context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -123,6 +137,8 @@ func (e *AutofixExtension) RunHooks() []ext.RunHook {
 //  2. When loopEnabled=false: lint → format → re-lint (max 3 iterations).
 //  3. When loopEnabled=true: full lint → fix → test → reflect cycle with
 //     convergence detection and rollback on exhaustion.
+//  4. When autofixEnabled: create AutoFixer with fix strategies and run
+//     alongside formatters, with cycle detection (max 5 iterations).
 func (e *AutofixExtension) onRunEnd(
 	ctx context.Context,
 	sessionID string,
@@ -155,70 +171,205 @@ func (e *AutofixExtension) onRunEnd(
 		return nil
 	}
 
+	if e.loopEnabled {
+		timeout := agent.DefaultLintTimeout
+		if cfg := e.host.Config(); cfg != nil && cfg.Options != nil && cfg.Options.AutofixTimeout > 0 {
+			timeout = cfg.Options.AutofixTimeout
+		}
+		linter := &agent.GoLinter{WorkingDir: workingDir, Timeout: timeout}
+		rollback := tools.NewRollbackManager()
+		e.fullAutoFixCycle(ctx, workingDir, filePaths, linter, rollback)
+		return nil
+	}
+
+	if e.autofixEnabled {
+		e.runAutoFixer(ctx, workingDir, filePaths)
+		return nil
+	}
+
+	return nil
+}
+
+// runAutoFixer creates an AutoFixer with fix strategies and runs it over
+// the given file paths. It wires the DiagnosticProvider to LSP diagnostics
+// when available, falling back to CLI linters (go vet, staticcheck).
+func (e *AutofixExtension) runAutoFixer(
+	ctx context.Context,
+	workingDir string,
+	filePaths []string,
+) {
+	strategies := []tools.FixStrategy{
+		&tools.MissingImportFixer{},
+		&tools.UnusedVarFixer{},
+		&tools.FormattingFixer{},
+	}
+
+	diagProvider := e.buildDiagnosticProvider(ctx, workingDir, filePaths)
+	contentProvider := func(filePath string) (string, error) {
+		data, err := os.ReadFile(filePath)
+		return string(data), err
+	}
+	contentSetter := func(filePath, content string) error {
+		return os.WriteFile(filePath, []byte(content), 0o644)
+	}
+
+	fixer := tools.NewAutoFixer(strategies, diagProvider, contentProvider, contentSetter)
+	fixer.MaxAttempts = maxAutoFixerIterations
+
+	rollback := tools.NewRollbackManager()
+	snapshot, err := rollback.Capture(filePaths)
+	if err != nil {
+		slog.Debug("Autofix extension: snapshot capture failed", "error", err)
+		return
+	}
+
+	appliedFormatters := runFormatters(ctx, workingDir)
+	if len(appliedFormatters) > 0 {
+		slog.Info("Autofix extension: applied formatters", "fixes", appliedFormatters)
+	}
+
+	var totalFixes int
+	for _, fp := range filePaths {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		result, fixErr := fixer.Run(ctx, fp)
+		if fixErr != nil {
+			slog.Debug("Autofix extension: fixer failed", "file", fp, "error", fixErr)
+			continue
+		}
+		totalFixes += result.FixesApplied
+		if len(result.RemainingErrors) > 0 {
+			slog.Warn("Autofix extension: remaining errors",
+				"file", fp,
+				"remaining", len(result.RemainingErrors),
+			)
+		}
+	}
+
+	if totalFixes > 0 {
+		slog.Info("Autofix extension: auto-fixer applied fixes", "total", totalFixes)
+	}
+
 	timeout := agent.DefaultLintTimeout
 	if cfg := e.host.Config(); cfg != nil && cfg.Options != nil && cfg.Options.AutofixTimeout > 0 {
 		timeout = cfg.Options.AutofixTimeout
 	}
 	linter := &agent.GoLinter{WorkingDir: workingDir, Timeout: timeout}
-	rollback := tools.NewRollbackManager()
-
-	if e.loopEnabled {
-		e.fullAutoFixCycle(ctx, workingDir, filePaths, linter, rollback)
-		return nil
-	}
-
-	snapshot, err := rollback.Capture(filePaths)
-	if err != nil {
-		slog.Debug("Autofix extension: snapshot capture failed", "error", err)
-		return nil
-	}
-
-	for attempt := 1; attempt <= e.maxIterations; attempt++ {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
-		lintErrors, lintErr := linter.RunLint(ctx, filePaths)
-		if lintErr != nil {
-			slog.Debug("Autofix extension: lint failed",
-				"attempt", attempt, "error", lintErr)
-			return nil
-		}
-
-		if len(lintErrors) == 0 {
-			slog.Info("Autofix extension: clean after attempt",
-				"attempt", attempt)
-			return nil
-		}
-
-		slog.Info("Autofix extension: lint errors detected",
-			"attempt", attempt, "errors", len(lintErrors))
-
-		appliedFixes := runFormatters(ctx, workingDir)
-		if len(appliedFixes) > 0 {
-			slog.Info("Autofix extension: applied formatters",
-				"attempt", attempt, "fixes", appliedFixes)
-		}
-	}
-
 	finalErrors, lintErr := linter.RunLint(ctx, filePaths)
 	if lintErr != nil {
 		slog.Debug("Autofix extension: final lint failed", "error", lintErr)
-		return nil
+		return
 	}
 
 	if len(finalErrors) > 0 {
-		slog.Warn("Autofix extension: rolling back, errors remain after max retries",
-			"max_retries", e.maxIterations,
+		slog.Warn("Autofix extension: rolling back, errors remain after autofix",
 			"remaining_errors", len(finalErrors))
 		if restoreErr := rollback.Restore(snapshot); restoreErr != nil {
 			slog.Error("Autofix extension: rollback failed", "error", restoreErr)
 		}
 	}
+}
 
-	return nil
+func (e *AutofixExtension) buildDiagnosticProvider(
+	ctx context.Context,
+	workingDir string,
+	filePaths []string,
+) tools.DiagnosticProvider {
+	if e.lspManager != nil {
+		return func(filePath string) []tools.DiagnosticInfo {
+			return e.collectLSPDiagnostics(filePath)
+		}
+	}
+
+	timeout := agent.DefaultLintTimeout
+	if cfg := e.host.Config(); cfg != nil && cfg.Options != nil && cfg.Options.AutofixTimeout > 0 {
+		timeout = cfg.Options.AutofixTimeout
+	}
+	linter := &agent.GoLinter{WorkingDir: workingDir, Timeout: timeout}
+
+	return func(filePath string) []tools.DiagnosticInfo {
+		lintErrors, err := linter.RunLint(ctx, []string{filePath})
+		if err != nil {
+			return nil
+		}
+		return lintErrorsToDiagnostics(lintErrors)
+	}
+}
+
+func (e *AutofixExtension) collectLSPDiagnostics(filePath string) []tools.DiagnosticInfo {
+	if e.lspManager == nil {
+		return nil
+	}
+	var infos []tools.DiagnosticInfo
+	for _, client := range e.lspManager.Clients().Seq2() {
+		for uri, diags := range client.GetDiagnostics() {
+			path, err := uri.Path()
+			if err != nil || path != filePath {
+				continue
+			}
+			for _, d := range diags {
+				infos = append(infos, tools.DiagnosticInfo{
+					FilePath:  path,
+					Line:      d.Range.Start.Line,
+					Character: d.Range.Start.Character,
+					Severity:  convertProtocolSeverity(d.Severity),
+					Message:   d.Message,
+				})
+			}
+		}
+	}
+	return infos
+}
+
+func convertProtocolSeverity(sev protocol.DiagnosticSeverity) tools.DiagnosticSeverity {
+	switch sev {
+	case protocol.SeverityError:
+		return tools.SeverityError
+	case protocol.SeverityWarning:
+		return tools.SeverityWarning
+	case protocol.SeverityInformation:
+		return tools.SeverityInfo
+	case protocol.SeverityHint:
+		return tools.SeverityHint
+	default:
+		return tools.SeverityInfo
+	}
+}
+
+func lintErrorsToDiagnostics(errors []string) []tools.DiagnosticInfo {
+	var diags []tools.DiagnosticInfo
+	for _, e := range errors {
+		m := lintErrorRe.FindStringSubmatch(e)
+		if len(m) < 4 {
+			continue
+		}
+		var line uint32
+		if n, err := fmt.Sscanf(m[2], "%d", new(int)); err == nil && n == 1 {
+			line = uint32(mustParseInt(m[2]))
+		}
+		diags = append(diags, tools.DiagnosticInfo{
+			FilePath: m[1],
+			Line:     line,
+			Severity: tools.SeverityError,
+			Message:  m[3],
+		})
+	}
+	return diags
+}
+
+func mustParseInt(s string) int {
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 func runFormatters(ctx context.Context, workingDir string) []string {

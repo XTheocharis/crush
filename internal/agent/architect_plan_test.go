@@ -377,8 +377,8 @@ func TestArchitectEditorTwoPhase_Feature(t *testing.T) {
 			Options: &config.Options{},
 		}),
 	}
-	require.False(t, withoutArch.shouldUseTwoPhase("add a new authentication endpoint"),
-		"feature prompt without ArchitectModel should not use two-phase")
+	require.True(t, withoutArch.shouldUseTwoPhase("add a new authentication endpoint"),
+		"feature prompt without explicit ArchitectModel should use two-phase (fallback to configured model)")
 }
 
 func TestArchitectEditorTwoPhase_Bug(t *testing.T) {
@@ -395,8 +395,8 @@ func TestArchitectEditorTwoPhase_Bug(t *testing.T) {
 		}),
 	}
 
-	require.False(t, c.shouldUseTwoPhase("fix the nil pointer crash in handler"),
-		"bug prompt should never use two-phase even with ArchitectModel")
+	require.True(t, c.shouldUseTwoPhase("fix the nil pointer crash in handler"),
+		"bug prompt should use two-phase with ArchitectModel (IsPlanningTask covers CategoryBug)")
 }
 
 func TestArchitectEditorTwoPhase_Fallback(t *testing.T) {
@@ -410,8 +410,8 @@ func TestArchitectEditorTwoPhase_Fallback(t *testing.T) {
 		}),
 	}
 
-	require.False(t, withArch.shouldUseTwoPhase("refactor the database layer"),
-		"refactor prompt should never use two-phase even with ArchitectModel")
+	require.True(t, withArch.shouldUseTwoPhase("refactor the database layer"),
+		"refactor prompt should use two-phase with ArchitectModel (IsPlanningTask covers CategoryRefactor)")
 	require.False(t, withArch.shouldUseTwoPhase("what is 2+2?"),
 		"unknown category should never use two-phase")
 
@@ -420,6 +420,18 @@ func TestArchitectEditorTwoPhase_Fallback(t *testing.T) {
 	}
 	require.False(t, nilOptions.shouldUseTwoPhase("add a new feature"),
 		"nil options should not use two-phase")
+
+	noArchModel := &coordinator{
+		cfg: config.NewTestStore(&config.Config{
+			Options: &config.Options{},
+		}),
+	}
+	require.True(t, noArchModel.shouldUseTwoPhase("add a new authentication endpoint"),
+		"feature prompt without explicit ArchitectModel should still use two-phase (fallback to configured model)")
+	require.True(t, noArchModel.shouldUseTwoPhase("fix the nil pointer crash in handler"),
+		"bug prompt without explicit ArchitectModel should still use two-phase (fallback to configured model)")
+	require.False(t, noArchModel.shouldUseTwoPhase("what is 2+2?"),
+		"unknown category should not use two-phase even with fallback")
 }
 
 func TestArchitectPlanExecutionPrompt(t *testing.T) {

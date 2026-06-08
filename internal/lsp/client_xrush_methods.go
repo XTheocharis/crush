@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
@@ -15,6 +16,11 @@ type xrushClientFields struct {
 	callLSP func(ctx context.Context, method string, params any, result any) error
 	// Optional healthCheck function for checking if the server is alive.
 	healthCheck func() bool
+
+	// Cached server capabilities (populated on first call to Capabilities).
+	cachedCaps    *protocol.ServerCapabilities
+	cachedCapsErr error
+	capsOnce      sync.Once
 }
 
 // errServerNotReady is returned when an LSP method is called while the server
@@ -353,3 +359,96 @@ func (c *Client) IsAlive() bool {
 }
 
 // [XRUSH: end]
+
+// Capabilities queries the LSP server for its capabilities and caches the
+// result. Subsequent calls return the cached value. Returns the cached error
+// if the initial query failed.
+func (c *Client) Capabilities(ctx context.Context) (*protocol.ServerCapabilities, error) {
+	if c.GetServerState() != StateReady {
+		return nil, errServerNotReady(c.name)
+	}
+	call, err := c.requireCallLSP()
+	if err != nil {
+		return nil, err
+	}
+
+	c.capsOnce.Do(func() {
+		var result any
+		if err := call(ctx, "server/capabilities", nil, &result); err != nil {
+			c.cachedCapsErr = fmt.Errorf("capabilities request failed: %w", err)
+			return
+		}
+		var caps protocol.ServerCapabilities
+		if err := remarshal(result, &caps); err != nil {
+			c.cachedCapsErr = fmt.Errorf("failed to parse capabilities: %w", err)
+			return
+		}
+		c.cachedCaps = &caps
+	})
+
+	return c.cachedCaps, c.cachedCapsErr
+}
+
+// TypeDefinition finds the type definition of the symbol at the given position.
+func (c *Client) TypeDefinition(ctx context.Context, filepath string, line, character int) ([]protocol.Location, error) {
+	if c.GetServerState() != StateReady {
+		return nil, errServerNotReady(c.name)
+	}
+	if err := c.OpenFileOnDemand(ctx, filepath); err != nil {
+		return nil, err
+	}
+	call, err := c.requireCallLSP()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	uri := string(protocol.URIFromPath(filepath))
+	params := protocol.TypeDefinitionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: protocol.DocumentURI(uri)},
+			Position:     protocol.Position{Line: uint32(line - 1), Character: uint32(character - 1)},
+		},
+	}
+
+	var result any
+	if err := call(ctx, "textDocument/typeDefinition", params, &result); err != nil {
+		return nil, fmt.Errorf("type definition request failed: %w", err)
+	}
+
+	return parseLocationArray(result)
+}
+
+// Implementation finds all implementations of the symbol at the given position.
+func (c *Client) Implementation(ctx context.Context, filepath string, line, character int) ([]protocol.Location, error) {
+	if c.GetServerState() != StateReady {
+		return nil, errServerNotReady(c.name)
+	}
+	if err := c.OpenFileOnDemand(ctx, filepath); err != nil {
+		return nil, err
+	}
+	call, err := c.requireCallLSP()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	uri := string(protocol.URIFromPath(filepath))
+	params := protocol.ImplementationParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: protocol.DocumentURI(uri)},
+			Position:     protocol.Position{Line: uint32(line - 1), Character: uint32(character - 1)},
+		},
+	}
+
+	var result any
+	if err := call(ctx, "textDocument/implementation", params, &result); err != nil {
+		return nil, fmt.Errorf("implementation request failed: %w", err)
+	}
+
+	return parseLocationArray(result)
+}

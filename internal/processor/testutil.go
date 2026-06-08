@@ -113,6 +113,11 @@ type CallRecord struct {
 }
 
 // MockLLMClient returns predetermined responses and tracks all calls.
+//
+// This is an interface-level mock for unit tests that need a simple
+// Complete(ctx, prompt, input) (string, error) stub. For HTTP-level
+// integration tests that need a real OpenAI-compatible server, use
+// internal/testutil.MockServer instead.
 type MockLLMClient struct {
 	Response string
 	Err      error

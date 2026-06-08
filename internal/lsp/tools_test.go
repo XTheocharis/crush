@@ -698,6 +698,15 @@ func TestToolMethods_CallNotConfigured(t *testing.T) {
 
 	_, wsErr := c.WorkspaceSymbol(t.Context(), "test")
 	require.Error(t, wsErr)
+
+	_, tdErr := c.TypeDefinition(t.Context(), filePath, 1, 1)
+	require.Error(t, tdErr)
+
+	_, implErr := c.Implementation(t.Context(), filePath, 1, 1)
+	require.Error(t, implErr)
+
+	_, capsErr := c.Capabilities(t.Context())
+	require.Error(t, capsErr)
 }
 
 // ---------------------------------------------------------------------------
@@ -902,5 +911,226 @@ func TestServerStateTransitions(t *testing.T) {
 		c.SetServerState(s)
 		require.Equal(t, s, c.GetServerState())
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
+func TestCapabilities_CachesResult(t *testing.T) {
+	t.Parallel()
+
+	var callCount int
+	c := newToolsTestClient(func(_ context.Context, method string, _ any, result any) error {
+		callCount++
+		require.Equal(t, "server/capabilities", method)
+		caps := map[string]any{
+			"definitionProvider": true,
+			"hoverProvider":      true,
+		}
+		raw, _ := json.Marshal(caps)
+		return json.Unmarshal(raw, result)
+	})
+
+	caps1, err := c.Capabilities(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, caps1)
+	require.Equal(t, 1, callCount)
+
+	caps2, err := c.Capabilities(t.Context())
+	require.NoError(t, err)
+	require.Same(t, caps1, caps2, "second call should return cached pointer")
+	require.Equal(t, 1, callCount, "callLSP should only be invoked once")
+}
+
+func TestCapabilities_ServerNotReady(t *testing.T) {
+	t.Parallel()
+
+	c := newToolsTestClient(nil)
+	c.SetServerState(StateError)
+
+	_, err := c.Capabilities(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not ready")
+}
+
+func TestCapabilities_CallLSPError(t *testing.T) {
+	t.Parallel()
+
+	c := newToolsTestClient(func(_ context.Context, _ string, _ any, _ any) error {
+		return fmt.Errorf("server error")
+	})
+
+	_, err := c.Capabilities(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "capabilities request failed")
+
+	_, err2 := c.Capabilities(t.Context())
+	require.Error(t, err2, "cached error should persist")
+}
+
+func TestCapabilities_NilResult(t *testing.T) {
+	t.Parallel()
+
+	c := newToolsTestClient(func(_ context.Context, _ string, _ any, _ any) error {
+		return nil
+	})
+
+	caps, err := c.Capabilities(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, caps)
+}
+
+// ---------------------------------------------------------------------------
+// TypeDefinition
+// ---------------------------------------------------------------------------
+
+func TestTypeDefinition_KnownSymbol(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "main.go")
+
+	var calledMethod string
+	c := newToolsTestClient(func(_ context.Context, method string, _ any, result any) error {
+		calledMethod = method
+		locs := []protocol.Location{
+			{
+				URI: protocol.DocumentURI("file:///workspace/types.go"),
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 20, Character: 5},
+					End:   protocol.Position{Line: 20, Character: 15},
+				},
+			},
+		}
+		raw, _ := json.Marshal(locs)
+		return json.Unmarshal(raw, result)
+	})
+	openFileInClient(c, filePath)
+
+	locs, err := c.TypeDefinition(t.Context(), filePath, 5, 8)
+	require.NoError(t, err)
+	require.Equal(t, "textDocument/typeDefinition", calledMethod)
+	require.Len(t, locs, 1)
+	require.Equal(t, protocol.DocumentURI("file:///workspace/types.go"), locs[0].URI)
+	require.Equal(t, uint32(20), locs[0].Range.Start.Line)
+}
+
+func TestTypeDefinition_EmptyResult(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "main.go")
+	c := newToolsTestClient(func(_ context.Context, _ string, _ any, _ any) error {
+		return nil
+	})
+	openFileInClient(c, filePath)
+
+	locs, err := c.TypeDefinition(t.Context(), filePath, 1, 1)
+	require.NoError(t, err)
+	require.Nil(t, locs)
+}
+
+func TestTypeDefinition_ServerNotReady(t *testing.T) {
+	t.Parallel()
+
+	c := newToolsTestClient(nil)
+	c.SetServerState(StateError)
+
+	_, err := c.TypeDefinition(t.Context(), "/tmp/test.go", 1, 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not ready")
+}
+
+func TestTypeDefinition_CallLSPError(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "main.go")
+	c := newToolsTestClient(func(_ context.Context, _ string, _ any, _ any) error {
+		return fmt.Errorf("server internal error")
+	})
+	openFileInClient(c, filePath)
+
+	_, err := c.TypeDefinition(t.Context(), filePath, 1, 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "type definition request failed")
+}
+
+// ---------------------------------------------------------------------------
+// Implementation
+// ---------------------------------------------------------------------------
+
+func TestImplementation_KnownSymbol(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "main.go")
+
+	var calledMethod string
+	c := newToolsTestClient(func(_ context.Context, method string, _ any, result any) error {
+		calledMethod = method
+		locs := []protocol.Location{
+			{
+				URI: protocol.DocumentURI("file:///workspace/impl_a.go"),
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 5, Character: 0},
+					End:   protocol.Position{Line: 5, Character: 10},
+				},
+			},
+			{
+				URI: protocol.DocumentURI("file:///workspace/impl_b.go"),
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 12, Character: 0},
+					End:   protocol.Position{Line: 12, Character: 10},
+				},
+			},
+		}
+		raw, _ := json.Marshal(locs)
+		return json.Unmarshal(raw, result)
+	})
+	openFileInClient(c, filePath)
+
+	locs, err := c.Implementation(t.Context(), filePath, 3, 6)
+	require.NoError(t, err)
+	require.Equal(t, "textDocument/implementation", calledMethod)
+	require.Len(t, locs, 2)
+	require.Equal(t, protocol.DocumentURI("file:///workspace/impl_a.go"), locs[0].URI)
+	require.Equal(t, protocol.DocumentURI("file:///workspace/impl_b.go"), locs[1].URI)
+}
+
+func TestImplementation_EmptyResult(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "main.go")
+	c := newToolsTestClient(func(_ context.Context, _ string, _ any, _ any) error {
+		return nil
+	})
+	openFileInClient(c, filePath)
+
+	locs, err := c.Implementation(t.Context(), filePath, 1, 1)
+	require.NoError(t, err)
+	require.Nil(t, locs)
+}
+
+func TestImplementation_ServerNotReady(t *testing.T) {
+	t.Parallel()
+
+	c := newToolsTestClient(nil)
+	c.SetServerState(StateStarting)
+
+	_, err := c.Implementation(t.Context(), "/tmp/test.go", 1, 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not ready")
+}
+
+func TestImplementation_CallLSPError(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "main.go")
+	c := newToolsTestClient(func(_ context.Context, _ string, _ any, _ any) error {
+		return fmt.Errorf("server internal error")
+	})
+	openFileInClient(c, filePath)
+
+	_, err := c.Implementation(t.Context(), filePath, 1, 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "implementation request failed")
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lcm"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,32 +64,11 @@ func (s *stubCoordinator) ResolveLCMModel(_ context.Context, selected config.Sel
 	return s.model, nil
 }
 
-type stubLanguageModel struct {
-	resp string
-}
-
-func (s *stubLanguageModel) Generate(_ context.Context, _ fantasy.Call) (*fantasy.Response, error) {
-	return &fantasy.Response{Content: fantasy.ResponseContent{fantasy.TextContent{Text: s.resp}}}, nil
-}
-
-func (s *stubLanguageModel) Stream(_ context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
-	return nil, nil
-}
-
-func (s *stubLanguageModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
-	return nil, nil
-}
-
-func (s *stubLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
-	return nil, nil
-}
-func (s *stubLanguageModel) Provider() string { return "test-provider" }
-func (s *stubLanguageModel) Model() string    { return "test-model" }
 
 func TestResolveLCMModelReturnsRealProvider(t *testing.T) {
 	t.Parallel()
 
-	lm := &stubLanguageModel{resp: "summarized content"}
+	lm := testutil.NewStubLM(testutil.WithResponse("summarized content"))
 	coord := &stubCoordinator{
 		model: agent.Model{
 			Model: lm,
@@ -196,7 +176,7 @@ func TestWireLCMLLMClientWithRealProvider(t *testing.T) {
 
 	setupExtensions(t.Context(), app, conn, q, nil, nil, store)
 
-	lm := &stubLanguageModel{resp: "lcm summary"}
+	lm := testutil.NewStubLM(testutil.WithResponse("lcm summary"))
 	coord := &stubCoordinator{
 		model: agent.Model{
 			Model:      lm,

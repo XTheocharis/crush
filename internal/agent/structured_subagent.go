@@ -28,6 +28,38 @@ func WithStructuredSubagentFactory(factory StructuredSubagentFactory) Coordinato
 	}
 }
 
+// WithCostTracker overrides the default CostTracker.
+func WithCostTracker(ct *CostTracker) CoordinatorOption {
+	return func(c *coordinator) {
+		c.costTracker = ct
+	}
+}
+
+// WithMetricsStore overrides the default MetricsStore.
+func WithMetricsStore(store *MetricsStore) CoordinatorOption {
+	return func(c *coordinator) {
+		c.metricsStore = store
+	}
+}
+
+// WithTierRouter wires a TierRouter for fallback-chain resolution during
+// LLM retries. When set, Run and runSubAgent wrap their calls with
+// ExecuteWithFallback.
+func WithTierRouter(r *TierRouter) CoordinatorOption {
+	return func(c *coordinator) {
+		c.tierRouter = r
+	}
+}
+
+// WithTieredModelProvider wires a TieredModelProvider for per-tier model
+// selection. When set, the coordinator resolves different models per step
+// based on task complexity. When nil, the single-model path is used.
+func WithTieredModelProvider(p *TieredModelProvider) CoordinatorOption {
+	return func(c *coordinator) {
+		c.tieredProvider = p
+	}
+}
+
 type structuredSubagent struct {
 	coordinator     *coordinator
 	parentSessionID string
@@ -43,6 +75,8 @@ func NewStructuredSubagentFactory(c *coordinator) StructuredSubagentFactory {
 	return &coordinatorFactory{coordinator: c}
 }
 
+// coordinatorFactory creates StructuredSubagent instances backed by a single
+// coordinator. It implements StructuredSubagentFactory.
 type coordinatorFactory struct {
 	coordinator *coordinator
 }
@@ -74,6 +108,7 @@ func (f *coordinatorFactory) newSubagent(ctx context.Context, parentSessionID st
 	}, nil
 }
 
+// Capabilities returns the names of all tools available to this subagent.
 func (s *structuredSubagent) Capabilities() []string {
 	var names []string
 	for _, t := range s.allTools {
@@ -82,14 +117,19 @@ func (s *structuredSubagent) Capabilities() []string {
 	return names
 }
 
+// Depth returns the current recursion depth of this subagent.
 func (s *structuredSubagent) Depth() int {
 	return s.depth
 }
 
+// MaxDepth returns the maximum allowed recursion depth for nested subagents.
 func (s *structuredSubagent) MaxDepth() int {
 	return s.maxDepth
 }
 
+// Execute runs the subagent with the given structured request. It enforces
+// recursion depth limits, applies optional timeouts, filters the tool set
+// when req.Tools is non-empty, and returns a typed response.
 func (s *structuredSubagent) Execute(ctx context.Context, req StructuredRequest) (StructuredResponse, error) {
 	if req.Task == "" {
 		return StructuredResponse{Success: false, Error: "task is required"}, nil

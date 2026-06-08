@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,7 +18,9 @@ import (
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/eval"
 	"github.com/charmbracelet/crush/internal/eval/scorers/judge"
+	"github.com/charmbracelet/crush/internal/eval/scorers/mastra"
 	"github.com/charmbracelet/crush/internal/eval/scorers/metric"
+	"github.com/charmbracelet/crush/internal/message"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +38,7 @@ var evalFlags struct {
 	scorer  string
 	input   string
 	output  string
+	capture string
 }
 
 func init() {
@@ -42,6 +46,7 @@ func init() {
 	evalCmd.Flags().StringVar(&evalFlags.scorer, "scorer", "", "Scorer to run (e.g., build_success, code_quality, correctness)")
 	evalCmd.Flags().StringVar(&evalFlags.input, "input", ".", "Input file or directory")
 	evalCmd.Flags().StringVar(&evalFlags.output, "output", "", "Output report file (JSON)")
+	evalCmd.Flags().StringVar(&evalFlags.capture, "capture", "", "Capture a session into eval dataset format (session ID)")
 }
 
 func runEval(cmd *cobra.Command, _ []string) error {
@@ -50,6 +55,10 @@ func runEval(cmd *cobra.Command, _ []string) error {
 		ctx = context.Background()
 	}
 	out := cmd.OutOrStdout()
+
+	if evalFlags.capture != "" {
+		return runCapture(ctx, cmd, out)
+	}
 
 	if evalFlags.scorer == "" {
 		fmt.Fprintln(out, "Available scorers:")
@@ -286,5 +295,58 @@ func registerScorers(harness *eval.EvalHarness, llmClient judge.LLMClient) *eval
 	harness.Register(metric.NewCoverageScoreScorer(threshold))
 	harness.Register(metric.NewTypeCheckScoreScorer(20, threshold))
 
+	harness.Register(mastra.NewMastraScorer("MastraAnswerRelevancy", llmClient, threshold, "answer_relevancy",
+		"Evaluate how relevant the response is to the user's query.\nConsider:\n- Does the response directly address the question?\n- Is there unnecessary or tangential information?\n- Would the answer satisfy the user's intent?"))
+	harness.Register(mastra.NewMastraScorer("MastraFaithfulness", llmClient, threshold, "faithfulness",
+		"Evaluate whether the response is faithful to the provided context.\nConsider:\n- Does the response contain information not supported by the context?\n- Are claims backed by evidence?\n- Is there any fabrication or unsupported inference?"))
+
 	return harness
+}
+
+func runCapture(ctx context.Context, cmd *cobra.Command, out io.Writer) error {
+	cwd, err := ResolveCwd(cmd)
+	if err != nil {
+		return fmt.Errorf("resolve working directory: %w", err)
+	}
+
+	dataDir, _ := cmd.Flags().GetString("data-dir")
+	cfgStore, err := config.Init(cwd, dataDir, false)
+	if err != nil {
+		return fmt.Errorf("failed to initialize config: %w", err)
+	}
+	if dataDir == "" {
+		dataDir = cfgStore.Config().Options.DataDirectory
+	}
+
+	conn, err := db.Connect(ctx, dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to connect database: %w", err)
+	}
+	defer db.Release(dataDir)
+
+	queries := db.New(conn)
+	msgService := message.NewService(queries)
+
+	sessionID := evalFlags.capture
+	msgs, err := msgService.List(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to list messages for session %s: %w", sessionID, err)
+	}
+
+	dataset, err := eval.CaptureSession(ctx, sessionID, msgs)
+	if err != nil {
+		return fmt.Errorf("failed to capture session: %w", err)
+	}
+
+	outputPath := evalFlags.output
+	if outputPath == "" {
+		outputPath = fmt.Sprintf("capture_%s.json", sessionID)
+	}
+
+	if err := eval.WriteCaptureDataset(dataset, outputPath); err != nil {
+		return fmt.Errorf("failed to write dataset: %w", err)
+	}
+
+	fmt.Fprintf(out, "Captured %d examples from session %s to %s\n", len(dataset.Examples), sessionID, outputPath)
+	return nil
 }

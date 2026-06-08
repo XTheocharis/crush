@@ -68,6 +68,14 @@ func (e *RepomapExtension) buildRepomapTools(ctx context.Context, host ext.HostC
 			SessionID:    sessionID,
 			ForceRefresh: true,
 		}
+		// When no chat-derived personalization is available, fall back to
+		// files the agent has read in this session so PageRank still gets a
+		// meaningful personalization vector.
+		if ft := host.FileTracker(); ft != nil {
+			if files, err := ft.ListReadFiles(ctx, sessionID); err == nil && len(files) > 0 {
+				opts.ChatFiles = files
+			}
+		}
 		svc.RefreshAsync(sessionID, opts)
 		return nil
 	}

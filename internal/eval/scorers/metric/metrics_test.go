@@ -2,6 +2,7 @@ package metric
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/eval"
@@ -31,24 +32,48 @@ func TestTestPassRatePartial(t *testing.T) {
 	require.False(t, result.Passed)
 }
 
-func TestTestPassRateNil(t *testing.T) {
+func TestTestPassRateNilFallsBackToContentAnalysis(t *testing.T) {
 	t.Parallel()
 	s := NewTestPassRateScorer(0.8)
 	result, err := s.Score(context.Background(), &eval.EvalInput{})
 	require.NoError(t, err)
-	require.Equal(t, 1.0, result.Score)
-	require.True(t, result.Passed)
+	require.Equal(t, 0.0, result.Score)
+	require.False(t, result.Passed)
 }
 
-func TestTestPassRateZeroTests(t *testing.T) {
+func TestTestPassRateZeroTestsFallsBackToContent(t *testing.T) {
 	t.Parallel()
 	s := NewTestPassRateScorer(0.8)
 	result, err := s.Score(context.Background(), &eval.EvalInput{
 		TestResults: &eval.TestResult{Total: 0, Passed: 0},
 	})
 	require.NoError(t, err)
-	require.Equal(t, 1.0, result.Score)
-	require.True(t, result.Passed)
+	require.Equal(t, 0.0, result.Score)
+	require.False(t, result.Passed)
+}
+
+func TestTestPassRateContentAnalysis(t *testing.T) {
+	t.Parallel()
+	s := NewTestPassRateScorer(0.8)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{
+			"foo_test.go": "package foo\nimport \"testing\"\nfunc TestBar(t *testing.T) {\nrequire.True(t, true)\n}",
+		},
+	})
+	require.NoError(t, err)
+	require.Greater(t, result.Score, 0.0)
+	require.Equal(t, "content_analysis", result.Details["source"])
+}
+
+func TestTestPassRateNoTestPatterns(t *testing.T) {
+	t.Parallel()
+	s := NewTestPassRateScorer(0.8)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{"main.go": "package main\nfunc main() {}"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0.0, result.Score)
+	require.Equal(t, "none", result.Details["source"])
 }
 
 func TestTestPassRateNameAndType(t *testing.T) {
@@ -62,7 +87,7 @@ func TestLintScoreNoWarnings(t *testing.T) {
 	t.Parallel()
 	s := NewLintScoreScorer(10, 0.8)
 	result, err := s.Score(context.Background(), &eval.EvalInput{
-		Edits: []eval.FileEdit{{After: "package main\nfunc main() {}\n"}},
+		Edits: []eval.FileEdit{{Path: "main.go", After: "package main\nfunc main() {}\n"}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1.0, result.Score)
@@ -73,10 +98,47 @@ func TestLintScoreWithWarnings(t *testing.T) {
 	t.Parallel()
 	s := NewLintScoreScorer(10, 0.8)
 	result, err := s.Score(context.Background(), &eval.EvalInput{
-		Edits: []eval.FileEdit{{After: "\t\tindented\twith\ttabs"}},
+		Edits: []eval.FileEdit{{Path: "main.go", After: "\t\tindented\twith\ttabs"}},
 	})
 	require.NoError(t, err)
 	require.Less(t, result.Score, 1.0)
+}
+
+func TestLintScoreLongLines(t *testing.T) {
+	t.Parallel()
+	s := NewLintScoreScorer(10, 0.8)
+	longLine := strings.Repeat("a", 150)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{"a.go": longLine + "\n"},
+	})
+	require.NoError(t, err)
+	require.Less(t, result.Score, 1.0)
+	breakdown := result.Details["breakdown"].(map[string]int)
+	require.Greater(t, breakdown["long_lines"], 0)
+}
+
+func TestLintScoreTrailingWhitespace(t *testing.T) {
+	t.Parallel()
+	s := NewLintScoreScorer(10, 0.8)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{"a.go": "line with trailing space   \n"},
+	})
+	require.NoError(t, err)
+	require.Less(t, result.Score, 1.0)
+	breakdown := result.Details["breakdown"].(map[string]int)
+	require.Greater(t, breakdown["trailing_whitespace"], 0)
+}
+
+func TestLintScoreMissingNewline(t *testing.T) {
+	t.Parallel()
+	s := NewLintScoreScorer(10, 0.8)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{"a.go": "no trailing newline"},
+	})
+	require.NoError(t, err)
+	require.Less(t, result.Score, 1.0)
+	breakdown := result.Details["breakdown"].(map[string]int)
+	require.Greater(t, breakdown["missing_newline"], 0)
 }
 
 func TestLintScoreNoEdits(t *testing.T) {
@@ -92,7 +154,7 @@ func TestLintScoreMaxZero(t *testing.T) {
 	t.Parallel()
 	s := NewLintScoreScorer(0, 0.8)
 	result, err := s.Score(context.Background(), &eval.EvalInput{
-		Edits: []eval.FileEdit{{After: "code"}},
+		Edits: []eval.FileEdit{{Path: "a.go", After: "code"}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 0.0, result.Score)
@@ -110,22 +172,50 @@ func TestBuildSuccess(t *testing.T) {
 	t.Parallel()
 	s := NewBuildSuccessScorer()
 	result, err := s.Score(context.Background(), &eval.EvalInput{
-		Edits: []eval.FileEdit{{After: "package main"}},
+		Edits: []eval.FileEdit{{Path: "main.go", After: "package main\nfunc main() {}"}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1.0, result.Score)
 	require.True(t, result.Passed)
+	require.Equal(t, 1, result.Details["parsed_ok"])
 }
 
 func TestBuildSuccessFromFiles(t *testing.T) {
 	t.Parallel()
 	s := NewBuildSuccessScorer()
 	result, err := s.Score(context.Background(), &eval.EvalInput{
-		Files: map[string]string{"main.go": "package main"},
+		Files: map[string]string{"main.go": "package main\nfunc main() {}"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1.0, result.Score)
 	require.True(t, result.Passed)
+}
+
+func TestBuildSuccessSyntaxError(t *testing.T) {
+	t.Parallel()
+	s := NewBuildSuccessScorer()
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{"bad.go": "package main\nfunc main( {"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0.0, result.Score)
+	require.False(t, result.Passed)
+	require.Equal(t, 1, result.Details["parse_errors"])
+}
+
+func TestBuildSuccessMixed(t *testing.T) {
+	t.Parallel()
+	s := NewBuildSuccessScorer()
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{
+			"good.go": "package main\nfunc main() {}",
+			"bad.go":  "func main( {",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0.5, result.Score)
+	require.Equal(t, 1, result.Details["parsed_ok"])
+	require.Equal(t, 1, result.Details["parse_errors"])
 }
 
 func TestBuildSuccessEmpty(t *testing.T) {
@@ -135,6 +225,16 @@ func TestBuildSuccessEmpty(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0.0, result.Score)
 	require.False(t, result.Passed)
+}
+
+func TestBuildSuccessNonGoFiles(t *testing.T) {
+	t.Parallel()
+	s := NewBuildSuccessScorer()
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{"readme.md": "# Hello"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0.0, result.Score)
 }
 
 func TestBuildSuccessNameAndType(t *testing.T) {
@@ -321,6 +421,58 @@ func TestSyntaxBrackets(t *testing.T) {
 	require.False(t, isBracketBalanced("}"))
 }
 
+func TestSyntaxBlockComments(t *testing.T) {
+	t.Parallel()
+	s := NewSyntaxValidityScorer(1.0)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{
+			"a.go": "package main\n/* comment */\nfunc main() {}",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1.0, result.Score)
+	require.True(t, result.Passed)
+}
+
+func TestSyntaxUnclosedBlockComment(t *testing.T) {
+	t.Parallel()
+	s := NewSyntaxValidityScorer(1.0)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{
+			"a.go": "package main\n/* unclosed comment\nfunc main() {}",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0.0, result.Score)
+	require.False(t, result.Passed)
+}
+
+func TestSyntaxLineCommentsIgnored(t *testing.T) {
+	t.Parallel()
+	s := NewSyntaxValidityScorer(1.0)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{
+			"a.go": "package main\n// comment with { brackets (\nfunc main() {}",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1.0, result.Score)
+	require.True(t, result.Passed)
+}
+
+func TestSyntaxRawStrings(t *testing.T) {
+	t.Parallel()
+	s := NewSyntaxValidityScorer(1.0)
+	result, err := s.Score(context.Background(), &eval.EvalInput{
+		Files: map[string]string{
+			"a.go": "package main\nvar s = `raw string with { brackets`\nfunc main() {}",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1.0, result.Score)
+	require.True(t, result.Passed)
+}
+
 func TestSyntaxNameAndType(t *testing.T) {
 	t.Parallel()
 	s := NewSyntaxValidityScorer(1.0)
@@ -427,7 +579,6 @@ func TestAllScorersInHarness(t *testing.T) {
 			"main.go": "package main\nfunc main() {}",
 		},
 	}
-
 	report, err := h.Run(context.Background(), input)
 	require.NoError(t, err)
 	require.Len(t, report.Results, 7)

@@ -205,6 +205,9 @@ func TestSnapshotSeqNotZero(t *testing.T) {
 	err = hooks[0].OnStepFinish(ctx, sess.ID, fantasy.StepResult{})
 	require.NoError(t, err)
 
+	require.Eventually(t, func() bool {
+		return wrappedSvc.captureCalled.Load()
+	}, 2*time.Second, 10*time.Millisecond, "CaptureSnapshot should have been called asynchronously")
 	require.Greater(t, capturedSeq, 0, "snapshot should capture seq > 0 when the latest user message has seq > 0")
 }
 
@@ -249,15 +252,66 @@ func TestSnapshotSeqFallbackToZero(t *testing.T) {
 	err = hooks[0].OnStepFinish(ctx, sess.ID, fantasy.StepResult{})
 	require.NoError(t, err)
 
+	require.Eventually(t, func() bool {
+		return wrappedSvc.captureCalled.Load()
+	}, 2*time.Second, 10*time.Millisecond, "CaptureSnapshot should have been called asynchronously")
 	require.Equal(t, 0, capturedSeq, "snapshot should fall back to seq=0 when no user messages exist")
+}
+
+func TestSnapshotPersistsAfterContextCancellation(t *testing.T) {
+	ext.ResetForTesting()
+
+	workingDir := t.TempDir()
+	var captured atomic.Bool
+	mockSvc := &ctxCancelCapturingService{captured: &captured}
+
+	extHost := ext.NewExtensionHost(ext.HostDeps{
+		WorkingDir:    workingDir,
+		RewindService: mockSvc,
+		Messages:      &mockMessageService{},
+	})
+
+	rewindExt := &RewindExtension{}
+	require.NoError(t, extHost.Register(rewindExt))
+	require.NoError(t, extHost.Bootstrap(context.Background()))
+	t.Cleanup(func() { _ = extHost.Shutdown(context.Background()) })
+
+	hooks := rewindExt.StepHooks()
+	require.Len(t, hooks, 1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := hooks[0].OnStepFinish(ctx, "test-session", fantasy.StepResult{})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return captured.Load()
+	}, 2*time.Second, 10*time.Millisecond, "CaptureSnapshot must complete even after parent context is cancelled")
+}
+
+type ctxCancelCapturingService struct {
+	rewind.Service
+	captured *atomic.Bool
+}
+
+func (s *ctxCancelCapturingService) CaptureSnapshot(_ context.Context, _ string, _ int) error {
+	s.captured.Store(true)
+	return nil
+}
+
+func (s *ctxCancelCapturingService) CleanupOldSnapshots(_ context.Context, _ string) error {
+	return nil
 }
 
 type seqCapturingService struct {
 	rewind.Service
-	capturedSeq *int
+	capturedSeq   *int
+	captureCalled atomic.Bool
 }
 
-func (s *seqCapturingService) CaptureSnapshot(ctx context.Context, sessionID string, userMessageSeq int) error {
+func (s *seqCapturingService) CaptureSnapshot(_ context.Context, _ string, userMessageSeq int) error {
+	s.captureCalled.Store(true)
 	*s.capturedSeq = userMessageSeq
 	return nil
 }

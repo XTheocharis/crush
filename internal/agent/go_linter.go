@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// DefaultLintTimeout is the default timeout for lint and test operations.
 const DefaultLintTimeout = 60 * time.Second
 
 // lintLineRe matches output in the form "file:line:col: message" or

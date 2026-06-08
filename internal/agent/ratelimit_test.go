@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -136,16 +137,16 @@ func TestRateLimitedModel_Propagates429(t *testing.T) {
 	t.Parallel()
 
 	coord := NewRateLimitCoordinator()
-	inner := &stubLanguageModel{
-		generateFunc: func(
+	inner := testutil.NewStubLM(
+		testutil.WithGenerateFunc(func(
 			_ context.Context, _ fantasy.Call,
 		) (*fantasy.Response, error) {
 			return nil, &fantasy.ProviderError{
 				StatusCode:      http.StatusTooManyRequests,
 				ResponseHeaders: map[string]string{"retry-after-ms": "5000"},
 			}
-		},
-	}
+		}),
+	)
 
 	m := newRateLimitedModel(inner, coord, "openai")
 	_, err := m.Generate(context.Background(), fantasy.Call{})
@@ -162,8 +163,8 @@ func TestRateLimitedModel_ConcurrentBackoffCoordination(t *testing.T) {
 	coord := NewRateLimitCoordinator()
 	var calls atomic.Int32
 
-	inner := &stubLanguageModel{
-		generateFunc: func(
+	inner := testutil.NewStubLM(
+		testutil.WithGenerateFunc(func(
 			_ context.Context, _ fantasy.Call,
 		) (*fantasy.Response, error) {
 			count := calls.Add(1)
@@ -174,8 +175,8 @@ func TestRateLimitedModel_ConcurrentBackoffCoordination(t *testing.T) {
 				}
 			}
 			return &fantasy.Response{}, nil
-		},
-	}
+		}),
+	)
 
 	m := newRateLimitedModel(inner, coord, "openai")
 
@@ -198,63 +199,12 @@ func TestRateLimitedModel_ConcurrentBackoffCoordination(t *testing.T) {
 	_ = secondErr
 }
 
-type stubLanguageModel struct {
-	generateFunc func(context.Context, fantasy.Call) (*fantasy.Response, error)
-	streamFunc   func(context.Context, fantasy.Call) (fantasy.StreamResponse, error)
-	genObjFunc   func(
-		context.Context, fantasy.ObjectCall,
-	) (*fantasy.ObjectResponse, error)
-	streamObjFunc func(
-		context.Context, fantasy.ObjectCall,
-	) (fantasy.ObjectStreamResponse, error)
-	provider string
-	model    string
-}
-
-func (s *stubLanguageModel) Generate(
-	ctx context.Context, call fantasy.Call,
-) (*fantasy.Response, error) {
-	if s.generateFunc != nil {
-		return s.generateFunc(ctx, call)
-	}
-	return &fantasy.Response{}, nil
-}
-
-func (s *stubLanguageModel) Stream(
-	ctx context.Context, call fantasy.Call,
-) (fantasy.StreamResponse, error) {
-	if s.streamFunc != nil {
-		return s.streamFunc(ctx, call)
-	}
-	return nil, nil
-}
-
-func (s *stubLanguageModel) GenerateObject(
-	ctx context.Context, call fantasy.ObjectCall,
-) (*fantasy.ObjectResponse, error) {
-	if s.genObjFunc != nil {
-		return s.genObjFunc(ctx, call)
-	}
-	return &fantasy.ObjectResponse{}, nil
-}
-
-func (s *stubLanguageModel) StreamObject(
-	ctx context.Context, call fantasy.ObjectCall,
-) (fantasy.ObjectStreamResponse, error) {
-	if s.streamObjFunc != nil {
-		return s.streamObjFunc(ctx, call)
-	}
-	return nil, nil
-}
-
-func (s *stubLanguageModel) Provider() string { return s.provider }
-func (s *stubLanguageModel) Model() string    { return s.model }
 
 func TestRateLimitCoordinatorWiredInBuildModels(t *testing.T) {
 	t.Parallel()
 
 	coord := NewRateLimitCoordinator()
-	inner := &stubLanguageModel{provider: "openai", model: "gpt-4"}
+	inner := testutil.NewStubLM(testutil.WithProvider("openai"), testutil.WithModel("gpt-4"))
 
 	wrapped := newRateLimitedModel(inner, coord, "openai")
 
@@ -276,8 +226,8 @@ func TestRateLimitCoordinatorBackoffShared(t *testing.T) {
 
 	coord := NewRateLimitCoordinator()
 
-	model1 := newRateLimitedModel(&stubLanguageModel{provider: "openai"}, coord, "openai")
-	model2 := newRateLimitedModel(&stubLanguageModel{provider: "openai"}, coord, "openai")
+	model1 := newRateLimitedModel(testutil.NewStubLM(testutil.WithProvider("openai")), coord, "openai")
+	model2 := newRateLimitedModel(testutil.NewStubLM(testutil.WithProvider("openai")), coord, "openai")
 
 	model1.Generate(context.Background(), fantasy.Call{})
 

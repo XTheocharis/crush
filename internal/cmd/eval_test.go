@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/eval"
 	"github.com/charmbracelet/crush/internal/eval/scorers/judge"
+	"github.com/charmbracelet/crush/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -123,7 +123,7 @@ func TestEvalCLIRegistration(t *testing.T) {
 	harness := registerScorers(eval.NewEvalHarness(), nil)
 
 	names := harness.Scorers()
-	require.Len(t, names, 19, "expected 19 scorers, got %d: %v", len(names), names)
+	require.Len(t, names, 21, "expected 21 scorers, got %d: %v", len(names), names)
 
 	expected := []string{
 		"code_quality",
@@ -145,6 +145,8 @@ func TestEvalCLIRegistration(t *testing.T) {
 		"edit_distance",
 		"coverage_score",
 		"typecheck_score",
+		"MastraAnswerRelevancy",
+		"MastraFaithfulness",
 	}
 
 	sort.Strings(expected)
@@ -186,14 +188,14 @@ func TestJudgeScorerUsesRealClient(t *testing.T) {
 	t.Run("fantasyJudgeClient implements judge.LLMClient", func(t *testing.T) {
 		t.Parallel()
 
-		lm := &stubLanguageModel{response: `{"score": 0.9, "explanation": "good"}`}
+		lm := testutil.NewStubLM(testutil.WithResponse(`{"score": 0.9, "explanation": "good"}`))
 		client := &fantasyJudgeClient{lm: lm}
 
 		var _ judge.LLMClient = client
 		resp, err := client.Complete(context.Background(), "evaluate this")
 		require.NoError(t, err)
 		require.Contains(t, resp, "0.9")
-		require.Equal(t, 1, lm.callCount(), "expected one Generate call")
+		require.Equal(t, int64(1), lm.CallCount(), "expected one Generate call")
 	})
 
 	t.Run("registerScorers uses provided client not noop", func(t *testing.T) {
@@ -217,13 +219,13 @@ func TestJudgeScorerUsesRealClient(t *testing.T) {
 			}
 		}
 		require.Equal(t, 12, judgeCallCount, "all 12 judge scorers should have been called")
-		require.Equal(t, int64(12), tracking.callCount(), "tracking client should have been called 12 times")
+		require.Equal(t, int64(14), tracking.callCount(), "tracking client should have been called 14 times (12 judge + 2 Mastra)")
 	})
 
 	t.Run("registerScorers defaults to noop when client is nil", func(t *testing.T) {
 		harness := registerScorers(eval.NewEvalHarness(), nil)
 		names := harness.Scorers()
-		require.Len(t, names, 19, "should register all scorers even with nil client")
+		require.Len(t, names, 21, "should register all scorers even with nil client")
 	})
 }
 
@@ -239,36 +241,6 @@ func (c *trackingLLMClient) Complete(_ context.Context, _ string) (string, error
 
 func (c *trackingLLMClient) callCount() int64 { return c.count.Load() }
 
-type stubLanguageModel struct {
-	response string
-	count    atomic.Int64
-}
-
-func (m *stubLanguageModel) Generate(_ context.Context, _ fantasy.Call) (*fantasy.Response, error) {
-	m.count.Add(1)
-	return &fantasy.Response{
-		Content: fantasy.ResponseContent{
-			fantasy.TextContent{Text: m.response},
-		},
-	}, nil
-}
-
-func (m *stubLanguageModel) callCount() int { return int(m.count.Load()) }
-
-func (m *stubLanguageModel) Stream(_ context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
-	return nil, nil
-}
-
-func (m *stubLanguageModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
-	return nil, nil
-}
-
-func (m *stubLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
-	return nil, nil
-}
-
-func (m *stubLanguageModel) Provider() string { return "stub" }
-func (m *stubLanguageModel) Model() string    { return "stub" }
 
 func TestEvalRunnerStorage_NonNilWithDB(t *testing.T) {
 	t.Parallel()

@@ -72,29 +72,45 @@ var copilotResponsesModels = map[string]bool{
 	"gpt-5-mini":    true,
 }
 
+// Coordinator manages named agents (e.g. "coder", "task") and wires together
+// hooks, permissions, LSP, MCP, skills, extensions, and the LCM subsystem.
+// It owns the session lifecycle, model resolution with fallback, and cost
+// tracking across all agent interactions.
 type Coordinator interface {
-	// INFO: (kujtim) this is not used yet we will use this when we have multiple agents
-	// SetMainAgent(string)
+	// Run starts a new agent turn for the given session with the user prompt
+	// and optional file attachments. Returns the agent result or an error.
 	Run(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error)
+	// Cancel aborts the running turn for the given session.
 	Cancel(sessionID string)
+	// CancelAll aborts all running agent turns across every session.
 	CancelAll()
+	// IsSessionBusy reports whether an agent turn is running for the session.
 	IsSessionBusy(sessionID string) bool
+	// IsBusy reports whether any agent turn is running across all sessions.
 	IsBusy() bool
+	// QueuedPrompts returns the number of prompts queued for the session.
 	QueuedPrompts(sessionID string) int
+	// QueuedPromptsList returns the text of all queued prompts.
 	QueuedPromptsList(sessionID string) []string
+	// ClearQueue discards all queued prompts for the session.
 	ClearQueue(sessionID string)
+	// Summarize triggers LCM summarization for the given session.
 	Summarize(context.Context, string) error
+	// Model returns the currently active model.
 	Model() Model
+	// UpdateModels refreshes the model list from provider config.
 	UpdateModels(ctx context.Context) error
-	// XRUSH: session recovery
+	// RecoverSession recovers from an interrupted streaming response.
 	RecoverSession(ctx context.Context, sessionID string) error
-	// XRUSH: repomap refresh from command palette
+	// RepoMapRefresh forces regeneration of the repository map cache.
 	RepoMapRefresh(ctx context.Context, sessionID string) error
-	// XRUSH: restore checkpointed agent config after compaction
+	// RestoreAgentConfig restores checkpointed agent configuration after
+	// LCM compaction.
 	RestoreAgentConfig(ctx context.Context, payload map[string][]string) error
-	// XRUSH: expose structured subagent factory for swarm wiring
+	// StructuredSubagentFactory returns the factory for creating typed-output
+	// forked child agents.
 	StructuredSubagentFactory() StructuredSubagentFactory
-	// XRUSH: resolve a real LanguageModel for LCM summarization
+	// ResolveLCMModel resolves a LanguageModel for LCM summarization.
 	ResolveLCMModel(ctx context.Context, selected config.SelectedModel, providerCfg config.ProviderConfig) (Model, error)
 }
 
@@ -128,9 +144,27 @@ type coordinator struct {
 	// runtime > project YAML > builtin defaults.
 	configLoader *AgentConfigLoader
 
+	// costTracker tracks cumulative LLM spending for cost-aware routing.
+	costTracker *CostTracker
+
+	// metricsStore records per-model performance statistics.
+	metricsStore *MetricsStore
+
+	// tierRouter resolves fallback chains for ExecuteWithFallback wrapping.
+	// When nil, no fallback is attempted and LLM errors propagate directly.
+	tierRouter *TierRouter
+
+	// tieredProvider creates and caches Model instances per tier. When nil,
+	// the coordinator uses the single-model path (backward compatible).
+	tieredProvider *TieredModelProvider
+
 	readyWg errgroup.Group
 }
 
+// NewCoordinator creates a Coordinator with the given dependencies. The
+// extHost parameter may be nil for legacy callers without an extension host.
+// Optional CoordinatorOption values wire in structured subagent factories,
+// cost trackers, and metrics stores.
 func NewCoordinator(
 	ctx context.Context,
 	cfg *config.ConfigStore,
@@ -187,6 +221,8 @@ func NewCoordinator(
 		MaxWorkers: defaultMaxWorkers,
 		Strategy:   StrategyConditional,
 	}
+	c.costTracker = NewCostTracker(DefaultCostBudget)
+	c.metricsStore = NewMetricsStore()
 
 	for _, opt := range opts {
 		opt(c)
@@ -233,13 +269,22 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 	}
 
 	model := c.currentAgent.Model()
+
+	// Tiered model resolution: uses TieredModelProvider when configured,
+	// otherwise falls through to the default single-model path.
+	if c.tieredProvider != nil && c.tierRouter != nil {
+		resolved, err := ResolveTieredModel(ctx, c.tierRouter, c.tieredProvider, 0, model)
+		if err == nil && resolved.ModelCfg.Model != "" {
+			model = resolved
+		}
+	}
+
 	maxTokens := model.CatwalkCfg.DefaultMaxTokens
 	if model.ModelCfg.MaxTokens != 0 {
 		maxTokens = model.ModelCfg.MaxTokens
 	}
 
 	if !model.CatwalkCfg.SupportsImages && attachments != nil {
-		// filter out image attachments
 		filteredAttachments := make([]message.Attachment, 0, len(attachments))
 		for _, att := range attachments {
 			if att.IsText() {
@@ -257,47 +302,120 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg)
 
 	if err := c.refreshTokenIfExpired(ctx, providerCfg); err != nil {
-		// NOTE(@andreynering): We don't return here because the event handling to ask the user to reauthenticate
-		// depends on the flow below. If refresh fails, proceed with the token we have.
 		slog.Error("Failed to refresh OAuth2 token. Proceeding with existing token.", "error", err)
 	}
 
-	run := func() (*fantasy.AgentResult, error) {
-		return c.currentAgent.Run(ctx, SessionAgentCall{
-			SessionID:        sessionID,
-			Prompt:           prompt,
-			Attachments:      attachments,
-			MaxOutputTokens:  maxTokens,
-			ProviderOptions:  mergedOptions,
-			Temperature:      temp,
-			TopP:             topP,
-			TopK:             topK,
-			FrequencyPenalty: freqPenalty,
-			PresencePenalty:  presPenalty,
-			SubmittedAt:      time.Now().Unix(),
-		})
-	}
 	beforeLoaded := c.skillTracker.LoadedNames()
-	result, originalErr := run()
+	result, originalErr := c.runWithFallback(ctx, c.currentAgent, model, providerCfg, sessionID, prompt, attachments, mergedOptions, maxTokens, temp, topP, topK, freqPenalty, presPenalty)
 	logTurnSkillUsage(sessionID, prompt, c.activeSkills, c.skillTracker, beforeLoaded)
+
+	c.recordCostFromResult(model, result, originalErr)
 
 	if c.isUnauthorized(originalErr) {
 		if err := c.retryAfterUnauthorized(ctx, providerCfg); err == nil {
-			return run()
+			retryResult, retryErr := c.runWithFallback(ctx, c.currentAgent, model, providerCfg, sessionID, prompt, attachments, mergedOptions, maxTokens, temp, topP, topK, freqPenalty, presPenalty)
+			c.recordCostFromResult(model, retryResult, retryErr)
+			return retryResult, retryErr
 		}
 	}
 
 	return result, originalErr
 }
 
-// shouldUseTwoPhase returns true when the prompt is a CategoryFeature task
-// and the ArchitectModel is configured in the options.
+// runWithFallback executes an agent call, optionally wrapping it with
+// ExecuteWithFallback when a TierRouter with a non-empty fallback chain is
+// available. When no tier router is configured or the chain is empty, it
+// falls through to a direct call.
+func (c *coordinator) runWithFallback(
+	ctx context.Context,
+	agent SessionAgent,
+	model Model,
+	providerCfg config.ProviderConfig,
+	sessionID, prompt string,
+	attachments []message.Attachment,
+	opts fantasy.ProviderOptions,
+	maxTokens int64,
+	temp, topP *float64,
+	topK *int64,
+	freqPenalty, presPenalty *float64,
+	nonInteractive ...bool,
+) (*fantasy.AgentResult, error) {
+	isNonInteractive := len(nonInteractive) > 0 && nonInteractive[0]
+	call := SessionAgentCall{
+		SessionID:        sessionID,
+		Prompt:           prompt,
+		Attachments:      attachments,
+		MaxOutputTokens:  maxTokens,
+		ProviderOptions:  opts,
+		Temperature:      temp,
+		TopP:             topP,
+		TopK:             topK,
+		FrequencyPenalty: freqPenalty,
+		PresencePenalty:  presPenalty,
+		NonInteractive:   isNonInteractive,
+		SubmittedAt:      time.Now().Unix(),
+	}
+
+	chain := c.resolveFallbackChain(model.ModelCfg.Model)
+	if len(chain) == 0 {
+		return agent.Run(ctx, call)
+	}
+
+	var result *fantasy.AgentResult
+	err := ExecuteWithFallback(ctx, func(string) error {
+		var runErr error
+		result, runErr = agent.Run(ctx, call)
+		if runErr != nil {
+			c.recordRateLimitIf429(model.ModelCfg.Provider, runErr)
+		}
+		return runErr
+	}, chain)
+	return result, err
+}
+
+// resolveFallbackChain builds the fallback chain for the given model. When a
+// TierRouter is configured, it prepends the current model ID to the chain
+// from FallbackChainForTokenCount.
+func (c *coordinator) resolveFallbackChain(modelID string) []string {
+	if c.tierRouter == nil {
+		return nil
+	}
+	chain := c.tierRouter.FallbackChainForTokenCount(0)
+	if len(chain) == 0 {
+		return nil
+	}
+	result := make([]string, 0, 1+len(chain))
+	result = append(result, modelID)
+	result = append(result, chain...)
+	return result
+}
+
+// recordRateLimitIf429 records a 429 error in the rate limit coordinator so
+// concurrent calls respect the backoff.
+func (c *coordinator) recordRateLimitIf429(provider string, err error) {
+	var providerErr *fantasy.ProviderError
+	if errors.As(err, &providerErr) && providerErr.StatusCode == 429 {
+		c.rateLimitCoord.RecordRateLimit(provider, providerErr)
+	}
+}
+
+// shouldUseTwoPhase returns true when the prompt is a planning-worthy task
+// (bug, feature, or refactor) and the ArchitectModel is configured in the
+// options (or falls back to the configured model with a warning).
 func (c *coordinator) shouldUseTwoPhase(prompt string) bool {
-	if IsPlanningCategory(prompt) != CategoryFeature {
+	if !IsPlanningTask(prompt) {
 		return false
 	}
 	cfg := c.cfg.Config()
-	return cfg.Options != nil && cfg.Options.ArchitectModel != nil
+	if cfg.Options == nil {
+		return false
+	}
+	if cfg.Options.ArchitectModel != nil {
+		return true
+	}
+	// Fallback: use the configured model as architect model with a warning.
+	slog.Warn("ArchitectModel not explicitly set, falling back to configured model for planning")
+	return true
 }
 
 // executeWithArchitectEditor runs the two-phase architect→editor flow.
@@ -312,7 +430,14 @@ func (c *coordinator) executeWithArchitectEditor(
 ) (*fantasy.AgentResult, error) {
 	cfg := c.cfg.Config()
 
-	archModelCfg := *cfg.Options.ArchitectModel
+	var archModelCfg config.SelectedModel
+	if cfg.Options.ArchitectModel != nil {
+		archModelCfg = *cfg.Options.ArchitectModel
+	} else {
+		archModelCfg = c.currentAgent.Model().ModelCfg
+		slog.Warn("ArchitectModel not set, using current agent model for planning",
+			"model", archModelCfg.Model, "provider", archModelCfg.Provider)
+	}
 	archProviderCfg, ok := cfg.Providers.Get(archModelCfg.Provider)
 	if !ok {
 		slog.Warn("ArchitectModel provider not configured, falling back to single model", "provider", archModelCfg.Provider)
@@ -357,19 +482,11 @@ func (c *coordinator) executeWithArchitectEditor(
 		maxArchTokens = archModelCfg.MaxTokens
 	}
 
-	archResult, err := archAgent.Run(ctx, SessionAgentCall{
-		SessionID:        sessionID,
-		Prompt:           prompt,
-		Attachments:      attachments,
-		MaxOutputTokens:  maxArchTokens,
-		ProviderOptions:  getProviderOptions(archModel, archProviderCfg),
-		Temperature:      archModelCfg.Temperature,
-		TopP:             archModelCfg.TopP,
-		TopK:             archModelCfg.TopK,
-		FrequencyPenalty: archModelCfg.FrequencyPenalty,
-		PresencePenalty:  archModelCfg.PresencePenalty,
-		SubmittedAt:      time.Now().Unix(),
-	})
+	archResult, err := c.runWithFallback(ctx, archAgent, archModel, archProviderCfg, sessionID, prompt, attachments,
+		getProviderOptions(archModel, archProviderCfg), maxArchTokens,
+		archModelCfg.Temperature, archModelCfg.TopP, archModelCfg.TopK,
+		archModelCfg.FrequencyPenalty, archModelCfg.PresencePenalty)
+	c.recordCostFromResult(archModel, archResult, err)
 	if err != nil {
 		slog.Warn("Architect phase failed, falling back to single model", "error", err)
 		return c.Run(ctx, sessionID, prompt, attachments...)
@@ -473,20 +590,12 @@ func (c *coordinator) executeWithArchitectEditor(
 	editProviderCfg, _ := cfg.Providers.Get(editorModel.ModelCfg.Provider)
 
 	beforeLoaded := c.skillTracker.LoadedNames()
-	result, err := c.currentAgent.Run(ctx, SessionAgentCall{
-		SessionID:        sessionID,
-		Prompt:           editorPrompt,
-		Attachments:      attachments,
-		MaxOutputTokens:  maxEditTokens,
-		ProviderOptions:  getProviderOptions(editorModel, editProviderCfg),
-		Temperature:      editorModel.ModelCfg.Temperature,
-		TopP:             editorModel.ModelCfg.TopP,
-		TopK:             editorModel.ModelCfg.TopK,
-		FrequencyPenalty: editorModel.ModelCfg.FrequencyPenalty,
-		PresencePenalty:  editorModel.ModelCfg.PresencePenalty,
-		SubmittedAt:      time.Now().Unix(),
-	})
+	result, err := c.runWithFallback(ctx, c.currentAgent, editorModel, editProviderCfg, sessionID, editorPrompt, attachments,
+		getProviderOptions(editorModel, editProviderCfg), maxEditTokens,
+		editorModel.ModelCfg.Temperature, editorModel.ModelCfg.TopP, editorModel.ModelCfg.TopK,
+		editorModel.ModelCfg.FrequencyPenalty, editorModel.ModelCfg.PresencePenalty)
 	logTurnSkillUsage(sessionID, prompt, c.activeSkills, c.skillTracker, beforeLoaded)
+	c.recordCostFromResult(editorModel, result, err)
 
 	if err != nil {
 		for i := range plan.Steps {
@@ -1441,6 +1550,33 @@ func (c *coordinator) refreshOAuth2Token(ctx context.Context, providerCfg config
 	return nil
 }
 
+// recordCostFromResult extracts token usage and cost from an AgentResult and
+// records them in the CostTracker and MetricsStore.
+func (c *coordinator) recordCostFromResult(model Model, result *fantasy.AgentResult, err error) {
+	if result == nil {
+		return
+	}
+	usage := result.TotalUsage
+	modelName := model.ModelCfg.Model
+	success := err == nil
+
+	cost := computeUsageCost(model, usage)
+	if model.FlatRate {
+		cost = 0
+	}
+
+	c.costTracker.RecordCost(modelName, int(usage.InputTokens), int(usage.OutputTokens), cost)
+	c.metricsStore.Record(modelName, 0, success, int(usage.InputTokens), int(usage.OutputTokens), cost)
+}
+
+// computeUsageCost calculates the dollar cost from token usage and model pricing.
+func computeUsageCost(model Model, usage fantasy.Usage) float64 {
+	return model.CatwalkCfg.CostPer1MInCached/1e6*float64(usage.CacheCreationTokens) +
+		model.CatwalkCfg.CostPer1MOutCached/1e6*float64(usage.CacheReadTokens) +
+		model.CatwalkCfg.CostPer1MIn/1e6*float64(usage.InputTokens) +
+		model.CatwalkCfg.CostPer1MOut/1e6*float64(usage.OutputTokens)
+}
+
 func (c *coordinator) refreshApiKeyTemplate(ctx context.Context, providerCfg config.ProviderConfig) error {
 	newAPIKey, err := c.cfg.Resolve(providerCfg.APIKeyTemplate)
 	if err != nil {
@@ -1498,19 +1634,11 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 		return fantasy.ToolResponse{}, errModelProviderNotConfigured
 	}
 
-	// Run the agent
-	result, err := params.Agent.Run(ctx, SessionAgentCall{
-		SessionID:        session.ID,
-		Prompt:           params.Prompt,
-		MaxOutputTokens:  maxTokens,
-		ProviderOptions:  getProviderOptions(model, providerCfg),
-		Temperature:      model.ModelCfg.Temperature,
-		TopP:             model.ModelCfg.TopP,
-		TopK:             model.ModelCfg.TopK,
-		FrequencyPenalty: model.ModelCfg.FrequencyPenalty,
-		PresencePenalty:  model.ModelCfg.PresencePenalty,
-		NonInteractive:   true,
-	})
+	result, err := c.runWithFallback(ctx, params.Agent, model, providerCfg, session.ID, params.Prompt, nil,
+		getProviderOptions(model, providerCfg), maxTokens,
+		model.ModelCfg.Temperature, model.ModelCfg.TopP, model.ModelCfg.TopK,
+		model.ModelCfg.FrequencyPenalty, model.ModelCfg.PresencePenalty, true)
+	c.recordCostFromResult(model, result, err)
 	if err != nil {
 		return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to generate response: %s", err)), nil
 	}

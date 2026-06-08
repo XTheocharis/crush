@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -631,4 +632,148 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	pctx := NewTestContext()
 	_, err := r.Execute(ctx, InputPhase, pctx)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// ---------------------------------------------------------------------------
+// Execute — per-processor timeout
+// ---------------------------------------------------------------------------
+
+func TestExecute_PerProcessorTimeout_SlowProcessor(t *testing.T) {
+	t.Parallel()
+
+	p := &MockProcessor{
+		IDField: "slow",
+		InputFn: func(_ context.Context, _ ProcessorContext) (ProcessorResult, error) {
+			time.Sleep(5 * time.Second)
+			return ProcessorResult{Action: ActionContinue}, nil
+		},
+	}
+
+	r := NewRunner(
+		WithInputProcessors(p),
+		WithPerProcessorTimeouts(map[string]time.Duration{"slow": 100 * time.Millisecond}),
+	)
+	pctx := NewTestContext()
+
+	_, err := r.Execute(context.Background(), InputPhase, pctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Contains(t, err.Error(), "slow")
+}
+
+func TestExecute_PerProcessorTimeout_FastProcessorSucceeds(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	p := &MockProcessor{
+		IDField: "fast",
+		InputFn: func(_ context.Context, _ ProcessorContext) (ProcessorResult, error) {
+			called = true
+			return ProcessorResult{Action: ActionContinue, State: map[string]any{"done": true}}, nil
+		},
+	}
+
+	r := NewRunner(
+		WithInputProcessors(p),
+		WithPerProcessorTimeouts(map[string]time.Duration{"fast": 5 * time.Second}),
+	)
+	pctx := NewTestContext()
+
+	result, err := r.Execute(context.Background(), InputPhase, pctx)
+	require.NoError(t, err)
+	require.True(t, called)
+	require.True(t, result.State["done"].(bool))
+}
+
+func TestExecute_PerProcessorTimeout_ZeroValueIsNoop(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	p := &MockProcessor{
+		IDField: "zero-timeout",
+		InputFn: func(_ context.Context, _ ProcessorContext) (ProcessorResult, error) {
+			called = true
+			return ProcessorResult{Action: ActionContinue}, nil
+		},
+	}
+
+	r := NewRunner(
+		WithInputProcessors(p),
+		WithPerProcessorTimeouts(map[string]time.Duration{"zero-timeout": 0}),
+	)
+	pctx := NewTestContext()
+
+	_, err := r.Execute(context.Background(), InputPhase, pctx)
+	require.NoError(t, err)
+	require.True(t, called)
+}
+
+func TestExecute_PerProcessorTimeout_UnconfiguredProcessor(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	p := &MockProcessor{
+		IDField: "no-timeout",
+		InputFn: func(_ context.Context, _ ProcessorContext) (ProcessorResult, error) {
+			called = true
+			return ProcessorResult{Action: ActionContinue}, nil
+		},
+	}
+
+	r := NewRunner(
+		WithInputProcessors(p),
+		WithPerProcessorTimeouts(map[string]time.Duration{"other-proc": 1 * time.Second}),
+	)
+	pctx := NewTestContext()
+
+	_, err := r.Execute(context.Background(), InputPhase, pctx)
+	require.NoError(t, err)
+	require.True(t, called)
+}
+
+func TestExecute_PerProcessorTimeout_MixedProcessors(t *testing.T) {
+	t.Parallel()
+
+	slow := &MockProcessor{
+		IDField: "slow",
+		InputFn: func(_ context.Context, _ ProcessorContext) (ProcessorResult, error) {
+			time.Sleep(5 * time.Second)
+			return ProcessorResult{Action: ActionContinue}, nil
+		},
+	}
+	fast := &MockProcessor{
+		IDField: "fast",
+		InputFn: func(_ context.Context, _ ProcessorContext) (ProcessorResult, error) {
+			return ProcessorResult{Action: ActionContinue, State: map[string]any{"fast_done": true}}, nil
+		},
+	}
+
+	r := NewRunner(
+		WithInputProcessors(fast, slow),
+		WithPerProcessorTimeouts(map[string]time.Duration{"slow": 100 * time.Millisecond}),
+	)
+	pctx := NewTestContext()
+
+	_, err := r.Execute(context.Background(), InputPhase, pctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestNewRunner_WithPerProcessorTimeouts(t *testing.T) {
+	t.Parallel()
+
+	r := NewRunner(WithPerProcessorTimeouts(map[string]time.Duration{
+		"p1": 5 * time.Second,
+		"p2": 10 * time.Second,
+	}))
+	require.NotNil(t, r.PerProcessorTimeouts)
+	require.Equal(t, 5*time.Second, r.PerProcessorTimeouts["p1"])
+	require.Equal(t, 10*time.Second, r.PerProcessorTimeouts["p2"])
+}
+
+func TestNewRunner_NoTimeoutsByDefault(t *testing.T) {
+	t.Parallel()
+
+	r := NewRunner()
+	require.Nil(t, r.PerProcessorTimeouts)
 }

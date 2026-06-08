@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/crush/internal/eval"
 )
 
-// LintScoreScorer scores based on lint warning count. Fewer warnings produce
-// a higher score. Warnings are read from EvalInput.Details["lint_warnings"].
+// LintScoreScorer analyzes file content for common lint issues: hard tabs,
+// long lines, trailing whitespace, missing final newline, and mixed
+// indentation. Fewer issues produce a higher score.
 type LintScoreScorer struct {
 	MaxWarnings   int
 	PassThreshold float64
@@ -25,9 +28,24 @@ func (s *LintScoreScorer) Name() string          { return "lint_score" }
 func (s *LintScoreScorer) Type() eval.ScorerType { return eval.ScorerMetric }
 
 func (s *LintScoreScorer) Score(_ context.Context, input *eval.EvalInput) (*eval.ScoreResult, error) {
-	warnings := 0
+	allContent := make(map[string]string)
 	for _, edit := range input.Edits {
-		warnings += lintWarningsFromContent(edit.After)
+		if len(edit.After) > 0 {
+			allContent[edit.Path] = edit.After
+		}
+	}
+	for path, content := range input.Files {
+		allContent[path] = content
+	}
+
+	issues := 0
+	issueBreakdown := make(map[string]int)
+	for _, content := range allContent {
+		fileIssues := lintContent(content)
+		for category, count := range fileIssues {
+			issues += count
+			issueBreakdown[category] += count
+		}
 	}
 
 	if s.MaxWarnings <= 0 {
@@ -35,33 +53,79 @@ func (s *LintScoreScorer) Score(_ context.Context, input *eval.EvalInput) (*eval
 			Score:       0.0,
 			Explanation: "MaxWarnings not configured.",
 			Passed:      false,
-			Details:     map[string]any{"warnings": warnings},
+			Details:     map[string]any{"warnings": issues},
 		}, nil
 	}
 
-	score := math.Max(0, 1.0-float64(warnings)/float64(s.MaxWarnings))
+	score := math.Max(0, 1.0-float64(issues)/float64(s.MaxWarnings))
 	passed := score >= s.PassThreshold
-	explanation := fmt.Sprintf("%d lint warnings (score %.2f)", warnings, score)
+	explanation := fmt.Sprintf("%d lint warnings across %d files (score %.2f)", issues, len(allContent), score)
+
+	details := map[string]any{
+		"warnings":  issues,
+		"max":       s.MaxWarnings,
+		"files":     len(allContent),
+		"breakdown": issueBreakdown,
+	}
 
 	return &eval.ScoreResult{
 		Score:       score,
 		Explanation: explanation,
 		Passed:      passed,
-		Details:     map[string]any{"warnings": warnings, "max": s.MaxWarnings},
+		Details:     details,
 	}, nil
 }
 
-// lintWarningsFromContent counts heuristic lint indicators in source content.
-func lintWarningsFromContent(content string) int {
-	count := 0
-	for i := 0; i < len(content); i++ {
-		switch {
-		case content[i] == '\t':
-			count++
-		case i+1 < len(content) && content[i] == ' ' && content[i+1] == ' ' &&
-			(i+2 >= len(content) || content[i+2] != ' '):
-			count++
+func lintContent(content string) map[string]int {
+	issues := make(map[string]int)
+	lines := strings.Split(content, "\n")
+
+	prevIndentWasTabs := false
+	prevIndentWasSpaces := false
+
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+
+		leading := leadingWhitespace(line)
+
+		if strings.Contains(leading, "\t") {
+			issues["hard_tabs"]++
+			prevIndentWasTabs = true
+		} else if len(leading) > 0 {
+			prevIndentWasSpaces = true
+		}
+
+		if prevIndentWasTabs && prevIndentWasSpaces {
+			issues["mixed_indent"]++
+		}
+
+		lineLen := utf8.RuneCountInString(line)
+		if lineLen > 120 {
+			issues["long_lines"]++
+		}
+
+		if len(line) > 0 && line[len(line)-1] == ' ' {
+			issues["trailing_whitespace"]++
 		}
 	}
-	return count
+
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		issues["missing_newline"]++
+	}
+
+	return issues
+}
+
+func leadingWhitespace(line string) string {
+	var b strings.Builder
+	for _, r := range line {
+		if r == ' ' || r == '\t' {
+			b.WriteRune(r)
+		} else {
+			break
+		}
+	}
+	return b.String()
 }

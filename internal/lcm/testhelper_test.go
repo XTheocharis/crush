@@ -114,6 +114,11 @@ func setSessionSummaryMessageID(t *testing.T, queries *db.Queries, sessionID, su
 }
 
 // mockLLMClient is a mock LLM client for testing.
+//
+// This is an interface-level mock for unit tests that need a simple
+// Complete(ctx, _, _) (string, error) stub. For HTTP-level integration
+// tests that need a real OpenAI-compatible server, use
+// internal/testutil.MockServer instead.
 type mockLLMClient struct {
 	response  string
 	err       error

@@ -388,3 +388,274 @@ func TestFullAutoFixCycle_RespectsContext(t *testing.T) {
 		require.Equal(t, 0, linter.calls)
 	})
 }
+
+func TestAutofixEnabledByDefault(t *testing.T) {
+	t.Parallel()
+
+	t.Run("enabled when config is nil", func(t *testing.T) {
+		t.Parallel()
+		require.True(t, autofixIsEnabled(nil))
+	})
+
+	t.Run("enabled when options is nil", func(t *testing.T) {
+		t.Parallel()
+		require.True(t, autofixIsEnabled(&config.Config{}))
+	})
+
+	t.Run("enabled when validation is nil", func(t *testing.T) {
+		t.Parallel()
+		require.True(t, autofixIsEnabled(&config.Config{Options: &config.Options{}}))
+	})
+
+	t.Run("enabled when auto_fix is true", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{AutoFix: true},
+			},
+		}
+		require.True(t, autofixIsEnabled(cfg))
+	})
+
+	t.Run("disabled when loop enabled but auto_fix explicitly false", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{
+					AutoFixLoopEnabled: true,
+					AutoFix:            false,
+				},
+			},
+		}
+		require.False(t, autofixIsEnabled(cfg))
+	})
+
+	t.Run("enabled when loop enabled and auto_fix true", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			Options: &config.Options{
+				Validation: &config.ValidationOptions{
+					AutoFixLoopEnabled: true,
+					AutoFix:            true,
+				},
+			},
+		}
+		require.True(t, autofixIsEnabled(cfg))
+	})
+}
+
+func TestAutofixStrategiesCreated(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates fixer with all three strategies", func(t *testing.T) {
+		t.Parallel()
+
+		strategies := []tools.FixStrategy{
+			&tools.MissingImportFixer{},
+			&tools.UnusedVarFixer{},
+			&tools.FormattingFixer{},
+		}
+		require.Len(t, strategies, 3)
+		require.Equal(t, "missing-import", strategies[0].Name())
+		require.Equal(t, "unused-var", strategies[1].Name())
+		require.Equal(t, "formatting", strategies[2].Name())
+	})
+
+	t.Run("unused var fixer can fix declared but not used", func(t *testing.T) {
+		t.Parallel()
+		fixer := &tools.UnusedVarFixer{}
+		diag := tools.DiagnosticInfo{
+			FilePath: "test.go",
+			Line:     3,
+			Message:  "x declared but not used",
+			Severity: tools.SeverityError,
+		}
+		require.True(t, fixer.CanFix(diag))
+	})
+
+	t.Run("missing import fixer can fix undefined errors", func(t *testing.T) {
+		t.Parallel()
+		fixer := &tools.MissingImportFixer{}
+		diag := tools.DiagnosticInfo{
+			FilePath: "test.go",
+			Line:     5,
+			Message:  "undefined: fmt",
+			Severity: tools.SeverityError,
+		}
+		require.True(t, fixer.CanFix(diag))
+	})
+
+	t.Run("formatting fixer is always applicable when FormatFunc is set", func(t *testing.T) {
+		t.Parallel()
+		fixer := &tools.FormattingFixer{
+			FormatFunc: func(content string, diag tools.DiagnosticInfo) (string, error) {
+				return content, nil
+			},
+		}
+		diag := tools.DiagnosticInfo{
+			FilePath: "test.go",
+			Line:     1,
+			Message:  "formatting issue",
+			Severity: tools.SeverityWarning,
+		}
+		require.True(t, fixer.CanFix(diag))
+	})
+
+	t.Run("formatting fixer is not applicable when FormatFunc is nil", func(t *testing.T) {
+		t.Parallel()
+		fixer := &tools.FormattingFixer{}
+		diag := tools.DiagnosticInfo{
+			FilePath: "test.go",
+			Line:     1,
+			Message:  "formatting issue",
+			Severity: tools.SeverityWarning,
+		}
+		require.False(t, fixer.CanFix(diag))
+	})
+}
+
+func TestAutofixCycleLimit(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cycle limit constant is 5", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, 5, maxAutoFixerIterations)
+	})
+
+	t.Run("autofixer respects MaxAttempts", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "main.go")
+		require.NoError(t, os.WriteFile(fp, []byte("package main\n"), 0o644))
+
+		callCount := 0
+		alwaysErrorProvider := func(_ string) []tools.DiagnosticInfo {
+			callCount++
+			return []tools.DiagnosticInfo{
+				{
+					FilePath: fp,
+					Line:     1,
+					Message:  "stub error",
+					Severity: tools.SeverityError,
+				},
+			}
+		}
+
+		getContent := func(filePath string) (string, error) {
+			data, err := os.ReadFile(filePath)
+			return string(data), err
+		}
+		setContent := func(filePath, content string) error {
+			return os.WriteFile(filePath, []byte(content), 0o644)
+		}
+
+		stubFixer := &stubFixStrategy{}
+		fixer := tools.NewAutoFixer(
+			[]tools.FixStrategy{stubFixer},
+			alwaysErrorProvider,
+			getContent,
+			setContent,
+		)
+		fixer.MaxAttempts = maxAutoFixerIterations
+
+		result, err := fixer.Run(context.Background(), fp)
+		require.NoError(t, err)
+		require.Equal(t, maxAutoFixerIterations, result.TotalAttempts)
+		require.True(t, callCount > maxAutoFixerIterations,
+			"diagnostics should be called at least MaxAttempts+1 times (final check), got %d", callCount)
+	})
+
+	t.Run("autofixer stops before cycle limit when diagnostics clear", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "main.go")
+		require.NoError(t, os.WriteFile(fp, []byte("package main\n"), 0o644))
+
+		callCount := 0
+		errorThenCleanProvider := func(_ string) []tools.DiagnosticInfo {
+			callCount++
+			if callCount <= 2 {
+				return []tools.DiagnosticInfo{
+					{
+						FilePath: fp,
+						Line:     1,
+						Message:  "x declared but not used",
+						Severity: tools.SeverityError,
+					},
+				}
+			}
+			return nil
+		}
+
+		getContent := func(filePath string) (string, error) {
+			data, err := os.ReadFile(filePath)
+			return string(data), err
+		}
+		setContent := func(filePath, content string) error {
+			return os.WriteFile(filePath, []byte(content), 0o644)
+		}
+
+		fixer := tools.NewAutoFixer(
+			[]tools.FixStrategy{&tools.UnusedVarFixer{}},
+			errorThenCleanProvider,
+			getContent,
+			setContent,
+		)
+		fixer.MaxAttempts = maxAutoFixerIterations
+
+		result, err := fixer.Run(context.Background(), fp)
+		require.NoError(t, err)
+		require.True(t, result.TotalAttempts < maxAutoFixerIterations,
+			"should stop before %d iterations when clean, got %d",
+			maxAutoFixerIterations, result.TotalAttempts)
+	})
+}
+
+func TestLintErrorsToDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("parses file:line:message format", func(t *testing.T) {
+		t.Parallel()
+		errors := []string{"main.go:10: undefined: foo"}
+		diags := lintErrorsToDiagnostics(errors)
+		require.Len(t, diags, 1)
+		require.Equal(t, "main.go", diags[0].FilePath)
+		require.Equal(t, uint32(10), diags[0].Line)
+		require.Equal(t, "undefined: foo", diags[0].Message)
+		require.Equal(t, tools.SeverityError, diags[0].Severity)
+	})
+
+	t.Run("parses file:line:col:message format", func(t *testing.T) {
+		t.Parallel()
+		errors := []string{"main.go:10: unused variable"}
+		diags := lintErrorsToDiagnostics(errors)
+		require.Len(t, diags, 1)
+		require.Equal(t, "main.go", diags[0].FilePath)
+		require.Equal(t, uint32(10), diags[0].Line)
+		require.Equal(t, "unused variable", diags[0].Message)
+	})
+
+	t.Run("skips malformed lines", func(t *testing.T) {
+		t.Parallel()
+		errors := []string{"not a valid error line"}
+		diags := lintErrorsToDiagnostics(errors)
+		require.Empty(t, diags)
+	})
+
+	t.Run("returns empty for nil input", func(t *testing.T) {
+		t.Parallel()
+		diags := lintErrorsToDiagnostics(nil)
+		require.Empty(t, diags)
+	})
+}
+
+type stubFixStrategy struct{ calls int }
+
+func (s *stubFixStrategy) Name() string { return "stub" }
+
+func (s *stubFixStrategy) CanFix(_ tools.DiagnosticInfo) bool { return true }
+
+func (s *stubFixStrategy) Apply(content string, _ tools.DiagnosticInfo) (string, error) {
+	s.calls++
+	return content + "// stub fix\n", nil
+}

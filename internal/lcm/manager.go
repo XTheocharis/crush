@@ -1,3 +1,8 @@
+// Package lcm implements Lossless Context Management for LLM conversation
+// sessions. It provides a 9-layer compaction pipeline that summarizes and
+// compresses conversation history while preserving all recoverable information.
+// The Manager interface exposes compaction scheduling, token budget tracking,
+// auto-memory extraction, observation/reflection, and agent tool registration.
 package lcm
 
 import (
@@ -1420,8 +1425,9 @@ func filterNilLayers(layers ...CompactionLayer) []CompactionLayer {
 // with all currently available layers wired in.
 func (m *compactionManager) newSessionLayerManager(sessionID string, overrideTier ...*PressureTier) *CompactionLayerManager {
 	microCompactor := NewMicroCompactor(MicroCompactorConfig{
-		Store:     m.store,
-		SessionID: sessionID,
+		Store:          m.store,
+		SessionID:      sessionID,
+		TokenThreshold: m.largeOutputThreshold,
 	})
 
 	maxFiles := m.postCompactMaxFiles
@@ -1609,6 +1615,31 @@ func (m *compactionManager) PostCompactionHook(ctx context.Context, sessionID st
 			}
 		}
 	}
+
+	// Step 4: Run auto-memory extraction. Compaction is a natural trigger
+	// point since the conversation was just compressed.
+	if m.autoMemoryExtractor != nil {
+		resultCh := m.autoMemoryExtractor.Extract(ctx, sessionID)
+		if resultCh != nil {
+			go func() {
+				ctx := context.WithoutCancel(ctx)
+				result := <-resultCh
+				if result.Error != nil {
+					slog.Warn("PostCompactionHook: auto-memory extraction failed",
+						"session_id", sessionID, "error", result.Error)
+				}
+				if m.opMemory != nil && m.operationalMemEnabled {
+					for _, mem := range result.Memories {
+						key := fmt.Sprintf("memory:%s:%s", mem.Type, truncateString(mem.Content, 60))
+						if err := m.opMemory.Set(ctx, sessionID, key, mem.Content); err != nil {
+							slog.Warn("PostCompactionHook: auto-memory store failed",
+								"session_id", sessionID, "key", key, "error", err)
+						}
+					}
+				}
+			}()
+		}
+	}
 }
 
 // PostTurnHook runs auto-memory extraction after an agent turn completes.
@@ -1636,6 +1667,7 @@ func (m *compactionManager) PostTurnHook(ctx context.Context, sessionID string) 
 		return
 	}
 	go func() {
+		ctx := context.WithoutCancel(ctx)
 		result := <-resultCh
 		if result.Error != nil {
 			slog.Warn("Auto-memory extraction failed",

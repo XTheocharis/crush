@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"charm.land/fantasy"
 
@@ -498,6 +499,10 @@ func buildProcessorRunner(
 		opts = append(opts, processor.WithOutputProcessors(outputProcessors...))
 	}
 
+	if timeouts := extractProcessorTimeouts(cfg); len(timeouts) > 0 {
+		opts = append(opts, processor.WithPerProcessorTimeouts(timeouts))
+	}
+
 	return processor.NewRunner(opts...)
 }
 
@@ -600,6 +605,29 @@ func perProcessor(cfg config.ProcessorConfig, name string) config.ProcessorConfi
 		return nil
 	}
 	return config.ProcessorConfig(sub)
+}
+
+// extractProcessorTimeouts reads per-processor "timeout" fields from the config.
+// Each processor's config block may include a "timeout" value in seconds (float64
+// from JSON), which is converted to a time.Duration. Zero or missing values are
+// ignored.
+func extractProcessorTimeouts(cfg config.ProcessorConfig) map[string]time.Duration {
+	if cfg == nil {
+		return nil
+	}
+	timeouts := make(map[string]time.Duration)
+	for name, raw := range cfg {
+		sub, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		v, ok := sub["timeout"].(float64)
+		if !ok || v <= 0 {
+			continue
+		}
+		timeouts[name] = time.Duration(v * float64(time.Second))
+	}
+	return timeouts
 }
 
 // ---------------------------------------------------------------------------

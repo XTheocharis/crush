@@ -92,19 +92,28 @@ func (e *RewindExtension) StepHooks() []ext.StepHook {
 					slog.Warn("RewindExt: service is nil, skipping snapshot")
 					return nil
 				}
-				if err := svc.CaptureSnapshot(ctx, sessionID, seq); err != nil {
-					slog.Error("RewindExt: CaptureSnapshot failed",
+				// Use a detached context so the snapshot and cleanup persist even
+				// when the parent request context is cancelled (e.g. user abort).
+				detachedCtx := context.WithoutCancel(ctx)
+				go func() {
+					slog.Info("RewindExt: CaptureSnapshot goroutine started",
 						"session_id", sessionID,
 						"seq", seq,
-						"error", err,
 					)
-					return err
-				}
-				slog.Info("RewindExt: CaptureSnapshot succeeded",
-					"session_id", sessionID,
-					"seq", seq,
-				)
-				go func() { _ = svc.CleanupOldSnapshots(ctx, sessionID) }()
+					if err := svc.CaptureSnapshot(detachedCtx, sessionID, seq); err != nil {
+						slog.Error("RewindExt: CaptureSnapshot failed",
+							"session_id", sessionID,
+							"seq", seq,
+							"error", err,
+						)
+						return
+					}
+					slog.Info("RewindExt: CaptureSnapshot succeeded",
+						"session_id", sessionID,
+						"seq", seq,
+					)
+					_ = svc.CleanupOldSnapshots(detachedCtx, sessionID)
+				}()
 				return nil
 			},
 		},
