@@ -34,9 +34,13 @@ test_autofix_syntax_error() {
   focus_editor
 
   # Ask Crush to create a Go file with a deliberate syntax error.
-  # The prompt requests an unclosed brace so go vet / diagnostics will fire,
-  # then autofix should correct it. The sentinel must appear in TUI output.
-  send_tui_prompt 'Create a file /tmp/qa-broken.go with exactly this content (do NOT fix it yourself, write it verbatim): package main; import "fmt"; func main() { fmt.Println("hello". Then wait for autofix to run and fix the syntax error. After autofix completes, reply with exactly AUTOFIX_FIXED_SENTINEL_42 and explain what was fixed.'
+  # The file is placed in the workspace so LSP can analyze it.
+  local fixture_dir="$QA_DIR/fixtures/autofix"
+  mkdir -p "$fixture_dir"
+  local broken_file="$fixture_dir/qa-broken.go"
+  rm -f "$broken_file"
+
+  send_tui_prompt "Create a file $broken_file with exactly this content (do NOT fix it yourself, write it verbatim): package main; import \"fmt\"; func main() { fmt.Println(\"hello\". Then wait for autofix to run and fix the syntax error. After autofix completes, reply with exactly AUTOFIX_FIXED_SENTINEL_42 and explain what was fixed."
 
   if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle (autofix cycle timeout)"
@@ -45,7 +49,6 @@ test_autofix_syntax_error() {
     return
   fi
 
-  # Primary gate: TUI output must contain the sentinel.
   if assert_tui_contains "AUTOFIX_FIXED_SENTINEL_42"; then
     pass "Scenario 1: TUI shows AUTOFIX_FIXED_SENTINEL_42 sentinel"
   else
@@ -56,13 +59,12 @@ test_autofix_syntax_error() {
 
   capture_tui_evidence "autofix-response"
 
-  # --- Secondary filesystem check: file exists and is valid Go ---
-  if [[ ! -f /tmp/qa-broken.go ]]; then
-    fail "Scenario 1: /tmp/qa-broken.go was not created"
-  elif gofmt -e /tmp/qa-broken.go >/dev/null 2>&1; then
-    pass "Scenario 1: /tmp/qa-broken.go is syntactically valid Go after autofix"
+  if [[ ! -f "$broken_file" ]]; then
+    fail "Scenario 1: $broken_file was not created"
+  elif gofmt -e "$broken_file" >/dev/null 2>&1; then
+    pass "Scenario 1: $broken_file is syntactically valid Go after autofix"
   else
-    fail "Scenario 1: /tmp/qa-broken.go is still syntactically invalid after autofix"
+    fail "Scenario 1: $broken_file is still syntactically invalid after autofix"
   fi
 
   # --- Secondary log check: diagnostic tooling was used ---
@@ -74,8 +76,8 @@ test_autofix_syntax_error() {
     fail "Scenario 1: No diagnostic pipeline log matches found"
   fi
 
-  # Clean up temp file.
-  rm -f /tmp/qa-broken.go
+  # Clean up fixture file.
+  rm -f "$broken_file"
 }
 
 # ---------------------------------------------------------------------------
@@ -90,8 +92,12 @@ test_autofix_lint_error() {
   focus_editor
 
   # Ask Crush to create a Go file with an unused variable (go vet error).
-  # Autofix should detect the unused variable and remove it.
-  send_tui_prompt 'Create a file /tmp/qa-lint.go with exactly this content (write it verbatim, do NOT fix it): package main; func main() { x := 42; println("done") }. Then wait for autofix to detect and fix the unused variable x. After autofix completes, reply with exactly AUTOFIX_LINT_SENTINEL_77 and explain the lint fix.'
+  local fixture_dir="$QA_DIR/fixtures/autofix"
+  mkdir -p "$fixture_dir"
+  local lint_file="$fixture_dir/qa-lint.go"
+  rm -f "$lint_file"
+
+  send_tui_prompt "Create a file $lint_file with exactly this content (write it verbatim, do NOT fix it): package main; func main() { x := 42; println(\"done\") }. Then wait for autofix to detect and fix the unused variable x. After autofix completes, reply with exactly AUTOFIX_LINT_SENTINEL_77 and explain the lint fix."
 
   if ! wait_for_tui_idle 180; then
     fail "Scenario 2: Crush did not become idle (lint autofix timeout)"
@@ -100,7 +106,6 @@ test_autofix_lint_error() {
     return
   fi
 
-  # Primary gate: TUI output must contain the sentinel.
   if assert_tui_contains "AUTOFIX_LINT_SENTINEL_77"; then
     pass "Scenario 2: TUI shows AUTOFIX_LINT_SENTINEL_77 sentinel"
   else
@@ -111,13 +116,12 @@ test_autofix_lint_error() {
 
   capture_tui_evidence "lint-autofix-response"
 
-  # --- Secondary filesystem check: file exists and is valid Go ---
-  if [[ ! -f /tmp/qa-lint.go ]]; then
-    fail "Scenario 2: /tmp/qa-lint.go was not created"
-  elif gofmt -e /tmp/qa-lint.go >/dev/null 2>&1; then
-    pass "Scenario 2: /tmp/qa-lint.go is syntactically valid Go after autofix"
+  if [[ ! -f "$lint_file" ]]; then
+    fail "Scenario 2: $lint_file was not created"
+  elif gofmt -e "$lint_file" >/dev/null 2>&1; then
+    pass "Scenario 2: $lint_file is syntactically valid Go after autofix"
   else
-    fail "Scenario 2: /tmp/qa-lint.go is still syntactically invalid after autofix"
+    fail "Scenario 2: $lint_file is still syntactically invalid after autofix"
   fi
 
   # --- Secondary log check ---
@@ -129,8 +133,7 @@ test_autofix_lint_error() {
     fail "Scenario 2: No diagnostic pipeline log matches found"
   fi
 
-  # Clean up temp file.
-  rm -f /tmp/qa-lint.go
+  rm -f "$lint_file"
 }
 
 # ---------------------------------------------------------------------------

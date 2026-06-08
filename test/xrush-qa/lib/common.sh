@@ -280,6 +280,10 @@ start_crush_tui() {
   fi
   generate_project_config "$wave" "$PROJECT_DIR/crush.json"
 
+  if [[ "${LCM_LOW_THRESHOLD:-}" == "1" ]]; then
+    inject_lcm_low_threshold
+  fi
+
   tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 50
   local launch_cmd="crush --yolo"
   [[ -n "$session_flag" ]] && launch_cmd="$launch_cmd $session_flag"
@@ -581,4 +585,166 @@ finish_test() {
   local ts
   ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   echo "$ts $test_name $status" >> "$QA_DIR/reports/results.txt"
+}
+
+# --- Config override helpers ---
+# These functions patch the generated config JSON after generate_project_config().
+# They use jq to apply targeted overrides without rewriting the entire config.
+
+# Resolve the config file path used by override helpers.
+_crush_config_path() {
+  if [[ -n "${CRUSH_CONFIG:-}" && -f "$CRUSH_CONFIG" ]]; then
+    echo "$CRUSH_CONFIG"
+  elif [[ -f "crush.json" ]]; then
+    echo "crush.json"
+  elif [[ -f ".crush/config.json" ]]; then
+    echo ".crush/config.json"
+  else
+    echo "${CRUSH_CONFIG:-.crush/config.json}"
+  fi
+}
+
+# Patch a single jq path in the config with a JSON value.
+# Usage: inject_config_override ".options.processors.config.token_limiter.budget" 5000
+inject_config_override() {
+  local key="$1"
+  local value="$2"
+  local config_file
+  config_file=$(_crush_config_path)
+  if [[ ! -f "$config_file" ]]; then
+    echo "FAIL: inject_config_override: config not found: $config_file" >&2
+    return 1
+  fi
+  local tmp
+  tmp=$(mktemp)
+  jq --argjson val "$value" "$key = \$val" "$config_file" > "$tmp" && mv "$tmp" "$config_file"
+}
+
+# Shorthand for processor config overrides.
+# Usage: inject_processor_config token_limiter budget 5000
+#   → inject_config_override ".options.processors.config.token_limiter.budget" 5000
+inject_processor_config() {
+  local processor_name="$1"
+  local key="$2"
+  local value="$3"
+  inject_config_override ".options.processors.config.${processor_name}.${key}" "$value"
+}
+
+# Shorthand for LCM-specific config overrides.
+# Usage: inject_lcm_config ctx_cutoff_threshold 0.01
+#   → inject_config_override ".options.lcm.ctx_cutoff_threshold" 0.01
+inject_lcm_config() {
+  local key="$1"
+  local value="$2"
+  inject_config_override ".options.lcm.${key}" "$value"
+}
+
+# Override model context window for low-threshold testing.
+# Usage: inject_context_window 1000
+inject_context_window() {
+  local size="$1"
+  inject_config_override ".models.large.context_window" "$size"
+  inject_config_override ".models.small.context_window" "$size"
+}
+
+inject_lcm_low_threshold() {
+  local cw="${1:-2000}"
+  local cutoff="${2:-0.1}"
+  inject_context_window "$cw"
+  inject_lcm_config ctx_cutoff_threshold "$cutoff"
+}
+
+# --- Polling helpers for async DB/file operations ---
+
+# Poll a SQLite table until it has at least expected_count rows.
+# Usage: wait_for_db_count table expected_count [timeout_seconds]
+# Returns 0 when count >= expected_count, 1 on timeout.
+wait_for_db_count() {
+  local table="$1"
+  local expected="$2"
+  local timeout="${3:-60}"
+  local db_path="${CRUSH_DB:-.crush/crush.db}"
+  local elapsed=0
+  local interval=2
+  local max_attempts=$((timeout / interval))
+  local attempt=0
+  while true; do
+    attempt=$((attempt + 1))
+    if [[ -f "$db_path" ]]; then
+      local actual
+      actual=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM $table" 2>/dev/null || echo 0)
+      if [[ "$actual" -ge "$expected" ]]; then
+        return 0
+      fi
+    fi
+    if [[ "$elapsed" -ge "$timeout" ]]; then
+      echo "FAIL: wait_for_db_count: $table has ${actual:-0} rows, expected >= $expected after ${timeout}s" >&2
+      return 1
+    fi
+    echo "  Waiting for $table count >= $expected... (attempt $attempt/$max_attempts)" >&2
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+}
+
+# Poll until a SQLite query returns the expected value.
+# Usage: wait_for_db_value "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = 'abc'" "5" [timeout_seconds]
+# Returns 0 when result matches expected_value, 1 on timeout.
+wait_for_db_value() {
+  local query="$1"
+  local expected="$2"
+  local timeout="${3:-60}"
+  local db_path="${CRUSH_DB:-.crush/crush.db}"
+  local elapsed=0
+  local interval=2
+  local max_attempts=$((timeout / interval))
+  local attempt=0
+  while true; do
+    attempt=$((attempt + 1))
+    if [[ -f "$db_path" ]]; then
+      local actual
+      actual=$(sqlite3 "$db_path" "$query" 2>/dev/null || echo "")
+      if [[ "$actual" == "$expected" ]]; then
+        return 0
+      fi
+    fi
+    if [[ "$elapsed" -ge "$timeout" ]]; then
+      echo "FAIL: wait_for_db_value: query returned '${actual:-}', expected '$expected' after ${timeout}s" >&2
+      return 1
+    fi
+    echo "  Waiting for DB value == '$expected'... (attempt $attempt/$max_attempts)" >&2
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+}
+
+# Poll turn_snapshots table for a given session until min_count rows exist.
+# Usage: wait_for_snapshots session_id min_count [timeout_seconds]
+# Returns 0 when count >= min_count, 1 on timeout.
+wait_for_snapshots() {
+  local session_id="$1"
+  local min_count="$2"
+  local timeout="${3:-60}"
+  local db_path="${CRUSH_DB:-.crush/crush.db}"
+  local elapsed=0
+  local interval=2
+  local max_attempts=$((timeout / interval))
+  local attempt=0
+  while true; do
+    attempt=$((attempt + 1))
+    if [[ -f "$db_path" ]]; then
+      local actual
+      actual=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '${session_id}'" 2>/dev/null || echo 0)
+      if [[ "$actual" -ge "$min_count" ]]; then
+        return 0
+      fi
+    fi
+    if [[ "$elapsed" -ge "$timeout" ]]; then
+      echo "FAIL: wait_for_snapshots: session $session_id has ${actual:-0} snapshots, expected >= $min_count after ${timeout}s" >&2
+      return 1
+    fi
+    echo "  Waiting for turn_snapshots (session $session_id) >= $min_count... (attempt $attempt/$max_attempts)" >&2
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
 }

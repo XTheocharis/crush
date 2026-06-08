@@ -64,15 +64,15 @@ EOF
 
   setup_clean_crush
 
-  # Hook that BLOCKS file_edit by writing a marker and exiting non-zero.
-  # The hook inspects CRUSH_TOOL_NAME; if it matches file_edit, it blocks.
+  # Hook that BLOCKS file_edit by writing a marker and exiting 2 (deny).
+  # The hook inspects CRUSH_TOOL_NAME; if it matches file_edit, it denies.
   cat > "$HOOK_SCRIPT" <<'HOOK_EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 echo "$CRUSH_TOOL_NAME" > /tmp/qa-block-edit-marker.txt
 if [[ "$CRUSH_TOOL_NAME" == "file_edit" ]]; then
   echo "HOOK_EDIT_BLOCK_SENTINEL_42: edit blocked by policy" >&2
-  exit 1
+  exit 2
 fi
 exit 0
 HOOK_EOF
@@ -93,6 +93,13 @@ HOOK_EOF
     '. + {"hooks":{"PreToolUse":[{"matcher":"file_edit","command":$script}]}}' \
     "$QA_DIR_RESOLVED/wave5.json" > "$tmp_config"
   mv "$tmp_config" "$hooks_config"
+
+  # Verify hooks config is present in generated config.
+  if jq -e '.hooks.PreToolUse' "$hooks_config" >/dev/null 2>&1; then
+    pass "Scenario 1: Hooks config present in crush.json"
+  else
+    fail "Scenario 1: Hooks config missing from crush.json"
+  fi
 
   rm -f "$BLOCK_MARKER"
 
@@ -116,8 +123,8 @@ HOOK_EOF
     capture_tui_evidence "hook-block-no-sentinel"
   fi
 
-  # Secondary: hook marker file proves the hook fired.
-  if [[ -f "$BLOCK_MARKER" ]]; then
+  # Secondary: hook marker file proves the hook fired (polling with timeout).
+  if wait_for_file "$BLOCK_MARKER" 30; then
     local tool_name
     tool_name=$(cat "$BLOCK_MARKER")
     if [[ "$tool_name" == "file_edit" ]]; then
@@ -205,6 +212,13 @@ HOOK_EOF
     "$QA_DIR_RESOLVED/wave5.json" > "$tmp_config"
   mv "$tmp_config" "$hooks_config"
 
+  # Verify hooks config is present in generated config.
+  if jq -e '.hooks.PreToolUse' "$hooks_config" >/dev/null 2>&1; then
+    pass "Scenario 2: Hooks config present in crush.json"
+  else
+    fail "Scenario 2: Hooks config missing from crush.json"
+  fi
+
   rm -f "$ROLLBACK_MARKER"
 
   start_crush_tui 5
@@ -243,8 +257,8 @@ HOOK_EOF
     fail "Scenario 2: Modified text still present after rollback"
   fi
 
-  # Secondary: hook marker proves hook ran on both edit and rollback.
-  if [[ -f "$ROLLBACK_MARKER" ]]; then
+  # Secondary: hook marker proves hook ran on both edit and rollback (polling with timeout).
+  if wait_for_file "$ROLLBACK_MARKER" 30; then
     local hook_calls
     hook_calls=$(cat "$ROLLBACK_MARKER")
     local edit_count

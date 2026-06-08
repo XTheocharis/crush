@@ -10,6 +10,8 @@ SCENARIO="large-file-offload-init"
 source "$(dirname "$0")/../lib/common.sh"
 source "$(dirname "$0")/../lib/db-verify.sh"
 
+export LCM_LOW_THRESHOLD=1
+
 PASS=0
 FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }

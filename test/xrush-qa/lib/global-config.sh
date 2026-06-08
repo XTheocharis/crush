@@ -69,6 +69,7 @@ print(count)
 
 # Generate wave-specific project-local config (no providers block).
 # Providers come from the user-scoped global config at runtime.
+# Hooks are preserved from the wave JSON source file if present.
 # Usage: generate_project_config <wave_number> <output_file>
 generate_project_config() {
   local wave="$1"
@@ -76,10 +77,13 @@ generate_project_config() {
 
   [[ "$wave" =~ ^[1-5]$ ]] || { echo "ERROR: Wave must be 1-5, got: $wave" >&2; return 1; }
 
-  python3 - "$wave" <<'PYEOF' > "$output"
-import json, sys
+  local wave_json="${_GLOBAL_CONFIG_SCRIPT_DIR}/../wave${wave}.json"
+
+  python3 - "$wave" "$wave_json" <<'PYEOF' > "$output"
+import json, sys, os
 
 wave = int(sys.argv[1])
+wave_json_path = sys.argv[2]
 
 config = {
     "models": {
@@ -124,6 +128,13 @@ elif wave == 5:
         "enabled": True,
         "list": ["token_limiter", "system_prompt_scrubber", "pii_detector"],
     }
+
+# Preserve hooks from the wave JSON source file if present.
+if os.path.isfile(wave_json_path):
+    with open(wave_json_path) as f:
+        wave_config = json.load(f)
+    if "hooks" in wave_config:
+        config["hooks"] = wave_config["hooks"]
 
 print(json.dumps(config, indent=2))
 PYEOF

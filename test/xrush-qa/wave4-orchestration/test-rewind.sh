@@ -67,24 +67,33 @@ test_single_code_rewind() {
     return
   fi
 
-  # Verify DB has snapshots for this session.
+  # Verify DB has snapshots for this session (async goroutine — poll).
   local SID
   SID=$(get_session_id)
   if [[ -n "$SID" ]]; then
-    local snapshot_count
-    snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null ) || snapshot_count=0
-    if [[ "$snapshot_count" -ge 1 ]]; then
+    if wait_for_snapshots "$SID" 1 30; then
+      local snapshot_count
+      snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
       pass "Scenario 1: $snapshot_count snapshot(s) exist — rewind data available"
     else
-      fail "Scenario 1: No snapshots in DB — rewind may not fire"
+      fail "Scenario 1: No snapshots in DB after 30s polling — rewind may not fire"
     fi
 
-    local snapshot_file_count
-    snapshot_file_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshot_files WHERE snapshot_id IN (SELECT id FROM turn_snapshots WHERE session_id = '$SID')" 2>/dev/null ) || snapshot_file_count=0
+    # Poll for snapshot file rows (depend on snapshots being written first).
+    local snapshot_file_count=0
+    local sf_elapsed=0
+    while [[ "$sf_elapsed" -lt 30 ]]; do
+      snapshot_file_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshot_files WHERE snapshot_id IN (SELECT id FROM turn_snapshots WHERE session_id = '$SID')" 2>/dev/null || echo 0)
+      if [[ "$snapshot_file_count" -gt 0 ]]; then
+        break
+      fi
+      sleep 2
+      sf_elapsed=$((sf_elapsed + 2))
+    done
     if [[ "$snapshot_file_count" -gt 0 ]]; then
       pass "Scenario 1: $snapshot_file_count snapshot file row(s) recorded"
     else
-      fail "Scenario 1: No snapshot file rows recorded"
+      fail "Scenario 1: No snapshot file rows recorded after 30s polling"
     fi
   fi
 

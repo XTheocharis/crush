@@ -173,6 +173,22 @@
       "provider": "zai-2"
     }
   },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "command": "echo \"PreToolUse hook fired for $CRUSH_TOOL_NAME\" > /dev/null",
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "command": "echo \"PostToolUse hook fired for $CRUSH_TOOL_NAME\" > /dev/null",
+        "timeout": 5
+      }
+    ]
+  },
   "options": {
     "architect_model": {
       "model": "glm-5.1",

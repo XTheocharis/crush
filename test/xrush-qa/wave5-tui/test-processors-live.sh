@@ -34,6 +34,17 @@ test_pii_redaction() {
 
   setup_clean_crush
   start_crush_tui 5
+
+  # Override PII detector to medium sensitivity (catches email+phone, not just SSN).
+  cleanup_tui
+  inject_processor_config pii_detector sensitivity '"medium"'
+
+  # Restart Crush with the patched config.
+  TMUX_SESSION="qa-w5-pii-$(date +%s)"
+  tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 50
+  tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && crush --yolo" Enter
+  sleep 5
+
   focus_editor
 
   # Send a prompt containing fake PII. Ask Crush to echo the sentinel
@@ -86,28 +97,13 @@ test_token_limiter() {
   echo "=== Scenario 2: Token limiter with tiny budget ==="
 
   setup_clean_crush
-
-  # We need to override the config to set a tiny token budget before
-  # starting Crush. start_crush_tui calls generate_project_config, but
-  # we need to patch the token_budget afterwards.
-  QA_DIR_RESOLVED="$QA_DIR"
-  PROJECT_DIR="${PROJECT_DIR:-$(cd "$QA_DIR_RESOLVED/../.." && pwd)}"
-
-  # Generate the base wave5 config first, then patch the token budget.
-  # start_crush_tui will handle backup/restore via generate_project_config.
   start_crush_tui 5
 
-  # Now patch the running config with a tiny token budget to force trimming.
-  # NOTE: options.processors.token_budget is not wired to TokenLimiter.Budget
-  # (hardcoded to 200000 in processor_ext.go). This tests config acceptance only.
-  # Actual token trimming requires a code change to read from per-processor config.
-  local tmp_config
-  tmp_config=$(mktemp)
-  jq '.options.processors.token_budget = 100' "$PROJECT_DIR/crush.json" > "$tmp_config"
-  mv "$tmp_config" "$PROJECT_DIR/crush.json"
+  # Override token limiter budget to 5000 (down from 200k default).
+  cleanup_tui
+  inject_processor_config token_limiter budget 5000
 
   # Restart Crush with the patched config.
-    cleanup_tui
   TMUX_SESSION="qa-w5-tl-$(date +%s)"
   tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 50
   tmux send-keys -t "$TMUX_SESSION" "cd $PROJECT_DIR && crush --yolo" Enter

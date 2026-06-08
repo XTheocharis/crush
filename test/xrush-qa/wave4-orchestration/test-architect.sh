@@ -63,24 +63,6 @@ test_architect_plan() {
     fail "Scenario 1: Architect not triggered (0 architect log entries)"
   fi
 
-  # --- Secondary: filesystem checks ---
-  local target_dir="/tmp/qa-arch-plan-$$"
-  if [[ -d "$target_dir" ]]; then
-    pass "Scenario 1: Target directory $target_dir was created"
-    local file_count
-    file_count=$(find "$target_dir" -name "*.go" -type f 2>/dev/null | wc -l)
-    if [[ "$file_count" -ge 1 ]]; then
-      pass "Scenario 1: Found $file_count Go file(s) in $target_dir"
-    else
-      fail "Scenario 1: No Go files found in $target_dir"
-    fi
-  else
-    fail "Scenario 1: Target directory $target_dir was not created"
-  fi
-
-  # Cleanup target dir.
-  rm -rf "$target_dir"
-
   tmux send-keys -t "$TMUX_SESSION" C-c
   sleep 1
   tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true

@@ -148,14 +148,16 @@ test_orchestration_autofix() {
 test_operator_autofix() {
   echo "=== Scenario 2: Operator-based autofix flow ==="
   SCENARIO="operator-autofix"
-  local GOFILE="/tmp/qa-operator-autofix.go"
+  local fixture_dir="$QA_DIR/fixtures/autofix"
+  mkdir -p "$fixture_dir"
+  local GOFILE="$fixture_dir/qa-operator-autofix.go"
+  rm -f "$GOFILE"
 
   setup_clean_crush
   start_crush_tui "$WAVE"
   focus_editor
 
-  # Ask Crush to use operator decomposition to create and fix a Go file.
-  send_tui_prompt "Use the operator to decompose this task into subtasks: First, create a file /tmp/qa-operator-autofix.go with a deliberate syntax error: package main; func main() { y := 10 (missing closing brace). Then fix the file. Reply with exactly ORCH_AUTOFIX_OP_SENTINEL_55 when complete."
+  send_tui_prompt "Use the operator to decompose this task into subtasks: First, create a file $GOFILE with a deliberate syntax error: package main; func main() { y := 10 (missing closing brace). Then fix the file. Reply with exactly ORCH_AUTOFIX_OP_SENTINEL_55 when complete."
 
   if ! wait_for_tui_idle 180; then
     fail "Scenario 2: Crush did not become idle (operator autofix timeout)"
@@ -193,7 +195,6 @@ test_operator_autofix() {
     fail "Scenario 2: No orchestration/diagnostic log matches found"
   fi
 
-  # Clean up temp file.
   rm -f "$GOFILE"
 }
 

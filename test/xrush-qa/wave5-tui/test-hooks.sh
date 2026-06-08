@@ -59,6 +59,13 @@ HOOK_EOF
     "$PROJECT_DIR/crush.json" > "$tmp_config"
   mv "$tmp_config" "$PROJECT_DIR/crush.json"
 
+  # Verify hooks config is present in generated config.
+  if jq -e '.hooks.PreToolUse' "$PROJECT_DIR/crush.json" >/dev/null 2>&1; then
+    pass "Scenario 1: Hooks config present in crush.json"
+  else
+    fail "Scenario 1: Hooks config missing from crush.json"
+  fi
+
   rm -f "$HOOK_MARKER"
 
   # Launch Crush TUI manually (inlined to ensure hooks are in config before startup).
@@ -94,8 +101,8 @@ HOOK_EOF
     capture_tui_evidence "pretooluse-hook-no-sentinel"
   fi
 
-  # Secondary: marker file must exist.
-  if [[ -f "$HOOK_MARKER" ]]; then
+  # Secondary: marker file must exist (polling with timeout).
+  if wait_for_file "$HOOK_MARKER" 30; then
     pass "Scenario 1: PreToolUse hook marker file exists"
   else
     fail "Scenario 1: PreToolUse hook marker file not found at $HOOK_MARKER"
@@ -151,6 +158,13 @@ HOOK_EOF
     "$PROJECT_DIR/crush.json" > "$tmp_config"
   mv "$tmp_config" "$PROJECT_DIR/crush.json"
 
+  # Verify hooks config is present in generated config.
+  if jq -e '.hooks.PreToolUse' "$PROJECT_DIR/crush.json" >/dev/null 2>&1; then
+    pass "Scenario 2: Hooks config present in crush.json"
+  else
+    fail "Scenario 2: Hooks config missing from crush.json"
+  fi
+
   rm -f "$HOOK_MARKER" "$env_marker"
 
   # Launch Crush TUI manually (inlined to ensure hooks are in config before startup).
@@ -185,11 +199,25 @@ HOOK_EOF
     capture_tui_evidence "pretooluse-env-no-sentinel"
   fi
 
-  # Secondary: env marker file and CRUSH_TOOL_NAME.
-  if [[ -s "$env_marker" ]] && grep -q '^CRUSH_TOOL_NAME=bash$' "$env_marker"; then
+  # Secondary: wait for env marker file then check CRUSH_TOOL_NAME.
+  if wait_for_file "$env_marker" 30 && [[ -s "$env_marker" ]] && grep -q '^CRUSH_TOOL_NAME=bash$' "$env_marker"; then
     pass "Scenario 2: PreToolUse hook env contains CRUSH_TOOL_NAME=bash"
   else
     fail "Scenario 2: PreToolUse hook env missing CRUSH_TOOL_NAME=bash"
+  fi
+
+  # Tertiary: verify CRUSH_EVENT=PreToolUse.
+  if [[ -s "$env_marker" ]] && grep -q '^CRUSH_EVENT=PreToolUse$' "$env_marker"; then
+    pass "Scenario 2: PreToolUse hook env contains CRUSH_EVENT=PreToolUse"
+  else
+    fail "Scenario 2: PreToolUse hook env missing CRUSH_EVENT=PreToolUse"
+  fi
+
+  # Tertiary: verify CRUSH_SESSION_ID is non-empty.
+  if [[ -s "$env_marker" ]] && grep -q '^CRUSH_SESSION_ID=.' "$env_marker"; then
+    pass "Scenario 2: PreToolUse hook env contains non-empty CRUSH_SESSION_ID"
+  else
+    fail "Scenario 2: PreToolUse hook env missing CRUSH_SESSION_ID"
   fi
 
   rm -f "$env_marker"

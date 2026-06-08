@@ -54,33 +54,30 @@ test_explorer_dispatch_code_file() {
   capture_tui_evidence "tui-response"
 
   # --- Primary: DB assertions for tree-sitter analysis ---
-  local SID
-  SID=$(get_session_id)
-  if [[ -n "$SID" ]]; then
-    local db_path=".crush/crush.db"
-    if [[ -f "$db_path" ]]; then
-      # Verify tree-sitter tags were written (proves parsing occurred).
-      local tags_count
-      tags_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE session_id='$SID'" 2>/dev/null || echo "0")
-      if [[ "$tags_count" -ge 1 ]]; then
-        pass "Scenario 1: repo_map_tags has $tags_count rows for session (tree-sitter parsed)"
-      else
-        fail "Scenario 1: repo_map_tags empty for session (tree-sitter parsing not recorded)"
-      fi
-
-      # Verify file cache entries exist for tree-sitter analysis.
-      local cache_count
-      cache_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_file_cache WHERE session_id='$SID'" 2>/dev/null || echo "0")
-      if [[ "$cache_count" -ge 1 ]]; then
-        pass "Scenario 1: repo_map_file_cache has $cache_count rows for session"
-      else
-        fail "Scenario 1: repo_map_file_cache empty for session (no tree-sitter analysis cached)"
-      fi
-    else
-      fail "Scenario 1: Database file not found at $db_path"
-    fi
+  # repo_map_tags/file_cache are keyed by repo_key+rel_path (no session_id).
+  local db_path="${CRUSH_DB:-.crush/crush.db}"
+  local tags_count=0 poll_elapsed=0
+  while [[ $poll_elapsed -lt 30 ]]; do
+    tags_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE rel_path LIKE '%config/config.go'" 2>/dev/null || echo "0")
+    [[ "$tags_count" -ge 1 ]] && break
+    sleep 2; poll_elapsed=$((poll_elapsed + 2))
+  done
+  if [[ "$tags_count" -ge 1 ]]; then
+    pass "Scenario 1: repo_map_tags has $tags_count rows for config.go (tree-sitter parsed)"
   else
-    fail "Scenario 1: Could not get session ID for DB assertions"
+    fail "Scenario 1: repo_map_tags empty for config.go (tree-sitter parsing not recorded)"
+  fi
+
+  local cache_count=0; poll_elapsed=0
+  while [[ $poll_elapsed -lt 30 ]]; do
+    cache_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_file_cache WHERE rel_path LIKE '%config/config.go'" 2>/dev/null || echo "0")
+    [[ "$cache_count" -ge 1 ]] && break
+    sleep 2; poll_elapsed=$((poll_elapsed + 2))
+  done
+  if [[ "$cache_count" -ge 1 ]]; then
+    pass "Scenario 1: repo_map_file_cache has $cache_count rows for config.go"
+  else
+    fail "Scenario 1: repo_map_file_cache empty for config.go (no tree-sitter analysis cached)"
   fi
 
   tmux send-keys -t "$TMUX_SESSION" C-c
@@ -125,33 +122,30 @@ test_explorer_noncode_file() {
   capture_tui_evidence "tui-response"
 
   # --- Primary: DB assertions for tree-sitter analysis ---
-  local SID
-  SID=$(get_session_id)
-  if [[ -n "$SID" ]]; then
-    local db_path=".crush/crush.db"
-    if [[ -f "$db_path" ]]; then
-      # Verify tree-sitter tags were written.
-      local tags_count
-      tags_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE session_id='$SID'" 2>/dev/null || echo "0")
-      if [[ "$tags_count" -ge 1 ]]; then
-        pass "Scenario 2: repo_map_tags has $tags_count rows for session"
-      else
-        fail "Scenario 2: repo_map_tags empty for session"
-      fi
-
-      # Verify file cache entries exist.
-      local cache_count
-      cache_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_file_cache WHERE session_id='$SID'" 2>/dev/null || echo "0")
-      if [[ "$cache_count" -ge 1 ]]; then
-        pass "Scenario 2: repo_map_file_cache has $cache_count rows for session"
-      else
-        fail "Scenario 2: repo_map_file_cache empty for session"
-      fi
-    else
-      fail "Scenario 2: Database file not found at $db_path"
-    fi
+  # repo_map_tags/file_cache are keyed by repo_key+rel_path (no session_id).
+  local db_path="${CRUSH_DB:-.crush/crush.db}"
+  local tags_count=0 poll_elapsed=0
+  while [[ $poll_elapsed -lt 30 ]]; do
+    tags_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE rel_path LIKE '%README.md'" 2>/dev/null || echo "0")
+    [[ "$tags_count" -ge 1 ]] && break
+    sleep 2; poll_elapsed=$((poll_elapsed + 2))
+  done
+  if [[ "$tags_count" -ge 1 ]]; then
+    pass "Scenario 2: repo_map_tags has $tags_count rows for README.md"
   else
-    fail "Scenario 2: Could not get session ID for DB assertions"
+    fail "Scenario 2: repo_map_tags empty for README.md"
+  fi
+
+  local cache_count=0; poll_elapsed=0
+  while [[ $poll_elapsed -lt 30 ]]; do
+    cache_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_file_cache WHERE rel_path LIKE '%README.md'" 2>/dev/null || echo "0")
+    [[ "$cache_count" -ge 1 ]] && break
+    sleep 2; poll_elapsed=$((poll_elapsed + 2))
+  done
+  if [[ "$cache_count" -ge 1 ]]; then
+    pass "Scenario 2: repo_map_file_cache has $cache_count rows for README.md"
+  else
+    fail "Scenario 2: repo_map_file_cache empty for README.md"
   fi
 
   tmux send-keys -t "$TMUX_SESSION" C-c

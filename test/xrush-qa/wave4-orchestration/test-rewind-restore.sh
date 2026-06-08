@@ -138,16 +138,16 @@ test_code_restore() {
     fail "Scenario A: V2 content still present in file after rewind"
   fi
 
-  # Secondary DB check: snapshots should exist.
+  # Secondary DB check: snapshots should exist (async goroutine — poll).
   local SID
   SID=$(get_session_id)
   if [[ -n "$SID" ]]; then
-    local snapshot_count
-    snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
-    if [[ "$snapshot_count" -ge 1 ]]; then
+    if wait_for_snapshots "$SID" 1 30; then
+      local snapshot_count
+      snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
       pass "Scenario A: $snapshot_count snapshot(s) exist in DB"
     else
-      fail "Scenario A: No snapshots in DB"
+      fail "Scenario A: No snapshots in DB after 30s polling"
     fi
   fi
 

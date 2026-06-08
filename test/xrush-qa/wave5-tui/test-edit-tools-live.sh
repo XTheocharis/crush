@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Test: Edit tool end-to-end TUI-first scenarios with deterministic sentinels.
-# Scenario 1: Batch edit — edit multiple fixture files atomically, verify content.
-# Scenario 2: Anchor edit — target specific section anchors, verify precision.
-# Scenario 3: Fuzzy match + rollback — approximate edit, then rollback verification.
+# Scenario 1: Multi-file edit — edit multiple fixture files, verify content.
+# Scenario 2: Precision edit — target specific section content, verify precision.
+# Scenario 3: Approximate match edit + rollback — fuzzy edit, then rollback verification.
 set -euo pipefail
 
 WAVE=5
@@ -57,7 +57,7 @@ EOF
   start_crush_tui 5
   focus_editor
 
-  send_tui_prompt "Use the edit or edit_batch tool to make the following changes atomically: (1) In $batch_dir/alpha.txt replace 'Line one of alpha.' with 'EDIT_BATCH_SENTINEL_42 alpha updated'. (2) In $batch_dir/beta.txt replace 'Line one of beta.' with 'EDIT_BATCH_SENTINEL_42 beta updated'. (3) In $batch_dir/gamma.txt replace 'Line one of gamma.' with 'EDIT_BATCH_SENTINEL_42 gamma updated'. After all three edits are done, output exactly: EDIT_BATCH_SENTINEL_42"
+  send_tui_prompt "Use the edit tool to make the following changes atomically: (1) In $batch_dir/alpha.txt replace 'Line one of alpha.' with 'EDIT_BATCH_SENTINEL_42 alpha updated'. (2) In $batch_dir/beta.txt replace 'Line one of beta.' with 'EDIT_BATCH_SENTINEL_42 beta updated'. (3) In $batch_dir/gamma.txt replace 'Line one of gamma.' with 'EDIT_BATCH_SENTINEL_42 gamma updated'. After all three edits are done, output exactly: EDIT_BATCH_SENTINEL_42"
 
   if ! wait_for_tui_idle 180; then
     fail "Scenario 1: Crush did not become idle within 180s"

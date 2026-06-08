@@ -58,6 +58,13 @@ HOOK_EOF
     "$QA_DIR_RESOLVED/wave5.json" > "$tmp_config"
   mv "$tmp_config" "$hooks_config"
 
+  # Verify hooks config is present in generated config.
+  if jq -e '.hooks.PostToolUse' "$hooks_config" >/dev/null 2>&1; then
+    pass "Scenario 1: Hooks config present in crush.json"
+  else
+    fail "Scenario 1: Hooks config missing from crush.json"
+  fi
+
   rm -f "$HOOK_MARKER"
 
   start_crush_tui 5
@@ -80,8 +87,8 @@ HOOK_EOF
     capture_tui_evidence "posttooluse-hook-no-sentinel"
   fi
 
-  # Secondary: marker file must exist.
-  if [[ -f "$HOOK_MARKER" ]]; then
+  # Secondary: marker file must exist (polling with timeout).
+  if wait_for_file "$HOOK_MARKER" 30; then
     pass "Scenario 1: PostToolUse hook marker file exists"
   else
     fail "Scenario 1: PostToolUse hook marker file not found at $HOOK_MARKER"
@@ -135,6 +142,13 @@ HOOK_EOF
     "$QA_DIR_RESOLVED/wave5.json" > "$tmp_config"
   mv "$tmp_config" "$hooks_config"
 
+  # Verify hooks config is present in generated config.
+  if jq -e '.hooks.PostToolUse' "$hooks_config" >/dev/null 2>&1; then
+    pass "Scenario 2: Hooks config present in crush.json"
+  else
+    fail "Scenario 2: Hooks config missing from crush.json"
+  fi
+
   rm -f "$HOOK_MARKER" "$env_marker"
 
   start_crush_tui 5
@@ -157,8 +171,8 @@ HOOK_EOF
     capture_tui_evidence "posttooluse-env-no-sentinel"
   fi
 
-  # Secondary: env vars.
-  if [[ -s "$env_marker" ]] && grep -q '^CRUSH_EVENT=PostToolUse$' "$env_marker"; then
+  # Secondary: wait for env marker file then check CRUSH_EVENT=PostToolUse.
+  if wait_for_file "$env_marker" 30 && [[ -s "$env_marker" ]] && grep -q '^CRUSH_EVENT=PostToolUse$' "$env_marker"; then
     pass "Scenario 2: PostToolUse hook env contains CRUSH_EVENT=PostToolUse"
   else
     fail "Scenario 2: PostToolUse hook env missing CRUSH_EVENT=PostToolUse"
@@ -168,6 +182,13 @@ HOOK_EOF
     pass "Scenario 2: PostToolUse hook env contains CRUSH_TOOL_NAME=file_edit"
   else
     fail "Scenario 2: PostToolUse hook env missing CRUSH_TOOL_NAME=file_edit"
+  fi
+
+  # Tertiary: verify CRUSH_SESSION_ID is non-empty.
+  if [[ -s "$env_marker" ]] && grep -q '^CRUSH_SESSION_ID=.' "$env_marker"; then
+    pass "Scenario 2: PostToolUse hook env contains non-empty CRUSH_SESSION_ID"
+  else
+    fail "Scenario 2: PostToolUse hook env missing CRUSH_SESSION_ID"
   fi
 
   rm -f "$env_marker" "$target_file"

@@ -9,6 +9,8 @@ QA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 source "$QA_DIR/lib/common.sh"
 source "$QA_DIR/lib/db-verify.sh"
 
+export LCM_LOW_THRESHOLD=1
+
 PASS=0
 FAIL=0
 pass() { echo "PASS: $1"; ((PASS += 1)); }

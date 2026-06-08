@@ -75,6 +75,13 @@ HOOK_EOF
     "$QA_DIR_RESOLVED/wave5.json" > "$tmp_config"
   mv "$tmp_config" "$hooks_config"
 
+  # Verify hooks config is present in generated config.
+  if jq -e '.hooks.PreCompact' "$hooks_config" >/dev/null 2>&1; then
+    pass "Scenario 1: Hooks config present in crush.json"
+  else
+    fail "Scenario 1: Hooks config missing from crush.json"
+  fi
+
   rm -f "$PRE_COMPACT_MARKER" "$POST_COMPACT_MARKER" "$COMPACT_ENV" "$STOP_MARKER"
 
   start_crush_tui 5
@@ -109,15 +116,15 @@ HOOK_EOF
     capture_tui_evidence "compaction-hooks-no-sentinel"
   fi
 
-  # Secondary: PreCompact marker file.
-  if [[ -f "$PRE_COMPACT_MARKER" ]]; then
+  # Secondary: PreCompact marker file (polling with timeout).
+  if wait_for_file "$PRE_COMPACT_MARKER" 30; then
     pass "Scenario 1: PreCompact hook marker file exists (compaction triggered)"
   else
     fail "Scenario 1: PreCompact marker not found (compaction did not trigger)"
   fi
 
   # Secondary: PostCompact marker file.
-  if [[ -f "$POST_COMPACT_MARKER" ]]; then
+  if wait_for_file "$POST_COMPACT_MARKER" 10; then
     pass "Scenario 1: PostCompact hook marker file exists"
   else
     echo "  NOTE: PostCompact marker not found"

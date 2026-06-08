@@ -74,41 +74,48 @@ test_explorer_semantic_quality() {
 
   capture_tui_evidence "tui-response"
 
-  # --- Secondary DB check: messages reference the fixture path ---
+  # --- Primary: DB assertions for explorer/tree-sitter analysis ---
+  # repo_map_tags/file_cache are keyed by repo_key+rel_path (no session_id).
+  local db_path="${CRUSH_DB:-.crush/crush.db}"
+  local tags_count=0 poll_elapsed=0
+  while [[ $poll_elapsed -lt 30 ]]; do
+    tags_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE rel_path LIKE '%explorer_fixture.go'" 2>/dev/null || echo "0")
+    [[ "$tags_count" -ge 1 ]] && break
+    sleep 2; poll_elapsed=$((poll_elapsed + 2))
+  done
+  if [[ "$tags_count" -ge 1 ]]; then
+    pass "Scenario 1: repo_map_tags has $tags_count rows for explorer_fixture.go"
+  else
+    fail "Scenario 1: repo_map_tags empty for explorer_fixture.go"
+  fi
+
+  local fixture_symbol_count=0; poll_elapsed=0
+  while [[ $poll_elapsed -lt 30 ]]; do
+    fixture_symbol_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM repo_map_tags WHERE rel_path LIKE '%explorer_fixture.go' AND name IN ('FixtureStruct','FixtureFunc')" 2>/dev/null || echo "0")
+    [[ "$fixture_symbol_count" -ge 2 ]] && break
+    sleep 2; poll_elapsed=$((poll_elapsed + 2))
+  done
+  if [[ "$fixture_symbol_count" -ge 2 ]]; then
+    pass "Scenario 1: repo_map_tags contains FixtureStruct and FixtureFunc symbols"
+  else
+    fail "Scenario 1: repo_map_tags missing expected symbols (found $fixture_symbol_count, need 2)"
+  fi
+
+  # Optional: lcm_large_files check (non-blocking — only populated if LCM large-file path triggers).
   local SID
   SID=$(get_session_id)
   if [[ -n "$SID" ]]; then
-    local fixture_refs
-    fixture_refs=$(query_db "SELECT COUNT(*) FROM messages WHERE session_id = '${SID}' AND content LIKE '%explorer_fixture.go%';" 2>/dev/null || echo "0")
-    local ref_count
-    ref_count=$(echo "$fixture_refs" | jq '.[0]["COUNT(*)"]' 2>/dev/null || echo "$fixture_refs")
-    if [[ "$ref_count" -gt 0 ]]; then
-      pass "Scenario 1: DB references fixture path ($ref_count rows)"
-    else
-      fail "Scenario 1: DB has no references to fixture path"
+    local explorer_used
+    explorer_used=$(sqlite3 "$db_path" "SELECT explorer_used FROM lcm_large_files WHERE session_id='$SID' AND explorer_used IS NOT NULL LIMIT 1" 2>/dev/null || true)
+    if [[ -n "$explorer_used" ]]; then
+      pass "Scenario 1: DB shows explorer_used='$explorer_used' for session"
     fi
 
-    # --- Primary DB check: explorer_used in lcm_large_files ---
-    local db_path=".crush/crush.db"
-    if [[ -f "$db_path" ]]; then
-      local explorer_used
-      explorer_used=$(sqlite3 "$db_path" "SELECT explorer_used FROM lcm_large_files WHERE session_id='$SID' AND explorer_used IS NOT NULL LIMIT 1" 2>/dev/null || true)
-      if [[ -n "$explorer_used" ]]; then
-        pass "Scenario 1: DB shows explorer_used='$explorer_used' for session"
-      else
-        echo "  NOTE: No lcm_large_files rows with explorer_used (file may not have triggered LCM large-file path)"
-      fi
-
-      local exploration_summary
-      exploration_summary=$(sqlite3 "$db_path" "SELECT exploration_summary FROM lcm_large_files WHERE session_id='$SID' AND exploration_summary IS NOT NULL LIMIT 1" 2>/dev/null || true)
-      if [[ -n "$exploration_summary" ]]; then
-        pass "Scenario 1: DB has exploration_summary for explored file"
-      else
-        echo "  NOTE: No exploration_summary in DB (explorer may not have produced summary)"
-      fi
+    local exploration_summary
+    exploration_summary=$(sqlite3 "$db_path" "SELECT exploration_summary FROM lcm_large_files WHERE session_id='$SID' AND exploration_summary IS NOT NULL LIMIT 1" 2>/dev/null || true)
+    if [[ -n "$exploration_summary" ]]; then
+      pass "Scenario 1: DB has exploration_summary for explored file"
     fi
-  else
-    fail "Scenario 1: Could not get session ID for DB check"
   fi
 
   tmux send-keys -t "$TMUX_SESSION" C-c

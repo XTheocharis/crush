@@ -71,8 +71,10 @@ test_orchestration_rewind_code() {
   pre_msg_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM messages WHERE session_id = '$SID'" 2>/dev/null || echo 0)
   echo "  Pre-rewind message count: $pre_msg_count"
 
-  local pre_snapshot_count
-  pre_snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+  local pre_snapshot_count=0
+  if wait_for_snapshots "$SID" 1 30; then
+    pre_snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+  fi
   echo "  Pre-rewind snapshot count: $pre_snapshot_count"
 
   # Check for child sessions.
@@ -132,9 +134,11 @@ test_orchestration_rewind_code() {
     fail "Scenario: Message count changed after code-only rewind ($pre_msg_count → $post_msg_count)"
   fi
 
-  # Secondary: snapshots should exist.
-  local post_snapshot_count
-  post_snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+  # Secondary: snapshots should exist (async goroutine — poll).
+  local post_snapshot_count=0
+  if wait_for_snapshots "$SID" 1 30; then
+    post_snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+  fi
   if [[ "$post_snapshot_count" -ge 1 ]]; then
     pass "Scenario: $post_snapshot_count snapshot(s) exist in DB"
   else
@@ -409,9 +413,11 @@ test_orchestration_rewind_both() {
     fail "Scenario: REWIND_ORCH_DUAL_77 messages still in DB (count: $sentinel_in_db)"
   fi
 
-  # Secondary: snapshots should exist.
-  local snapshot_count
-  snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+  # Secondary: snapshots should exist (async goroutine — poll).
+  local snapshot_count=0
+  if wait_for_snapshots "$SID" 1 30; then
+    snapshot_count=$(sqlite3 .crush/crush.db "SELECT COUNT(*) FROM turn_snapshots WHERE session_id = '$SID'" 2>/dev/null || echo 0)
+  fi
   if [[ "$snapshot_count" -ge 1 ]]; then
     pass "Scenario: $snapshot_count snapshot(s) exist in DB"
   else
