@@ -14,15 +14,31 @@ assistant through its TUI interface using tmux automation. A comprehensive
 remediation effort identified and fixed 14 infrastructure-level bugs in the test
 framework itself, improving the assertion pass rate from ~40% to 69%.
 
-**Score:** 196 passed / 89 failed / 285 total assertions (68.8% pass rate)
+**Score:** 180 passed / 121 failed / 301 total assertions (59.8% pass rate)
 
-Of the 89 remaining failures:
-- **52 (58%)** are confirmed app defects: features exist in code but don't function
-  at runtime (empty DB tables, hooks not firing, LCM data not persisting)
-- **20 (23%)** are LLM non-determinism: sentinel strings not produced by the model
-- **7 (8%)** are config-gated: features work but need specific config (AutoFix, Architect)
-- **7 (8%)** are stubbed features: partially implemented (Eval TUI "coming soon")
-- **3 (3%)** are threshold-gated: features need runtime conditions to trigger (LCM compaction)
+*Previous run: 196P/89F/285T (68.8%)*
+
+### Per-Wave Results
+
+| Wave | Pass | Fail | Total | Rate |
+|------|------|------|-------|------|
+| wave1-session | 41 | 1 | 42 | 97.6% |
+| wave2-repomap | 23 | 16 | 39 | 59.0% |
+| wave3-lcm | 35 | 33 | 68 | 51.5% |
+| wave4-orchestration | 49 | 32 | 81 | 60.5% |
+| wave5-tui | 32 | 28 | 60 | 53.3% |
+| **Total** | **180** | **121** | **301** | **59.8%** |
+
+### Failure Classification
+
+Of the 121 failures:
+- **~45 (37%)** are rewind/snapshot failures: turn_snapshots empty, rewind operations don't restore state, message counts incorrect after rewind. Root cause: snapshot system not creating entries (diagnostic logging added, pending runtime verification).
+- **~25 (21%)** are LLM non-determinism: sentinel strings not produced by the model, files not edited as requested, commands not executed as specified.
+- **~15 (12%)** are repo-map session rankings: session_rankings table empty despite file_cache/tags populated. Diagnostic logging added, likely a session ID or personalization vector issue.
+- **~12 (10%)** are LCM/compaction: compaction doesn't trigger within test timeout, summaries not persisted, growth metrics not found.
+- **~10 (8%)** are eval stub: Eval TUI removed from palette, tests still expect it. Tests need updating.
+- **~8 (7%)** are orchestration child sessions: ForkedAgent tests partially fixed (no DB session queries) but some tests still check for child session behavior.
+- **~6 (5%)** are infrastructure/timing: tmux pane not found, TUI not becoming idle, config overwrite timing.
 
 **Key conclusion:** The test infrastructure is now sound. Remaining failures
 expose real application defects or fundamental LLM variability — not test bugs.

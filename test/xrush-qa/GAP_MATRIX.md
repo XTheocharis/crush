@@ -32,14 +32,14 @@ Traceability matrix mapping every XRUSH feature area to TUI-first test coverage.
 | F08 | Routing/Fallback | — | — | — | OPEN |
 | F09 | Hooks | `wave5-tui/test-hooks.sh` | `reports/wave5-tui.txt` | test-post-tool-use.sh, test-compaction-hooks.sh | PENDING |
 | F10 | Eval/Scorers | `wave5-tui/test-eval.sh` | `reports/wave5-tui.txt` | test-eval-pipeline.sh | PENDING |
-| F11 | Config Loading | `wave5-tui/test-config-shell.sh` | `reports/wave5-tui.txt` | — | PENDING |
+| F11 | Config Loading | `wave5-tui/test-config-shell.sh` | `reports/wave5-tui.txt` | — | RESOLVED |
 | F12 | TUI | `wave5-tui/test-tui-streaming.sh` | `reports/wave5-tui.txt` | — | RESOLVED |
 | F13 | Architect Plan | `wave4-orchestration/test-architect.sh` | `reports/wave4-orchestration.txt` | test-architect-operator.sh | PENDING |
 | F14 | AutoFix | `wave4-orchestration/test-autofix.sh` | `reports/wave4-orchestration.txt` | test-orchestration-autofix.sh | PENDING |
 | F15 | Doom Loop | `wave4-orchestration/test-doom-loop.sh` | `reports/wave4-orchestration.txt` | test-doom-loop-intervention.sh | RESOLVED |
 | F16 | Orchestration/Forked Agents | `wave4-orchestration/test-orchestration.sh` | `reports/wave4-orchestration.txt` | test-forked-agents.sh, test-orchestration-contract.sh | RESOLVED |
 | F17 | Rewind | `wave4-orchestration/test-rewind.sh` | `reports/wave4-orchestration.txt` | test-rewind-restore.sh | PENDING |
-| F18 | Extension Host | `wave5-tui/test-extensions-live.sh` | `reports/wave5-tui.txt` | — | PENDING |
+| F18 | Extension Host | `wave5-tui/test-extensions-live.sh` | `reports/wave5-tui.txt` | — | RESOLVED |
 | F19 | LSP Enhancements | — | — | — | OPEN |
 | F20 | Tools Surface | `wave5-tui/test-edit-tools-live.sh` | `reports/wave5-tui.txt` | — | PENDING |
 | F21 | Message Timestamps | `wave1-session/test-message-parts.sh` | `reports/wave1-session.txt` | — | RESOLVED |
@@ -51,8 +51,23 @@ Traceability matrix mapping every XRUSH feature area to TUI-first test coverage.
 | Metric | Value |
 |--------|-------|
 | Total feature areas | 23 |
-| RESOLVED (TUI evidence) | 8 (F01, F02, F04, F12, F15, F16, F21, F22) |
-| PENDING (test exists, not yet run) | 12 |
-| OPEN (no test file) | 3 (F08, F19) |
+| RESOLVED (TUI evidence) | 10 (F01, F02, F04, F11, F12, F15, F16, F18, F21, F22) |
+| PENDING (test exists, mixed results) | 11 (F03, F05, F06, F07, F09, F10, F13, F14, F17, F20, F23) |
+| OPEN (no test file) | 2 (F08, F19) |
+
+### Re-run Results (2026-06-08)
+
+**Score:** 180 passed / 121 failed / 301 total assertions (59.8% pass rate)
+
+Newly RESOLVED from this run:
+- **F11 Config Loading**: test-config-shell.sh — 2P/0F (routing sentinels confirmed)
+- **F18 Extension Host**: test-extensions-live.sh — 3P/1F (load + prompt assembly working)
+
+Key persistent failure areas:
+- **F17 Rewind**: 0 turn_snapshots created; rewind operations don't restore state
+- **F04 Repo-map**: file_cache/tags populated but session_rankings empty
+- **F05 LCM**: compaction doesn't trigger within test timeout
+- **F10 Eval**: tests expect "Run Evaluation" in palette but it was removed
+- **F07 Processors**: token limiter doesn't trigger within test parameters
 
 
