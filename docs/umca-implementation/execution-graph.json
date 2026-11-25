@@ -1,0 +1,895 @@
+{
+  "schema_version": 1,
+  "nodes": {
+    "U00": {
+      "owner": "ORCH + HST/STO/CAP/OPS/QA",
+      "depends_on": [],
+      "acceptance": "Preflight, pristine native baseline and drift, provisional contracts, capability/permission model",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "U01": {
+      "owner": "HST",
+      "depends_on": [
+        "U00"
+      ],
+      "acceptance": "Record real multi-step call & attempt baseline, stable step mapping spike",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "U02": {
+      "owner": "STO",
+      "depends_on": [
+        "U01"
+      ],
+      "acceptance": "Foundational source/artifact/edge/admission schema, minimal transactional native/artifact deletion, transaction contracts",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G1": {
+      "owner": "QA",
+      "depends_on": [
+        "U01",
+        "U02"
+      ],
+      "acceptance": "Baseline regression and measurements; no native behavior change",
+      "kind": "gate",
+      "merge_after": []
+    },
+    "U03": {
+      "owner": "CAP",
+      "depends_on": [
+        "G1"
+      ],
+      "acceptance": "Earliest producer capture, truthful bounded artifacts and recoverable storage",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "U04": {
+      "owner": "OPS",
+      "depends_on": [
+        "U03"
+      ],
+      "acceptance": "Exact-handle inspect/expand/delete through workspace, CLI and configuration; capture off default",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G2": {
+      "owner": "QA",
+      "depends_on": [
+        "U03",
+        "U04"
+      ],
+      "acceptance": "Capture fault/scope tests; first durable artifact includes minimal transactional deletion through all paths",
+      "kind": "gate",
+      "merge_after": []
+    },
+    "U05": {
+      "owner": "STO",
+      "depends_on": [
+        "U02",
+        "G1"
+      ],
+      "acceptance": "Checkpoint CAS, flush, source deletion closure, legacy validation & migration compatibility",
+      "kind": "unit",
+      "merge_after": [
+        "G2"
+      ]
+    },
+    "U06": {
+      "owner": "OPS",
+      "depends_on": [
+        "G2",
+        "U05"
+      ],
+      "acceptance": "Extend inspect/delete to checkpoints and compatibility paths",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G3": {
+      "owner": "QA",
+      "depends_on": [
+        "G2",
+        "U05",
+        "U06"
+      ],
+      "acceptance": "Publication/deletion race, restart and one-connection tests",
+      "kind": "gate",
+      "merge_after": []
+    },
+    "U07": {
+      "owner": "HST",
+      "depends_on": [
+        "G3",
+        "U01"
+      ],
+      "acceptance": "Legal cut, same-run projection, manual/auto compact, output reserve, per-attempt admission",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "U08": {
+      "owner": "OPS",
+      "depends_on": [
+        "U07"
+      ],
+      "acceptance": "Local first-slice project switch, manual controls, status and mode transition",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G4": {
+      "owner": "QA",
+      "depends_on": [
+        "U07",
+        "U08"
+      ],
+      "acceptance": "Real next-request release fixture, first named adapter & native fallback",
+      "kind": "gate",
+      "merge_after": []
+    },
+    "U09": {
+      "owner": "REC",
+      "depends_on": [
+        "G4"
+      ],
+      "acceptance": "Scoped lexical search, exact handles/cursors, receipt/provenance, native context tools",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "U10": {
+      "owner": "OPS",
+      "depends_on": [
+        "U09"
+      ],
+      "acceptance": "Full inspector, search/expand and hide/pin UI/CLI; native/connected parity",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G5": {
+      "owner": "QA",
+      "depends_on": [
+        "U09",
+        "U10"
+      ],
+      "acceptance": "FTS & bounded fallback, ordinary writes/backfill, deny cross-session",
+      "kind": "gate",
+      "merge_after": []
+    },
+    "U11": {
+      "owner": "MEM",
+      "depends_on": [
+        "G5"
+      ],
+      "acceptance": "Manual memory, task continuity, opted-in extraction & local job contracts",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "U12": {
+      "owner": "OPS",
+      "depends_on": [
+        "U11"
+      ],
+      "acceptance": "Review/edit/forget, learning and recall controls",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G6": {
+      "owner": "QA",
+      "depends_on": [
+        "U11",
+        "U12"
+      ],
+      "acceptance": "Core memory and all flag combinations; functional foundation complete",
+      "kind": "gate",
+      "merge_after": []
+    },
+    "A1": {
+      "owner": "HIE",
+      "depends_on": [
+        "G4",
+        "U11"
+      ],
+      "acceptance": "Hierarchical coverage/pressure/idle work and local rollover",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "B1": {
+      "owner": "MEM",
+      "depends_on": [
+        "G6"
+      ],
+      "acceptance": "Observations, reflection, bitemporal evidence and verification",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "C1": {
+      "owner": "VEC",
+      "depends_on": [
+        "G5"
+      ],
+      "acceptance": "Local scoped embeddings/exact vectors, fusion, reranking",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "D1": {
+      "owner": "HEL",
+      "depends_on": [
+        "G5",
+        "U07"
+      ],
+      "acceptance": "Prefetch and isolated read-only helper; cancellation/egress",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "D2": {
+      "owner": "HEL",
+      "depends_on": [
+        "D1",
+        "U10"
+      ],
+      "acceptance": "Opt-in MCP server & native parity",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "E1": {
+      "owner": "PRV",
+      "depends_on": [
+        "G4",
+        "U09"
+      ],
+      "acceptance": "Manifest/dynamic catalog, stable cache and usage ledger",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G7P": {
+      "owner": "PRV",
+      "depends_on": [
+        "G4",
+        "E1"
+      ],
+      "acceptance": "All provider rows and conformance (spec \u00a711G; not gate G7)",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "H1": {
+      "owner": "DST",
+      "depends_on": [
+        "G3",
+        "U09"
+      ],
+      "acceptance": "PostgreSQL store, origin outbox, authority/fence, local jobs",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "H2": {
+      "owner": "DST",
+      "depends_on": [
+        "H1",
+        "U11"
+      ],
+      "acceptance": "RabbitMQ/worker, recovery, cutover & backup/repair fixtures",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "C2": {
+      "owner": "VEC",
+      "depends_on": [
+        "C1",
+        "H2"
+      ],
+      "acceptance": "pgvector partitioned backend, external projection/reindex/revocation",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "F1": {
+      "owner": "PER",
+      "depends_on": [
+        "B1",
+        "H2"
+      ],
+      "acceptance": "Personal memory/grants, offline denial & import/export",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "A2": {
+      "owner": "HIE",
+      "depends_on": [
+        "A1",
+        "H2"
+      ],
+      "acceptance": "Cross-store rollover activation/revocation/retry",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "I1": {
+      "owner": "REW",
+      "depends_on": [
+        "G4",
+        "U03",
+        "U05"
+      ],
+      "acceptance": "Rewind points/mutation journal and workspace fences",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "I2": {
+      "owner": "REW",
+      "depends_on": [
+        "I1",
+        "U07"
+      ],
+      "acceptance": "Four local modes, safe apply/recover/compensate; active lineage invalidation",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "I3": {
+      "owner": "REW",
+      "depends_on": [
+        "I2",
+        "H2"
+      ],
+      "acceptance": "Connected/multi-store receipt & recovery semantics",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "U13": {
+      "owner": "OPS",
+      "depends_on": [
+        "A2",
+        "B1",
+        "C2",
+        "D2",
+        "E1",
+        "G7P",
+        "F1",
+        "H2",
+        "I3"
+      ],
+      "acceptance": "All advanced switches/status, real CLI/TUI/API entry points and docs; incrementally wire per stage as APIs land",
+      "kind": "unit",
+      "merge_after": []
+    },
+    "G7": {
+      "owner": "QA",
+      "depends_on": [
+        "G6",
+        "A2",
+        "B1",
+        "C2",
+        "D2",
+        "E1",
+        "G7P",
+        "F1",
+        "H2",
+        "I3",
+        "U13"
+      ],
+      "acceptance": "All A\u2013I enabled/disabled/failure/rollback gates, cross-boundary acceptance",
+      "kind": "gate",
+      "merge_after": []
+    },
+    "U14": {
+      "owner": "QA + ORCH",
+      "depends_on": [
+        "G7"
+      ],
+      "acceptance": "Full release evidence, matched measurements, rollback runbook, final audit",
+      "kind": "unit",
+      "merge_after": []
+    }
+  },
+  "expanded_static_dependencies": {
+    "CAND.U00": [],
+    "AUD.U00.candidate": [
+      "CAND.U00"
+    ],
+    "MERGE.U00": [
+      "AUD.U00.candidate"
+    ],
+    "AUD.U00.integrated": [
+      "MERGE.U00"
+    ],
+    "U00": [
+      "AUD.U00.integrated"
+    ],
+    "CAND.U01": [
+      "U00"
+    ],
+    "AUD.U01.candidate": [
+      "CAND.U01"
+    ],
+    "MERGE.U01": [
+      "AUD.U01.candidate"
+    ],
+    "AUD.U01.integrated": [
+      "MERGE.U01"
+    ],
+    "U01": [
+      "AUD.U01.integrated"
+    ],
+    "CAND.U02": [
+      "U01"
+    ],
+    "AUD.U02.candidate": [
+      "CAND.U02"
+    ],
+    "MERGE.U02": [
+      "AUD.U02.candidate"
+    ],
+    "AUD.U02.integrated": [
+      "MERGE.U02"
+    ],
+    "U02": [
+      "AUD.U02.integrated"
+    ],
+    "G1": [
+      "U01",
+      "U02"
+    ],
+    "CAND.U03": [
+      "G1"
+    ],
+    "AUD.U03.candidate": [
+      "CAND.U03"
+    ],
+    "MERGE.U03": [
+      "AUD.U03.candidate"
+    ],
+    "AUD.U03.integrated": [
+      "MERGE.U03"
+    ],
+    "U03": [
+      "AUD.U03.integrated"
+    ],
+    "CAND.U04": [
+      "U03"
+    ],
+    "AUD.U04.candidate": [
+      "CAND.U04"
+    ],
+    "MERGE.U04": [
+      "AUD.U04.candidate"
+    ],
+    "AUD.U04.integrated": [
+      "MERGE.U04"
+    ],
+    "U04": [
+      "AUD.U04.integrated"
+    ],
+    "G2": [
+      "U03",
+      "U04"
+    ],
+    "CAND.U05": [
+      "U02",
+      "G1"
+    ],
+    "AUD.U05.candidate": [
+      "CAND.U05"
+    ],
+    "MERGE.U05": [
+      "AUD.U05.candidate",
+      "G2"
+    ],
+    "AUD.U05.integrated": [
+      "MERGE.U05"
+    ],
+    "U05": [
+      "AUD.U05.integrated"
+    ],
+    "CAND.U06": [
+      "G2",
+      "U05"
+    ],
+    "AUD.U06.candidate": [
+      "CAND.U06"
+    ],
+    "MERGE.U06": [
+      "AUD.U06.candidate"
+    ],
+    "AUD.U06.integrated": [
+      "MERGE.U06"
+    ],
+    "U06": [
+      "AUD.U06.integrated"
+    ],
+    "G3": [
+      "G2",
+      "U05",
+      "U06"
+    ],
+    "CAND.U07": [
+      "G3",
+      "U01"
+    ],
+    "AUD.U07.candidate": [
+      "CAND.U07"
+    ],
+    "MERGE.U07": [
+      "AUD.U07.candidate"
+    ],
+    "AUD.U07.integrated": [
+      "MERGE.U07"
+    ],
+    "U07": [
+      "AUD.U07.integrated"
+    ],
+    "CAND.U08": [
+      "U07"
+    ],
+    "AUD.U08.candidate": [
+      "CAND.U08"
+    ],
+    "MERGE.U08": [
+      "AUD.U08.candidate"
+    ],
+    "AUD.U08.integrated": [
+      "MERGE.U08"
+    ],
+    "U08": [
+      "AUD.U08.integrated"
+    ],
+    "G4": [
+      "U07",
+      "U08"
+    ],
+    "CAND.U09": [
+      "G4"
+    ],
+    "AUD.U09.candidate": [
+      "CAND.U09"
+    ],
+    "MERGE.U09": [
+      "AUD.U09.candidate"
+    ],
+    "AUD.U09.integrated": [
+      "MERGE.U09"
+    ],
+    "U09": [
+      "AUD.U09.integrated"
+    ],
+    "CAND.U10": [
+      "U09"
+    ],
+    "AUD.U10.candidate": [
+      "CAND.U10"
+    ],
+    "MERGE.U10": [
+      "AUD.U10.candidate"
+    ],
+    "AUD.U10.integrated": [
+      "MERGE.U10"
+    ],
+    "U10": [
+      "AUD.U10.integrated"
+    ],
+    "G5": [
+      "U09",
+      "U10"
+    ],
+    "CAND.U11": [
+      "G5"
+    ],
+    "AUD.U11.candidate": [
+      "CAND.U11"
+    ],
+    "MERGE.U11": [
+      "AUD.U11.candidate"
+    ],
+    "AUD.U11.integrated": [
+      "MERGE.U11"
+    ],
+    "U11": [
+      "AUD.U11.integrated"
+    ],
+    "CAND.U12": [
+      "U11"
+    ],
+    "AUD.U12.candidate": [
+      "CAND.U12"
+    ],
+    "MERGE.U12": [
+      "AUD.U12.candidate"
+    ],
+    "AUD.U12.integrated": [
+      "MERGE.U12"
+    ],
+    "U12": [
+      "AUD.U12.integrated"
+    ],
+    "G6": [
+      "U11",
+      "U12"
+    ],
+    "CAND.A1": [
+      "G4",
+      "U11"
+    ],
+    "AUD.A1.candidate": [
+      "CAND.A1"
+    ],
+    "MERGE.A1": [
+      "AUD.A1.candidate"
+    ],
+    "AUD.A1.integrated": [
+      "MERGE.A1"
+    ],
+    "A1": [
+      "AUD.A1.integrated"
+    ],
+    "CAND.B1": [
+      "G6"
+    ],
+    "AUD.B1.candidate": [
+      "CAND.B1"
+    ],
+    "MERGE.B1": [
+      "AUD.B1.candidate"
+    ],
+    "AUD.B1.integrated": [
+      "MERGE.B1"
+    ],
+    "B1": [
+      "AUD.B1.integrated"
+    ],
+    "CAND.C1": [
+      "G5"
+    ],
+    "AUD.C1.candidate": [
+      "CAND.C1"
+    ],
+    "MERGE.C1": [
+      "AUD.C1.candidate"
+    ],
+    "AUD.C1.integrated": [
+      "MERGE.C1"
+    ],
+    "C1": [
+      "AUD.C1.integrated"
+    ],
+    "CAND.D1": [
+      "G5",
+      "U07"
+    ],
+    "AUD.D1.candidate": [
+      "CAND.D1"
+    ],
+    "MERGE.D1": [
+      "AUD.D1.candidate"
+    ],
+    "AUD.D1.integrated": [
+      "MERGE.D1"
+    ],
+    "D1": [
+      "AUD.D1.integrated"
+    ],
+    "CAND.D2": [
+      "D1",
+      "U10"
+    ],
+    "AUD.D2.candidate": [
+      "CAND.D2"
+    ],
+    "MERGE.D2": [
+      "AUD.D2.candidate"
+    ],
+    "AUD.D2.integrated": [
+      "MERGE.D2"
+    ],
+    "D2": [
+      "AUD.D2.integrated"
+    ],
+    "CAND.E1": [
+      "G4",
+      "U09"
+    ],
+    "AUD.E1.candidate": [
+      "CAND.E1"
+    ],
+    "MERGE.E1": [
+      "AUD.E1.candidate"
+    ],
+    "AUD.E1.integrated": [
+      "MERGE.E1"
+    ],
+    "E1": [
+      "AUD.E1.integrated"
+    ],
+    "CAND.G7P": [
+      "G4",
+      "E1"
+    ],
+    "AUD.G7P.candidate": [
+      "CAND.G7P"
+    ],
+    "MERGE.G7P": [
+      "AUD.G7P.candidate"
+    ],
+    "AUD.G7P.integrated": [
+      "MERGE.G7P"
+    ],
+    "G7P": [
+      "AUD.G7P.integrated"
+    ],
+    "CAND.H1": [
+      "G3",
+      "U09"
+    ],
+    "AUD.H1.candidate": [
+      "CAND.H1"
+    ],
+    "MERGE.H1": [
+      "AUD.H1.candidate"
+    ],
+    "AUD.H1.integrated": [
+      "MERGE.H1"
+    ],
+    "H1": [
+      "AUD.H1.integrated"
+    ],
+    "CAND.H2": [
+      "H1",
+      "U11"
+    ],
+    "AUD.H2.candidate": [
+      "CAND.H2"
+    ],
+    "MERGE.H2": [
+      "AUD.H2.candidate"
+    ],
+    "AUD.H2.integrated": [
+      "MERGE.H2"
+    ],
+    "H2": [
+      "AUD.H2.integrated"
+    ],
+    "CAND.C2": [
+      "C1",
+      "H2"
+    ],
+    "AUD.C2.candidate": [
+      "CAND.C2"
+    ],
+    "MERGE.C2": [
+      "AUD.C2.candidate"
+    ],
+    "AUD.C2.integrated": [
+      "MERGE.C2"
+    ],
+    "C2": [
+      "AUD.C2.integrated"
+    ],
+    "CAND.F1": [
+      "B1",
+      "H2"
+    ],
+    "AUD.F1.candidate": [
+      "CAND.F1"
+    ],
+    "MERGE.F1": [
+      "AUD.F1.candidate"
+    ],
+    "AUD.F1.integrated": [
+      "MERGE.F1"
+    ],
+    "F1": [
+      "AUD.F1.integrated"
+    ],
+    "CAND.A2": [
+      "A1",
+      "H2"
+    ],
+    "AUD.A2.candidate": [
+      "CAND.A2"
+    ],
+    "MERGE.A2": [
+      "AUD.A2.candidate"
+    ],
+    "AUD.A2.integrated": [
+      "MERGE.A2"
+    ],
+    "A2": [
+      "AUD.A2.integrated"
+    ],
+    "CAND.I1": [
+      "G4",
+      "U03",
+      "U05"
+    ],
+    "AUD.I1.candidate": [
+      "CAND.I1"
+    ],
+    "MERGE.I1": [
+      "AUD.I1.candidate"
+    ],
+    "AUD.I1.integrated": [
+      "MERGE.I1"
+    ],
+    "I1": [
+      "AUD.I1.integrated"
+    ],
+    "CAND.I2": [
+      "I1",
+      "U07"
+    ],
+    "AUD.I2.candidate": [
+      "CAND.I2"
+    ],
+    "MERGE.I2": [
+      "AUD.I2.candidate"
+    ],
+    "AUD.I2.integrated": [
+      "MERGE.I2"
+    ],
+    "I2": [
+      "AUD.I2.integrated"
+    ],
+    "CAND.I3": [
+      "I2",
+      "H2"
+    ],
+    "AUD.I3.candidate": [
+      "CAND.I3"
+    ],
+    "MERGE.I3": [
+      "AUD.I3.candidate"
+    ],
+    "AUD.I3.integrated": [
+      "MERGE.I3"
+    ],
+    "I3": [
+      "AUD.I3.integrated"
+    ],
+    "CAND.U13": [
+      "A2",
+      "B1",
+      "C2",
+      "D2",
+      "E1",
+      "G7P",
+      "F1",
+      "H2",
+      "I3"
+    ],
+    "AUD.U13.candidate": [
+      "CAND.U13"
+    ],
+    "MERGE.U13": [
+      "AUD.U13.candidate"
+    ],
+    "AUD.U13.integrated": [
+      "MERGE.U13"
+    ],
+    "U13": [
+      "AUD.U13.integrated"
+    ],
+    "G7": [
+      "G6",
+      "A2",
+      "B1",
+      "C2",
+      "D2",
+      "E1",
+      "G7P",
+      "F1",
+      "H2",
+      "I3",
+      "U13"
+    ],
+    "CAND.U14": [
+      "G7"
+    ],
+    "AUD.U14.candidate": [
+      "CAND.U14"
+    ],
+    "MERGE.U14": [
+      "AUD.U14.candidate"
+    ],
+    "AUD.U14.integrated": [
+      "MERGE.U14"
+    ],
+    "U14": [
+      "AUD.U14.integrated"
+    ]
+  },
+  "dynamic": "Add versioned owner S/H/O or Q (QA fixture) and other scoped executable subunits plus all audit/merge dependencies before consumer acceptance; no dependency on its own requester acceptance. Validate DAG and lease wait graph on each insertion. G* virtual gates are read-only, Q.* fixture code is an audited unit. Read-only units use no-op merge with independent evidence. Trial merge uses exact candidate SHA and accepted parent in a unique worktree; only independent integrated AUD + QA and journaled CAS advance the never-checked-out accepted branch. Rejected trial never enters accepted ancestry. Release contested leases while waiting."
+}

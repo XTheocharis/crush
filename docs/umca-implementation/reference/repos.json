@@ -1,0 +1,1891 @@
+{
+  "schema_version": 1,
+  "verified_utc": "2026-11-25",
+  "verification": "GitHub commit and recursive tree metadata; local referenced source blobs compared with tree. No live clone or reference tests executed during planning.",
+  "repositories": [
+    {
+      "id": "avtc-pi-session-owl-main",
+      "repository": "avtc/avtc-pi-session-owl",
+      "url": "https://github.com/avtc/avtc-pi-session-owl.git",
+      "commit": "6562ba9e4cd581970ea85c14cbb7a0fdb4b92d0c",
+      "tree": "8705d7e3898b3ee288249106090cdf4ba406e92c",
+      "roles": [
+        "HST",
+        "HIE",
+        "MEM",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Graph invariants and selector planning; cancelled selector can retain partial working copy. Do not publish partial authority.",
+      "files": {
+        "src/types.ts": {
+          "blob_sha1": "506ad0601732f007838642efd3634ea9cc51908d",
+          "lines": 263
+        },
+        "src/graph/invariants.ts": {
+          "blob_sha1": "caa689b4c3b1fc070b2a82b5baf8b327945ceb35",
+          "lines": 214
+        },
+        "src/selector/run.ts": {
+          "blob_sha1": "7bd08b51f6c04a1159cc358b89ae43c95dead00e",
+          "lines": 404
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S23",
+          "archive_alias": "avtc-pi-session-owl-main",
+          "path": "src/types.ts",
+          "ranges": [
+            [
+              94,
+              190
+            ]
+          ],
+          "lines": 263,
+          "blob_sha1": "506ad0601732f007838642efd3634ea9cc51908d",
+          "commit": "6562ba9e4cd581970ea85c14cbb7a0fdb4b92d0c"
+        },
+        {
+          "source_id": "S23",
+          "archive_alias": "avtc-pi-session-owl-main",
+          "path": "src/graph/invariants.ts",
+          "ranges": [
+            [
+              32,
+              194
+            ]
+          ],
+          "lines": 214,
+          "blob_sha1": "caa689b4c3b1fc070b2a82b5baf8b327945ceb35",
+          "commit": "6562ba9e4cd581970ea85c14cbb7a0fdb4b92d0c"
+        },
+        {
+          "source_id": "S23",
+          "archive_alias": "avtc-pi-session-owl-main",
+          "path": "src/selector/run.ts",
+          "ranges": [
+            [
+              108,
+              238
+            ]
+          ],
+          "lines": 404,
+          "blob_sha1": "7bd08b51f6c04a1159cc358b89ae43c95dead00e",
+          "commit": "6562ba9e4cd581970ea85c14cbb7a0fdb4b92d0c"
+        }
+      ]
+    },
+    {
+      "id": "billion-context-master",
+      "repository": "ranxianglei/billion-context",
+      "url": "https://github.com/ranxianglei/billion-context.git",
+      "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4",
+      "tree": "50f21234826e829612d056574f30fcf42b90ab1f",
+      "roles": [
+        "STO",
+        "HST",
+        "CAP",
+        "HIE",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Content store, view latch, turn integrity and range/pair fixtures. Hashes identify content, not authority or stable event identity.",
+      "files": {
+        "kernel/src/content-store.ts": {
+          "blob_sha1": "49ba2fe3255d7b877ec8f6818e5a9d1514e93005",
+          "lines": 189
+        },
+        "kernel/src/view-latch.ts": {
+          "blob_sha1": "2ca2d2100ea776f6bac4462238026322b3de99e6",
+          "lines": 163
+        },
+        "kernel/src/decompress.ts": {
+          "blob_sha1": "d76021cabf680914b72655a33fdc8056e3459da1",
+          "lines": 296
+        },
+        "kernel/src/turn-integrity.ts": {
+          "blob_sha1": "1ee828b62854b37831b2063e712ca07ec4c6e1de",
+          "lines": 261
+        },
+        "kernel/tests/issue2886-recent-pair-integrity.test.ts": {
+          "blob_sha1": "48d4c62cd42b92885d7288eb6304b35da0c64687",
+          "lines": 202
+        },
+        "kernel/tests/recommend-range-integrity.test.ts": {
+          "blob_sha1": "63037f42d8b72882e3972460dcbdce24de86730f",
+          "lines": 211
+        },
+        "kernel/tests/seq-interval-coverage.test.ts": {
+          "blob_sha1": "634716f55424732655bc88d4db79faf961347656",
+          "lines": 217
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S04",
+          "archive_alias": "billion-context-master",
+          "path": "kernel/src/content-store.ts",
+          "ranges": [
+            [
+              29,
+              118
+            ]
+          ],
+          "lines": 189,
+          "blob_sha1": "49ba2fe3255d7b877ec8f6818e5a9d1514e93005",
+          "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4"
+        },
+        {
+          "source_id": "S05",
+          "archive_alias": "billion-context-master",
+          "path": "kernel/src/view-latch.ts",
+          "ranges": [
+            [
+              71,
+              151
+            ]
+          ],
+          "lines": 163,
+          "blob_sha1": "2ca2d2100ea776f6bac4462238026322b3de99e6",
+          "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4"
+        },
+        {
+          "source_id": "S06",
+          "archive_alias": "billion-context-master",
+          "path": "kernel/src/decompress.ts",
+          "ranges": [
+            [
+              176,
+              235
+            ]
+          ],
+          "lines": 296,
+          "blob_sha1": "d76021cabf680914b72655a33fdc8056e3459da1",
+          "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4"
+        },
+        {
+          "source_id": "S06",
+          "archive_alias": "billion-context-master",
+          "path": "kernel/src/turn-integrity.ts",
+          "ranges": [
+            [
+              198,
+              261
+            ]
+          ],
+          "lines": 261,
+          "blob_sha1": "1ee828b62854b37831b2063e712ca07ec4c6e1de",
+          "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "billion-context-master",
+          "path": "kernel/tests/issue2886-recent-pair-integrity.test.ts",
+          "ranges": [],
+          "lines": 202,
+          "blob_sha1": "48d4c62cd42b92885d7288eb6304b35da0c64687",
+          "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "billion-context-master",
+          "path": "kernel/tests/recommend-range-integrity.test.ts",
+          "ranges": [],
+          "lines": 211,
+          "blob_sha1": "63037f42d8b72882e3972460dcbdce24de86730f",
+          "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "billion-context-master",
+          "path": "kernel/tests/seq-interval-coverage.test.ts",
+          "ranges": [],
+          "lines": 217,
+          "blob_sha1": "634716f55424732655bc88d4db79faf961347656",
+          "commit": "85afa7b212ce20981d66c9e6ecb1e944751cb3c4"
+        }
+      ]
+    },
+    {
+      "id": "context-mode-main",
+      "repository": "mksglu/context-mode",
+      "url": "https://github.com/mksglu/context-mode.git",
+      "commit": "a2bced6d19ef1836179d070445b32dc5325e5017",
+      "tree": "90f73756ce7ae339f5a1f67578c112ef25f5b56b",
+      "roles": [
+        "CAP",
+        "REC",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Capture finalization, indexing and bounded selection. Capture after truncation cannot prove native-byte fidelity.",
+      "files": {
+        "src/core/tools/execute.ts": {
+          "blob_sha1": "a58d1a2c4a78c1bef2ea4428629d6a8c35b23291",
+          "lines": 245
+        },
+        "src/core/store/schema.ts": {
+          "blob_sha1": "f8aeb07d1e1e82a8b982f2162e00f193233acd10",
+          "lines": 184
+        },
+        "src/core/index/select.ts": {
+          "blob_sha1": "228e8980ff759c40f376b73b7c89a52851971b0a",
+          "lines": 68
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S21",
+          "archive_alias": "context-mode-main",
+          "path": "src/core/tools/execute.ts",
+          "ranges": [
+            [
+              137,
+              237
+            ]
+          ],
+          "lines": 245,
+          "blob_sha1": "a58d1a2c4a78c1bef2ea4428629d6a8c35b23291",
+          "commit": "a2bced6d19ef1836179d070445b32dc5325e5017"
+        },
+        {
+          "source_id": "S21",
+          "archive_alias": "context-mode-main",
+          "path": "src/core/store/schema.ts",
+          "ranges": [
+            [
+              28,
+              77
+            ]
+          ],
+          "lines": 184,
+          "blob_sha1": "f8aeb07d1e1e82a8b982f2162e00f193233acd10",
+          "commit": "a2bced6d19ef1836179d070445b32dc5325e5017"
+        },
+        {
+          "source_id": "S22",
+          "archive_alias": "context-mode-main",
+          "path": "src/core/index/select.ts",
+          "ranges": [
+            [
+              19,
+              68
+            ]
+          ],
+          "lines": 68,
+          "blob_sha1": "228e8980ff759c40f376b73b7c89a52851971b0a",
+          "commit": "a2bced6d19ef1836179d070445b32dc5325e5017"
+        }
+      ]
+    },
+    {
+      "id": "engram-main",
+      "repository": "Gentleman-Programming/engram",
+      "url": "https://github.com/Gentleman-Programming/engram.git",
+      "commit": "11521f4f3776db6d94dc17c11731bad35b71c7bc",
+      "tree": "279a04811359822016207947c4b9e8499088466b",
+      "roles": [
+        "STO",
+        "REC",
+        "MEM",
+        "PER",
+        "DST",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Operation-key fingerprints, scoped FTS projection and observation versions. Verify ordinary write visibility without rebuilding; do not infer global ownership from IDs.",
+      "files": {
+        "internal/store/store.go": {
+          "blob_sha1": "59510131b241f152bc37b18574afb6ae6af18012",
+          "lines": 15212
+        },
+        "internal/store/search_projection.go": {
+          "blob_sha1": "c418538cad2bc42770dd64a3ecc9845a142546c1",
+          "lines": 52
+        },
+        "internal/store/observation_save_operation_test.go": {
+          "blob_sha1": "5287c74739168cce74d140992f46d5262a521493",
+          "lines": 1137
+        },
+        "internal/store/observation_versions_test.go": {
+          "blob_sha1": "efa2108e8a00d172519ac85e595f10edded26863",
+          "lines": 608
+        },
+        "internal/store/store_fts_test.go": {
+          "blob_sha1": "d72cf03d90e1e9f155783a6ec049ca824727e16f",
+          "lines": 344
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S19",
+          "archive_alias": "engram-main",
+          "path": "internal/store/store.go",
+          "ranges": [
+            [
+              1563,
+              1605
+            ],
+            [
+              4684,
+              4750
+            ]
+          ],
+          "lines": 15212,
+          "blob_sha1": "59510131b241f152bc37b18574afb6ae6af18012",
+          "commit": "11521f4f3776db6d94dc17c11731bad35b71c7bc"
+        },
+        {
+          "source_id": "S20",
+          "archive_alias": "engram-main",
+          "path": "internal/store/store.go",
+          "ranges": [
+            [
+              6188,
+              6250
+            ],
+            [
+              6355,
+              6405
+            ],
+            [
+              6517,
+              6596
+            ]
+          ],
+          "lines": 15212,
+          "blob_sha1": "59510131b241f152bc37b18574afb6ae6af18012",
+          "commit": "11521f4f3776db6d94dc17c11731bad35b71c7bc"
+        },
+        {
+          "source_id": "S20",
+          "archive_alias": "engram-main",
+          "path": "internal/store/search_projection.go",
+          "ranges": [
+            [
+              10,
+              52
+            ]
+          ],
+          "lines": 52,
+          "blob_sha1": "c418538cad2bc42770dd64a3ecc9845a142546c1",
+          "commit": "11521f4f3776db6d94dc17c11731bad35b71c7bc"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "engram-main",
+          "path": "internal/store/observation_save_operation_test.go",
+          "ranges": [],
+          "lines": 1137,
+          "blob_sha1": "5287c74739168cce74d140992f46d5262a521493",
+          "commit": "11521f4f3776db6d94dc17c11731bad35b71c7bc"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "engram-main",
+          "path": "internal/store/observation_versions_test.go",
+          "ranges": [],
+          "lines": 608,
+          "blob_sha1": "efa2108e8a00d172519ac85e595f10edded26863",
+          "commit": "11521f4f3776db6d94dc17c11731bad35b71c7bc"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "engram-main",
+          "path": "internal/store/store_fts_test.go",
+          "ranges": [],
+          "lines": 344,
+          "blob_sha1": "d72cf03d90e1e9f155783a6ec049ca824727e16f",
+          "commit": "11521f4f3776db6d94dc17c11731bad35b71c7bc"
+        }
+      ]
+    },
+    {
+      "id": "fold-main",
+      "repository": "shaneconner/fold",
+      "url": "https://github.com/shaneconner/fold.git",
+      "commit": "98b0c7f083d873804a958e2dfbdda161b998a73d",
+      "tree": "d95c01343b2823c290bc8b97945781d967f8e498",
+      "roles": [
+        "HST",
+        "HIE",
+        "PRV",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Generation drift, folding/tool linkage, scheduling and canonical prefix. JS scheduling and cache hints are not host authorization.",
+      "files": {
+        "extensions/lib/folding.ts": {
+          "blob_sha1": "7e306ceb28ef01f0a6ccc62b815e12a6ec15e53a",
+          "lines": 1703
+        },
+        "extensions/lib/scheduling.ts": {
+          "blob_sha1": "3aaa42d41a0f75fb384fd6300fc31c157e91e03e",
+          "lines": 1226
+        },
+        "extensions/lib/canonical.ts": {
+          "blob_sha1": "657179c82864c498d5fa2a8418cb8bf400bb2af6",
+          "lines": 194
+        },
+        "tests/verify.mjs": {
+          "blob_sha1": "c50613a87592b483a2a5d5b6323a454b76f27137",
+          "lines": 20277
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S07",
+          "archive_alias": "fold-main",
+          "path": "extensions/lib/folding.ts",
+          "ranges": [
+            [
+              611,
+              683
+            ],
+            [
+              847,
+              867
+            ],
+            [
+              912,
+              956
+            ]
+          ],
+          "lines": 1703,
+          "blob_sha1": "7e306ceb28ef01f0a6ccc62b815e12a6ec15e53a",
+          "commit": "98b0c7f083d873804a958e2dfbdda161b998a73d"
+        },
+        {
+          "source_id": "S08",
+          "archive_alias": "fold-main",
+          "path": "extensions/lib/scheduling.ts",
+          "ranges": [
+            [
+              314,
+              335
+            ],
+            [
+              951,
+              1120
+            ]
+          ],
+          "lines": 1226,
+          "blob_sha1": "3aaa42d41a0f75fb384fd6300fc31c157e91e03e",
+          "commit": "98b0c7f083d873804a958e2dfbdda161b998a73d"
+        },
+        {
+          "source_id": "S08",
+          "archive_alias": "fold-main",
+          "path": "extensions/lib/canonical.ts",
+          "ranges": [
+            [
+              41,
+              52
+            ]
+          ],
+          "lines": 194,
+          "blob_sha1": "657179c82864c498d5fa2a8418cb8bf400bb2af6",
+          "commit": "98b0c7f083d873804a958e2dfbdda161b998a73d"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "fold-main",
+          "path": "tests/verify.mjs",
+          "ranges": [],
+          "lines": 20277,
+          "blob_sha1": "c50613a87592b483a2a5d5b6323a454b76f27137",
+          "commit": "98b0c7f083d873804a958e2dfbdda161b998a73d"
+        }
+      ]
+    },
+    {
+      "id": "magic-context-master",
+      "repository": "cortexkit/magic-context",
+      "url": "https://github.com/cortexkit/magic-context.git",
+      "commit": "95c23a0608031e51d7cfab7c064b9a7c9e69510f",
+      "tree": "c1794c8033c0da598dda8a9db70089ae757c2234",
+      "roles": [
+        "HIE",
+        "MEM",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Decay, scheduling, historian validation and verification gates. Heuristics or model verification cannot prove source fidelity or authorize deletion.",
+      "files": {
+        "crates/mc-core/src/decay.rs": {
+          "blob_sha1": "205c1eff80a6ff481956d5a8983b8ba5adf23bf9",
+          "lines": 302
+        },
+        "crates/mc-module/src/scheduler.rs": {
+          "blob_sha1": "201ea75e125c4a46edef55a15202a45f5903af13",
+          "lines": 1602
+        },
+        "crates/mc-module/src/historian_validate.rs": {
+          "blob_sha1": "2c90874ecb93ed23fe211b735045fe991831542f",
+          "lines": 2375
+        },
+        "packages/plugin/src/features/magic-context/dreamer/verify.ts": {
+          "blob_sha1": "6edde52eecaf7ac75b2712fe65bfa9104c55dc09",
+          "lines": 1095
+        },
+        "packages/plugin/src/features/magic-context/dreamer/verify-gate.ts": {
+          "blob_sha1": "99beba4eb769b03548f769d95fdd2277b967f36e",
+          "lines": 276
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S14",
+          "archive_alias": "magic-context-master",
+          "path": "crates/mc-core/src/decay.rs",
+          "ranges": [
+            [
+              49,
+              131
+            ]
+          ],
+          "lines": 302,
+          "blob_sha1": "205c1eff80a6ff481956d5a8983b8ba5adf23bf9",
+          "commit": "95c23a0608031e51d7cfab7c064b9a7c9e69510f"
+        },
+        {
+          "source_id": "S15",
+          "archive_alias": "magic-context-master",
+          "path": "crates/mc-module/src/scheduler.rs",
+          "ranges": [
+            [
+              465,
+              647
+            ],
+            [
+              750,
+              850
+            ]
+          ],
+          "lines": 1602,
+          "blob_sha1": "201ea75e125c4a46edef55a15202a45f5903af13",
+          "commit": "95c23a0608031e51d7cfab7c064b9a7c9e69510f"
+        },
+        {
+          "source_id": "S15",
+          "archive_alias": "magic-context-master",
+          "path": "crates/mc-module/src/historian_validate.rs",
+          "ranges": [
+            [
+              521,
+              744
+            ]
+          ],
+          "lines": 2375,
+          "blob_sha1": "2c90874ecb93ed23fe211b735045fe991831542f",
+          "commit": "95c23a0608031e51d7cfab7c064b9a7c9e69510f"
+        },
+        {
+          "source_id": "S15a",
+          "archive_alias": "magic-context-master",
+          "path": "packages/plugin/src/features/magic-context/dreamer/verify.ts",
+          "ranges": [
+            [
+              89,
+              107
+            ],
+            [
+              260,
+              300
+            ],
+            [
+              745,
+              780
+            ]
+          ],
+          "lines": 1095,
+          "blob_sha1": "6edde52eecaf7ac75b2712fe65bfa9104c55dc09",
+          "commit": "95c23a0608031e51d7cfab7c064b9a7c9e69510f"
+        },
+        {
+          "source_id": "S15a",
+          "archive_alias": "magic-context-master",
+          "path": "packages/plugin/src/features/magic-context/dreamer/verify-gate.ts",
+          "ranges": [
+            [
+              98,
+              140
+            ]
+          ],
+          "lines": 276,
+          "blob_sha1": "99beba4eb769b03548f769d95fdd2277b967f36e",
+          "commit": "95c23a0608031e51d7cfab7c064b9a7c9e69510f"
+        }
+      ]
+    },
+    {
+      "id": "mastra-main",
+      "repository": "mastra-ai/mastra",
+      "url": "https://github.com/mastra-ai/mastra.git",
+      "commit": "464299bcacd7c94203af3345bcbcd1614b207e38",
+      "tree": "5a39757d1c3858b43432fece08013d723ed3d6b9",
+      "roles": [
+        "MEM",
+        "HST",
+        "DST",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Commit queue, generation/storage, safe prefix, async buffering and TTL fixtures. Process queue/timestamp/TTL alone cannot establish cross-process publication fencing.",
+      "files": {
+        "packages/memory/src/processors/observational-memory/commit-queue.ts": {
+          "blob_sha1": "503ac93077b29a47c7ed7aaa5f7bd44e828c922e",
+          "lines": 180
+        },
+        "stores/pg/src/storage/domains/memory/index.ts": {
+          "blob_sha1": "31e926aa3735964ae7806e13e09483a621739b52",
+          "lines": 3873
+        },
+        "packages/core/src/storage/domains/memory/base.ts": {
+          "blob_sha1": "c6c7ac1360fb13fba896ce446d8043697ebd3d0d",
+          "lines": 875
+        },
+        "packages/memory/src/processors/observational-memory/observation-turn/safe-buffer-prefix.ts": {
+          "blob_sha1": "033287c79ff67700316cc71405c78571fed527ee",
+          "lines": 75
+        },
+        "packages/memory/src/processors/observational-memory/observation-strategies/async-buffer.ts": {
+          "blob_sha1": "969f59fc668ba8e62560b70558e160b248ea0b31",
+          "lines": 359
+        },
+        "packages/memory/src/processors/observational-memory/activation-ttl.ts": {
+          "blob_sha1": "bb48b6798c429cde6c7353b9001912edc14c1d39",
+          "lines": 92
+        },
+        "packages/memory/src/processors/observational-memory/__tests__/safe-buffer-prefix.test.ts": {
+          "blob_sha1": "f4b161174909fa28d0e2ca59423534f1c7209a18",
+          "lines": 102
+        },
+        "packages/memory/src/processors/observational-memory/__tests__/commit-queue.test.ts": {
+          "blob_sha1": "12e7bce6d7c14a34735b3fe7477e42cd6da879e9",
+          "lines": 302
+        },
+        "packages/memory/src/processors/observational-memory/__tests__/commit-queue-integration.test.ts": {
+          "blob_sha1": "4c26ab00fbf9e4e69edf29ad0fbc58e5bea44ec5",
+          "lines": 357
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S11",
+          "archive_alias": "mastra-main",
+          "path": "packages/memory/src/processors/observational-memory/commit-queue.ts",
+          "ranges": [
+            [
+              3,
+              39
+            ],
+            [
+              69,
+              100
+            ]
+          ],
+          "lines": 180,
+          "blob_sha1": "503ac93077b29a47c7ed7aaa5f7bd44e828c922e",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "S11b",
+          "archive_alias": "mastra-main",
+          "path": "stores/pg/src/storage/domains/memory/index.ts",
+          "ranges": [
+            [
+              492,
+              505
+            ],
+            [
+              3416,
+              3480
+            ],
+            [
+              3494,
+              3514
+            ]
+          ],
+          "lines": 3873,
+          "blob_sha1": "31e926aa3735964ae7806e13e09483a621739b52",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "S11b",
+          "archive_alias": "mastra-main",
+          "path": "packages/core/src/storage/domains/memory/base.ts",
+          "ranges": [
+            [
+              614,
+              644
+            ]
+          ],
+          "lines": 875,
+          "blob_sha1": "c6c7ac1360fb13fba896ce446d8043697ebd3d0d",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "S12",
+          "archive_alias": "mastra-main",
+          "path": "packages/memory/src/processors/observational-memory/observation-turn/safe-buffer-prefix.ts",
+          "ranges": [
+            [
+              42,
+              75
+            ]
+          ],
+          "lines": 75,
+          "blob_sha1": "033287c79ff67700316cc71405c78571fed527ee",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "S13",
+          "archive_alias": "mastra-main",
+          "path": "packages/memory/src/processors/observational-memory/observation-strategies/async-buffer.ts",
+          "ranges": [
+            [
+              152,
+              210
+            ]
+          ],
+          "lines": 359,
+          "blob_sha1": "969f59fc668ba8e62560b70558e160b248ea0b31",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "S13a",
+          "archive_alias": "mastra-main",
+          "path": "packages/memory/src/processors/observational-memory/activation-ttl.ts",
+          "ranges": [
+            [
+              36,
+              90
+            ]
+          ],
+          "lines": 92,
+          "blob_sha1": "bb48b6798c429cde6c7353b9001912edc14c1d39",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "mastra-main",
+          "path": "packages/memory/src/processors/observational-memory/__tests__/safe-buffer-prefix.test.ts",
+          "ranges": [],
+          "lines": 102,
+          "blob_sha1": "f4b161174909fa28d0e2ca59423534f1c7209a18",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "mastra-main",
+          "path": "packages/memory/src/processors/observational-memory/__tests__/commit-queue.test.ts",
+          "ranges": [],
+          "lines": 302,
+          "blob_sha1": "12e7bce6d7c14a34735b3fe7477e42cd6da879e9",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "mastra-main",
+          "path": "packages/memory/src/processors/observational-memory/__tests__/commit-queue-integration.test.ts",
+          "ranges": [],
+          "lines": 357,
+          "blob_sha1": "4c26ab00fbf9e4e69edf29ad0fbc58e5bea44ec5",
+          "commit": "464299bcacd7c94203af3345bcbcd1614b207e38"
+        }
+      ]
+    },
+    {
+      "id": "pi-cache-optimizer-master",
+      "repository": "jiangge/pi-cache-optimizer",
+      "url": "https://github.com/jiangge/pi-cache-optimizer.git",
+      "commit": "eb220ffca37f80986532d2600cc7bf15bbdfd33e",
+      "tree": "ac03514e5e6249e4eaecfbbd77c1b6b65f108fda",
+      "roles": [
+        "PRV",
+        "HST",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Request rewriting and tool ordering. Do not canonicalize signed bytes or change tool semantics for cache hits.",
+      "files": {
+        "src/request-payload.ts": {
+          "blob_sha1": "c1d3857b2e5f3a7a893f5abfc5e8f3da28402428",
+          "lines": 263
+        },
+        "src/tool-ordering.ts": {
+          "blob_sha1": "a2b50795914d4b8b3ab22f12e8b43c703dfc472b",
+          "lines": 209
+        },
+        "src/prompt-rewrite.ts": {
+          "blob_sha1": "050b87ad3bbd952fa95010a79ac89b4bd6c3911d",
+          "lines": 378
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S27",
+          "archive_alias": "pi-cache-optimizer-master",
+          "path": "src/request-payload.ts",
+          "ranges": [
+            [
+              9,
+              42
+            ],
+            [
+              131,
+              263
+            ]
+          ],
+          "lines": 263,
+          "blob_sha1": "c1d3857b2e5f3a7a893f5abfc5e8f3da28402428",
+          "commit": "eb220ffca37f80986532d2600cc7bf15bbdfd33e"
+        },
+        {
+          "source_id": "S27",
+          "archive_alias": "pi-cache-optimizer-master",
+          "path": "src/tool-ordering.ts",
+          "ranges": [
+            [
+              103,
+              207
+            ]
+          ],
+          "lines": 209,
+          "blob_sha1": "a2b50795914d4b8b3ab22f12e8b43c703dfc472b",
+          "commit": "eb220ffca37f80986532d2600cc7bf15bbdfd33e"
+        },
+        {
+          "source_id": "S27",
+          "archive_alias": "pi-cache-optimizer-master",
+          "path": "src/prompt-rewrite.ts",
+          "ranges": [
+            [
+              209,
+              242
+            ]
+          ],
+          "lines": 378,
+          "blob_sha1": "050b87ad3bbd952fa95010a79ac89b4bd6c3911d",
+          "commit": "eb220ffca37f80986532d2600cc7bf15bbdfd33e"
+        }
+      ]
+    },
+    {
+      "id": "pi-context-view-develop",
+      "repository": "dimk90/pi-context-view",
+      "url": "https://github.com/dimk90/pi-context-view.git",
+      "commit": "381e883c82e5c569db62fe24d1e8c11c4045186c",
+      "tree": "702443b4b55be6c265d962210766ae76d062d757",
+      "roles": [
+        "OPS",
+        "PRV",
+        "HST",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Request capture and attribution fixtures. Preserve stored versus actual attempt distinction and unknown attribution; no full raw receipt by default.",
+      "files": {
+        "src/capture/request.ts": {
+          "blob_sha1": "a290b722b2a859ddabdea539471cb185aa209315",
+          "lines": 280
+        },
+        "src/capture/attribution.ts": {
+          "blob_sha1": "6c5f1cc66e5de14379e56d4536a1636853208a1b",
+          "lines": 34
+        },
+        "test/projection.test.ts": {
+          "blob_sha1": "ef97dddae5b2cfd283d69d0fdc493d454123912a",
+          "lines": 147
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S28",
+          "archive_alias": "pi-context-view-develop",
+          "path": "src/capture/request.ts",
+          "ranges": [
+            [
+              121,
+              163
+            ]
+          ],
+          "lines": 280,
+          "blob_sha1": "a290b722b2a859ddabdea539471cb185aa209315",
+          "commit": "381e883c82e5c569db62fe24d1e8c11c4045186c"
+        },
+        {
+          "source_id": "S28",
+          "archive_alias": "pi-context-view-develop",
+          "path": "src/capture/attribution.ts",
+          "ranges": [
+            [
+              1,
+              34
+            ]
+          ],
+          "lines": 34,
+          "blob_sha1": "6c5f1cc66e5de14379e56d4536a1636853208a1b",
+          "commit": "381e883c82e5c569db62fe24d1e8c11c4045186c"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-context-view-develop",
+          "path": "test/projection.test.ts",
+          "ranges": [],
+          "lines": 147,
+          "blob_sha1": "ef97dddae5b2cfd283d69d0fdc493d454123912a",
+          "commit": "381e883c82e5c569db62fe24d1e8c11c4045186c"
+        }
+      ]
+    },
+    {
+      "id": "pi-extensions-main",
+      "repository": "d3ara1n/pi-extensions",
+      "url": "https://github.com/d3ara1n/pi-extensions.git",
+      "commit": "052e3dcfd46c4768a3b2b6b71598a5801af5e8fb",
+      "tree": "69f99cd6fa8ad99d843c5786282ca9e38ebadfff",
+      "roles": [
+        "HEL",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Peek helper delegation. Caller-provided scope/tool hints cannot prove delegated authorization.",
+      "files": {
+        "packages/pi-peek-agent/src/tool.ts": {
+          "blob_sha1": "5b5cc864385b26f1dab49236b2f001979d1e7a92",
+          "lines": 350
+        },
+        "packages/pi-peek-agent/src/index.ts": {
+          "blob_sha1": "1f6b45da0b0cc1efd97e7210eb3f82eee7198ae5",
+          "lines": 70
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S34",
+          "archive_alias": "pi-extensions-main",
+          "path": "packages/pi-peek-agent/src/tool.ts",
+          "ranges": [
+            [
+              39,
+              76
+            ],
+            [
+              151,
+              172
+            ],
+            [
+              222,
+              239
+            ],
+            [
+              293,
+              320
+            ]
+          ],
+          "lines": 350,
+          "blob_sha1": "5b5cc864385b26f1dab49236b2f001979d1e7a92",
+          "commit": "052e3dcfd46c4768a3b2b6b71598a5801af5e8fb"
+        },
+        {
+          "source_id": "S34",
+          "archive_alias": "pi-extensions-main",
+          "path": "packages/pi-peek-agent/src/index.ts",
+          "ranges": [
+            [
+              28,
+              54
+            ]
+          ],
+          "lines": 70,
+          "blob_sha1": "1f6b45da0b0cc1efd97e7210eb3f82eee7198ae5",
+          "commit": "052e3dcfd46c4768a3b2b6b71598a5801af5e8fb"
+        }
+      ]
+    },
+    {
+      "id": "pi-hermes-memory-main",
+      "repository": "chandra447/pi-hermes-memory",
+      "url": "https://github.com/chandra447/pi-hermes-memory.git",
+      "commit": "ccdae89064e52a72a1cf55043e7a21964108fa31",
+      "tree": "dbc3e9bd6412bdaf83eb5503ef6dc8a63812b3fd",
+      "roles": [
+        "MEM",
+        "PER",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Correction detector and learning handler. Heuristic correction is a candidate, not user authority.",
+      "files": {
+        "src/handlers/correction-detector.ts": {
+          "blob_sha1": "3c84cd7099f58e84b5fd8124b59f733de4853621",
+          "lines": 305
+        },
+        "src/handlers/learn-memory.ts": {
+          "blob_sha1": "21443fb5163fb78105d1417a265fe120979f9d33",
+          "lines": 186
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S32",
+          "archive_alias": "pi-hermes-memory-main",
+          "path": "src/handlers/correction-detector.ts",
+          "ranges": [
+            [
+              82,
+              125
+            ],
+            [
+              135,
+              160
+            ]
+          ],
+          "lines": 305,
+          "blob_sha1": "3c84cd7099f58e84b5fd8124b59f733de4853621",
+          "commit": "ccdae89064e52a72a1cf55043e7a21964108fa31"
+        },
+        {
+          "source_id": "S32",
+          "archive_alias": "pi-hermes-memory-main",
+          "path": "src/handlers/learn-memory.ts",
+          "ranges": [
+            [
+              7,
+              45
+            ]
+          ],
+          "lines": 186,
+          "blob_sha1": "21443fb5163fb78105d1417a265fe120979f9d33",
+          "commit": "ccdae89064e52a72a1cf55043e7a21964108fa31"
+        }
+      ]
+    },
+    {
+      "id": "pi-master",
+      "repository": "TGYD-helige/pi",
+      "url": "https://github.com/TGYD-helige/pi.git",
+      "commit": "fe30e73c007576d6dd81a8de15621ab7015c780b",
+      "tree": "100e5b51915fab73381c536ca6f6d2e275ae3384",
+      "roles": [
+        "MEM",
+        "HEL",
+        "VEC",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Background extraction and mem0 prefetch; cancellation of a caller is not proof remote work stopped. This fork, not the generic Pi upstream, contains the cited paths.",
+      "files": {
+        "packages/pi-memory/src/background-extraction.ts": {
+          "blob_sha1": "867fc27c24e6ba0bfd43cdbef22a1045e8d8a94b",
+          "lines": 350
+        },
+        "packages/pi-memory-mem0/src/prefetch.ts": {
+          "blob_sha1": "c542243a5f3b503e486e300856496aa532261bf6",
+          "lines": 133
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S33",
+          "archive_alias": "pi-master",
+          "path": "packages/pi-memory/src/background-extraction.ts",
+          "ranges": [
+            [
+              114,
+              180
+            ],
+            [
+              235,
+              278
+            ]
+          ],
+          "lines": 350,
+          "blob_sha1": "867fc27c24e6ba0bfd43cdbef22a1045e8d8a94b",
+          "commit": "fe30e73c007576d6dd81a8de15621ab7015c780b"
+        },
+        {
+          "source_id": "S33a",
+          "archive_alias": "pi-master",
+          "path": "packages/pi-memory-mem0/src/prefetch.ts",
+          "ranges": [
+            [
+              45,
+              119
+            ]
+          ],
+          "lines": 133,
+          "blob_sha1": "c542243a5f3b503e486e300856496aa532261bf6",
+          "commit": "fe30e73c007576d6dd81a8de15621ab7015c780b"
+        }
+      ]
+    },
+    {
+      "id": "pi-observational-memory-master",
+      "repository": "elpapi42/pi-observational-memory",
+      "url": "https://github.com/elpapi42/pi-observational-memory.git",
+      "commit": "a94a98df103b6d8d297b5676152678fc56b76e25",
+      "tree": "625f7a5debedae9cec63e3641b9eb6c178425430",
+      "roles": [
+        "MEM",
+        "STO",
+        "REW",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Session ledger folding and coverage fixtures. Unknown frontier must not default to branch tip.",
+      "files": {
+        "src/session-ledger/fold.ts": {
+          "blob_sha1": "93084e2da0562ac6fe998e57ea19f53d3647ea4f",
+          "lines": 100
+        },
+        "src/session-ledger/types.ts": {
+          "blob_sha1": "c50e78a1ab29632ad90c2de3bf25d63902802f1e",
+          "lines": 208
+        },
+        "tests/session-ledger-projection.test.ts": {
+          "blob_sha1": "81c5beea1cfaea900d18645b1278839f305c63a5",
+          "lines": 257
+        },
+        "tests/dropper-coverage.test.ts": {
+          "blob_sha1": "7985ed17c0ba6dc80c39e8c8fb56c419a31941ab",
+          "lines": 93
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S29",
+          "archive_alias": "pi-observational-memory-master",
+          "path": "src/session-ledger/fold.ts",
+          "ranges": [
+            [
+              25,
+              100
+            ]
+          ],
+          "lines": 100,
+          "blob_sha1": "93084e2da0562ac6fe998e57ea19f53d3647ea4f",
+          "commit": "a94a98df103b6d8d297b5676152678fc56b76e25"
+        },
+        {
+          "source_id": "S29",
+          "archive_alias": "pi-observational-memory-master",
+          "path": "src/session-ledger/types.ts",
+          "ranges": [
+            [
+              1,
+              75
+            ]
+          ],
+          "lines": 208,
+          "blob_sha1": "c50e78a1ab29632ad90c2de3bf25d63902802f1e",
+          "commit": "a94a98df103b6d8d297b5676152678fc56b76e25"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-observational-memory-master",
+          "path": "tests/session-ledger-projection.test.ts",
+          "ranges": [],
+          "lines": 257,
+          "blob_sha1": "81c5beea1cfaea900d18645b1278839f305c63a5",
+          "commit": "a94a98df103b6d8d297b5676152678fc56b76e25"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-observational-memory-master",
+          "path": "tests/dropper-coverage.test.ts",
+          "ranges": [],
+          "lines": 93,
+          "blob_sha1": "7985ed17c0ba6dc80c39e8c8fb56c419a31941ab",
+          "commit": "a94a98df103b6d8d297b5676152678fc56b76e25"
+        }
+      ]
+    },
+    {
+      "id": "pi-posthorse-main",
+      "repository": "fitchmultz/pi-posthorse",
+      "url": "https://github.com/fitchmultz/pi-posthorse.git",
+      "commit": "4acb1d7dcad5028dfce1b5574df94906fa6dfae2",
+      "tree": "2ede1e837f6d8d041adf35c57bcfa0aa80ac278d",
+      "roles": [
+        "HIE",
+        "DST",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Rollover and note provenance. Cross-store activation requires durable source/destination receipts and fencing.",
+      "files": {
+        "src/rollover.ts": {
+          "blob_sha1": "e8727231e50f458c880bf92ec9c2545ae5bdc902",
+          "lines": 443
+        },
+        "src/note-provenance.ts": {
+          "blob_sha1": "c186644d65bbaef9e8b6a1f3f1bffeddd8df9b62",
+          "lines": 307
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S31",
+          "archive_alias": "pi-posthorse-main",
+          "path": "src/rollover.ts",
+          "ranges": [
+            [
+              45,
+              110
+            ],
+            [
+              140,
+              170
+            ],
+            [
+              369,
+              443
+            ]
+          ],
+          "lines": 443,
+          "blob_sha1": "e8727231e50f458c880bf92ec9c2545ae5bdc902",
+          "commit": "4acb1d7dcad5028dfce1b5574df94906fa6dfae2"
+        },
+        {
+          "source_id": "S31",
+          "archive_alias": "pi-posthorse-main",
+          "path": "src/note-provenance.ts",
+          "ranges": [
+            [
+              129,
+              162
+            ],
+            [
+              228,
+              265
+            ]
+          ],
+          "lines": 307,
+          "blob_sha1": "c186644d65bbaef9e8b6a1f3f1bffeddd8df9b62",
+          "commit": "4acb1d7dcad5028dfce1b5574df94906fa6dfae2"
+        }
+      ]
+    },
+    {
+      "id": "pi-smart-compact-main",
+      "repository": "alpertarhan/pi-smart-compact",
+      "url": "https://github.com/alpertarhan/pi-smart-compact.git",
+      "commit": "d955504aa1bdbdc032f8764304018ab8fcc84b80",
+      "tree": "da55abb89962586d53c2f306e4f8f9a6b343f7ec",
+      "roles": [
+        "MEM",
+        "HST",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Verification/retry, path-adversarial and message-provenance fixtures. Model verification alone does not certify file/path authority or exact coverage.",
+      "files": {
+        "src/phases/verify.ts": {
+          "blob_sha1": "5a133d9dcaec390eef6135896424ed983645c1e3",
+          "lines": 2467
+        },
+        "src/app/run-smart-compact.ts": {
+          "blob_sha1": "ae2edf60a3476f9aa0edace2194bec7f60122750",
+          "lines": 544
+        },
+        "test/verify.test.ts": {
+          "blob_sha1": "6244a97d1754e5f23edb9d9265cd59ec5ebacfa7",
+          "lines": 2302
+        },
+        "test/verify-file-path-adversarial.test.ts": {
+          "blob_sha1": "0cc8dc9fda8ed95048afaac23f2bc4a2e31c3747",
+          "lines": 432
+        },
+        "test/custom-message-provenance.test.ts": {
+          "blob_sha1": "adf2cdc329dae77ee7d2ae62edbfc60fac68e42f",
+          "lines": 377
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S26",
+          "archive_alias": "pi-smart-compact-main",
+          "path": "src/phases/verify.ts",
+          "ranges": [
+            [
+              66,
+              86
+            ],
+            [
+              2062,
+              2113
+            ]
+          ],
+          "lines": 2467,
+          "blob_sha1": "5a133d9dcaec390eef6135896424ed983645c1e3",
+          "commit": "d955504aa1bdbdc032f8764304018ab8fcc84b80"
+        },
+        {
+          "source_id": "S26",
+          "archive_alias": "pi-smart-compact-main",
+          "path": "src/app/run-smart-compact.ts",
+          "ranges": [
+            [
+              123,
+              132
+            ],
+            [
+              195,
+              261
+            ],
+            [
+              379,
+              408
+            ]
+          ],
+          "lines": 544,
+          "blob_sha1": "ae2edf60a3476f9aa0edace2194bec7f60122750",
+          "commit": "d955504aa1bdbdc032f8764304018ab8fcc84b80"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-smart-compact-main",
+          "path": "test/verify.test.ts",
+          "ranges": [],
+          "lines": 2302,
+          "blob_sha1": "6244a97d1754e5f23edb9d9265cd59ec5ebacfa7",
+          "commit": "d955504aa1bdbdc032f8764304018ab8fcc84b80"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-smart-compact-main",
+          "path": "test/verify-file-path-adversarial.test.ts",
+          "ranges": [],
+          "lines": 432,
+          "blob_sha1": "0cc8dc9fda8ed95048afaac23f2bc4a2e31c3747",
+          "commit": "d955504aa1bdbdc032f8764304018ab8fcc84b80"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-smart-compact-main",
+          "path": "test/custom-message-provenance.test.ts",
+          "ranges": [],
+          "lines": 377,
+          "blob_sha1": "adf2cdc329dae77ee7d2ae62edbfc60fac68e42f",
+          "commit": "d955504aa1bdbdc032f8764304018ab8fcc84b80"
+        }
+      ]
+    },
+    {
+      "id": "pi-stack-main",
+      "repository": "AdityaVG13/pi-stack",
+      "url": "https://github.com/AdityaVG13/pi-stack.git",
+      "commit": "b9783bc535e030056bba1f3fb95e486fcbed00a9",
+      "tree": "1592f899e1b847295e7b6b8cd3383ac7a6630e74",
+      "roles": [
+        "PRV",
+        "REC",
+        "VEC",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Deferred context and evidence ranking. Description trimming may change actual tool behavior; do not substitute ranking for eligibility.",
+      "files": {
+        "packages/pi-deferred-context-engine/lib/compact.js": {
+          "blob_sha1": "e992a20525fc02717a2fea6b3960c7313793f072",
+          "lines": 272
+        },
+        "packages/pi-deferred-context-engine/lib/engine.js": {
+          "blob_sha1": "27f9b4b2b540f10ab9171e955b939e803f9e6672",
+          "lines": 502
+        },
+        "packages/pi-supernova/src/context/evidence-rank.js": {
+          "blob_sha1": "768e3253df6225fe6f351520f5410dac0aaf335d",
+          "lines": 154
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S24",
+          "archive_alias": "pi-stack-main",
+          "path": "packages/pi-deferred-context-engine/lib/compact.js",
+          "ranges": [
+            [
+              3,
+              81
+            ],
+            [
+              137,
+              187
+            ]
+          ],
+          "lines": 272,
+          "blob_sha1": "e992a20525fc02717a2fea6b3960c7313793f072",
+          "commit": "b9783bc535e030056bba1f3fb95e486fcbed00a9"
+        },
+        {
+          "source_id": "S24",
+          "archive_alias": "pi-stack-main",
+          "path": "packages/pi-deferred-context-engine/lib/engine.js",
+          "ranges": [
+            [
+              32,
+              90
+            ]
+          ],
+          "lines": 502,
+          "blob_sha1": "27f9b4b2b540f10ab9171e955b939e803f9e6672",
+          "commit": "b9783bc535e030056bba1f3fb95e486fcbed00a9"
+        },
+        {
+          "source_id": "S25",
+          "archive_alias": "pi-stack-main",
+          "path": "packages/pi-supernova/src/context/evidence-rank.js",
+          "ranges": [
+            [
+              6,
+              154
+            ]
+          ],
+          "lines": 154,
+          "blob_sha1": "768e3253df6225fe6f351520f5410dac0aaf335d",
+          "commit": "b9783bc535e030056bba1f3fb95e486fcbed00a9"
+        }
+      ]
+    },
+    {
+      "id": "pi-tuck-main",
+      "repository": "galyavin/pi-tuck",
+      "url": "https://github.com/galyavin/pi-tuck.git",
+      "commit": "499248a0cab903dbc31fc7f01e82d92396283a63",
+      "tree": "7e282b807af1f0fa15979be55f7c0b8d66f7c7d7",
+      "roles": [
+        "HST",
+        "PRV",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Request capacity, legal cuts and native recovery fixtures. Learned capacity must not exceed known hard caps; text equality is not stable source identity.",
+      "files": {
+        "src/request-capacity.ts": {
+          "blob_sha1": "1a2b522027c1820a12366604680f931539250d40",
+          "lines": 134
+        },
+        "src/budget.ts": {
+          "blob_sha1": "70c5f44ec8a80f02ebef052346451e7dc346ca7e",
+          "lines": 170
+        },
+        "src/tuck/cut.ts": {
+          "blob_sha1": "5879e47c6d417dd96fd80ff89e5cb6d44ea40a9d",
+          "lines": 196
+        },
+        "test/decide-cut-property.test.ts": {
+          "blob_sha1": "0f884bb0352d209f09981a068461809f83396d8a",
+          "lines": 162
+        },
+        "test/prompt-cut-keeps-prompt.test.ts": {
+          "blob_sha1": "1e8c269f2675ca498ae0a7643508b3694ca949dd",
+          "lines": 31
+        },
+        "test/native-recovery.test.ts": {
+          "blob_sha1": "2959dcb53ca87fff9874aa8e774a79b03b75fc33",
+          "lines": 185
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S09",
+          "archive_alias": "pi-tuck-main",
+          "path": "src/request-capacity.ts",
+          "ranges": [
+            [
+              68,
+              122
+            ]
+          ],
+          "lines": 134,
+          "blob_sha1": "1a2b522027c1820a12366604680f931539250d40",
+          "commit": "499248a0cab903dbc31fc7f01e82d92396283a63"
+        },
+        {
+          "source_id": "S09",
+          "archive_alias": "pi-tuck-main",
+          "path": "src/budget.ts",
+          "ranges": [
+            [
+              75,
+              104
+            ]
+          ],
+          "lines": 170,
+          "blob_sha1": "70c5f44ec8a80f02ebef052346451e7dc346ca7e",
+          "commit": "499248a0cab903dbc31fc7f01e82d92396283a63"
+        },
+        {
+          "source_id": "S10",
+          "archive_alias": "pi-tuck-main",
+          "path": "src/tuck/cut.ts",
+          "ranges": [
+            [
+              74,
+              122
+            ],
+            [
+              155,
+              196
+            ]
+          ],
+          "lines": 196,
+          "blob_sha1": "5879e47c6d417dd96fd80ff89e5cb6d44ea40a9d",
+          "commit": "499248a0cab903dbc31fc7f01e82d92396283a63"
+        },
+        {
+          "source_id": "S10",
+          "archive_alias": "pi-tuck-main",
+          "path": "src/budget.ts",
+          "ranges": [
+            [
+              117,
+              170
+            ]
+          ],
+          "lines": 170,
+          "blob_sha1": "70c5f44ec8a80f02ebef052346451e7dc346ca7e",
+          "commit": "499248a0cab903dbc31fc7f01e82d92396283a63"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-tuck-main",
+          "path": "test/decide-cut-property.test.ts",
+          "ranges": [],
+          "lines": 162,
+          "blob_sha1": "0f884bb0352d209f09981a068461809f83396d8a",
+          "commit": "499248a0cab903dbc31fc7f01e82d92396283a63"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-tuck-main",
+          "path": "test/prompt-cut-keeps-prompt.test.ts",
+          "ranges": [],
+          "lines": 31,
+          "blob_sha1": "1e8c269f2675ca498ae0a7643508b3694ca949dd",
+          "commit": "499248a0cab903dbc31fc7f01e82d92396283a63"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "pi-tuck-main",
+          "path": "test/native-recovery.test.ts",
+          "ranges": [],
+          "lines": 185,
+          "blob_sha1": "2959dcb53ca87fff9874aa8e774a79b03b75fc33",
+          "commit": "499248a0cab903dbc31fc7f01e82d92396283a63"
+        }
+      ]
+    },
+    {
+      "id": "pi-vcc-master",
+      "repository": "sting8k/pi-vcc",
+      "url": "https://github.com/sting8k/pi-vcc.git",
+      "commit": "7a428b18ce0cd1f074fda18007047c15d7b99e3c",
+      "tree": "89505afcc5b5bad9a770e45d32e45f570910f82f",
+      "roles": [
+        "MEM",
+        "HIE",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "Structured brief sections help context projection; brief is not underlying evidence or a second transcript.",
+      "files": {
+        "src/core/build-sections.ts": {
+          "blob_sha1": "41b71bbc6ddbe884fccf16f01898112bfd7b409f",
+          "lines": 42
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S30",
+          "archive_alias": "pi-vcc-master",
+          "path": "src/core/build-sections.ts",
+          "ranges": [
+            [
+              20,
+              42
+            ]
+          ],
+          "lines": 42,
+          "blob_sha1": "41b71bbc6ddbe884fccf16f01898112bfd7b409f",
+          "commit": "7a428b18ce0cd1f074fda18007047c15d7b99e3c"
+        }
+      ]
+    },
+    {
+      "id": "remnic-main",
+      "repository": "joshuaswarren/remnic",
+      "url": "https://github.com/joshuaswarren/remnic.git",
+      "commit": "01adfceedee8faae53e20e899d316e30f033a1cd",
+      "tree": "0aaa2c654ee76405e399ea597e11ef870ef0db62",
+      "roles": [
+        "STO",
+        "MEM",
+        "REC",
+        "VEC",
+        "HIE",
+        "PER",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "DAG, extraction-span provenance, search/rerank, cache coherence, belief ledger. JS string spans are not UTF-8 byte ranges; reranker cannot add candidates; cache invalidation is not live authority.",
+      "files": {
+        "packages/remnic-core/src/lcm/schema.ts": {
+          "blob_sha1": "9357a327a4c8619483763cacc80cbd30fe9a0e71",
+          "lines": 154
+        },
+        "packages/remnic-core/src/lcm/dag.ts": {
+          "blob_sha1": "b9544648b5f0f12f8204b8ffc2c44157d4c87755",
+          "lines": 199
+        },
+        "packages/remnic-core/src/extraction-span-provenance.ts": {
+          "blob_sha1": "7c6faf5bb8519e5a0594059325c32a1c141a29e0",
+          "lines": 41
+        },
+        "packages/remnic-core/src/retrieval.ts": {
+          "blob_sha1": "9ffd85654f7b9c8000c0fede5d02d464afb9eba2",
+          "lines": 104
+        },
+        "packages/remnic-core/src/search/port.ts": {
+          "blob_sha1": "6b73fe34c920ea84d7099c561cf1ad6137239635",
+          "lines": 312
+        },
+        "packages/remnic-core/src/rerank.ts": {
+          "blob_sha1": "60b4973a63444d0cecfa7d8cc508b2c7ba8dc7e4",
+          "lines": 275
+        },
+        "packages/remnic-core/src/memory-cache.ts": {
+          "blob_sha1": "31e892bc526da2bdd9db2e5a1af7a5edd5bad522",
+          "lines": 524
+        },
+        "packages/belief-ledger/src/types.ts": {
+          "blob_sha1": "f2803a696b1f464103a8997063e669715bc33bd6",
+          "lines": 248
+        },
+        "packages/belief-ledger/src/ledger.ts": {
+          "blob_sha1": "006fd2a78e00198654735d01d4d83259b11dda20",
+          "lines": 359
+        },
+        "packages/remnic-core/src/storage-contract/cache-coherence.test.ts": {
+          "blob_sha1": "737de207729364de82e88152aca4e77137d4956c",
+          "lines": 835
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S16",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/lcm/schema.ts",
+          "ranges": [
+            [
+              60,
+              120
+            ]
+          ],
+          "lines": 154,
+          "blob_sha1": "9357a327a4c8619483763cacc80cbd30fe9a0e71",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S16",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/lcm/dag.ts",
+          "ranges": [
+            [
+              17,
+              110
+            ]
+          ],
+          "lines": 199,
+          "blob_sha1": "b9544648b5f0f12f8204b8ffc2c44157d4c87755",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S17",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/extraction-span-provenance.ts",
+          "ranges": [
+            [
+              19,
+              41
+            ]
+          ],
+          "lines": 41,
+          "blob_sha1": "7c6faf5bb8519e5a0594059325c32a1c141a29e0",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S17a",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/retrieval.ts",
+          "ranges": [
+            [
+              8,
+              104
+            ]
+          ],
+          "lines": 104,
+          "blob_sha1": "9ffd85654f7b9c8000c0fede5d02d464afb9eba2",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S17a",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/search/port.ts",
+          "ranges": [
+            [
+              1,
+              312
+            ]
+          ],
+          "lines": 312,
+          "blob_sha1": "6b73fe34c920ea84d7099c561cf1ad6137239635",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S17b",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/rerank.ts",
+          "ranges": [
+            [
+              1,
+              160
+            ]
+          ],
+          "lines": 275,
+          "blob_sha1": "60b4973a63444d0cecfa7d8cc508b2c7ba8dc7e4",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S17c",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/memory-cache.ts",
+          "ranges": [
+            [
+              301,
+              341
+            ],
+            [
+              419,
+              449
+            ]
+          ],
+          "lines": 524,
+          "blob_sha1": "31e892bc526da2bdd9db2e5a1af7a5edd5bad522",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S18",
+          "archive_alias": "remnic-main",
+          "path": "packages/belief-ledger/src/types.ts",
+          "ranges": [
+            [
+              3,
+              60
+            ]
+          ],
+          "lines": 248,
+          "blob_sha1": "f2803a696b1f464103a8997063e669715bc33bd6",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "S18",
+          "archive_alias": "remnic-main",
+          "path": "packages/belief-ledger/src/ledger.ts",
+          "ranges": [
+            [
+              66,
+              123
+            ]
+          ],
+          "lines": 359,
+          "blob_sha1": "006fd2a78e00198654735d01d4d83259b11dda20",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        },
+        {
+          "source_id": "fixture",
+          "archive_alias": "remnic-main",
+          "path": "packages/remnic-core/src/storage-contract/cache-coherence.test.ts",
+          "ranges": [],
+          "lines": 835,
+          "blob_sha1": "737de207729364de82e88152aca4e77137d4956c",
+          "commit": "01adfceedee8faae53e20e899d316e30f033a1cd"
+        }
+      ]
+    },
+    {
+      "id": "volt-dev",
+      "repository": "Martian-Engineering/volt",
+      "url": "https://github.com/Martian-Engineering/volt.git",
+      "commit": "4f227134c4671fd2d7b0f3b57b1b3ccabcfd3a8e",
+      "tree": "08920dcc8217c018d55906b48439d4893e57b43b",
+      "roles": [
+        "STO",
+        "HST",
+        "HIE",
+        "QA",
+        "AUD"
+      ],
+      "review_note": "LCM schema, integrity and replacement. No second transcript, and no assumption of equivalent database transaction semantics. Canonical repository moved from voltropy/volt; voltcode historical name is not the verified clone URL.",
+      "files": {
+        "packages/voltcode/src/session/lcm/db.ts": {
+          "blob_sha1": "94770a62d36b89fbc7e4d0e7c4cf28aa29d91fe3",
+          "lines": 3398
+        },
+        "packages/voltcode/src/session/lcm/integrity.ts": {
+          "blob_sha1": "8208cc6c7c4b2476623219f44bea9725b092428c",
+          "lines": 252
+        }
+      },
+      "anchors": [
+        {
+          "source_id": "S01",
+          "archive_alias": "volt-dev",
+          "path": "packages/voltcode/src/session/lcm/db.ts",
+          "ranges": [
+            [
+              161,
+              236
+            ]
+          ],
+          "lines": 3398,
+          "blob_sha1": "94770a62d36b89fbc7e4d0e7c4cf28aa29d91fe3",
+          "commit": "4f227134c4671fd2d7b0f3b57b1b3ccabcfd3a8e"
+        },
+        {
+          "source_id": "S02",
+          "archive_alias": "volt-dev",
+          "path": "packages/voltcode/src/session/lcm/integrity.ts",
+          "ranges": [
+            [
+              30,
+              105
+            ]
+          ],
+          "lines": 252,
+          "blob_sha1": "8208cc6c7c4b2476623219f44bea9725b092428c",
+          "commit": "4f227134c4671fd2d7b0f3b57b1b3ccabcfd3a8e"
+        },
+        {
+          "source_id": "S03",
+          "archive_alias": "volt-dev",
+          "path": "packages/voltcode/src/session/lcm/db.ts",
+          "ranges": [
+            [
+              1922,
+              1982
+            ]
+          ],
+          "lines": 3398,
+          "blob_sha1": "94770a62d36b89fbc7e4d0e7c4cf28aa29d91fe3",
+          "commit": "4f227134c4671fd2d7b0f3b57b1b3ccabcfd3a8e"
+        }
+      ]
+    }
+  ]
+}
