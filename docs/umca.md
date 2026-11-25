@@ -231,6 +231,24 @@ For ingestion, a repeated event ID **and version** with a different payload is a
 
 Define summary acceptance on the actual summarizer response. A transmission error, length stop or missing required source group cannot publish. When a provider omits the finish reason, either establish completion through a supported adapter contract or defer the checkpoint. Preserve Crush’s cost accounting for a failed or rejected summary without activating it. Keep the last valid projection **only while all its inputs remain authorized**. Otherwise reconstruct from surviving sources, or stop with a recoverable status.
 
+### Coverage of the three design documents
+
+Use this crosswalk to distinguish a deliverable from an example or a superseded design. The original brief defines the capabilities; the Crush proposal supplies candidate integration points; the audit revises unsafe assumptions. Where two versions disagree, use the disposition below and the acceptance ledger above.
+
+| Source sections | Implementer disposition |
+|---|---|
+| Brief §§1–3; proposal §§1–7; audit §§1–3, 6, 14–15 | Implement the native responsibilities in §§1–3 and 7 of this guide. Preserve host event identity. If the host supports a fork, inherit only authorized history through its recorded fork point. Later sibling events remain separate. Branch merging is outside scope. Session hierarchy and Git ancestry are different relationships. |
+| Brief §§4–5; proposal §§10, 13; audit §§5–8 | Implement bounded capture, scope, deletion and provenance from the first durable record. Recognize interactive shell commands persisted as user-role messages as shell events. A job-kill result records observed termination, never rollback of side effects. A subagent report is a generated claim; unknown legacy origin is weak evidence. Test each through memory extraction. |
+| Brief §§6–8; proposal §§8–9; audit §§3–4, 10 | Use legal contiguous cuts, independent summarizer budgets and one publication owner. Disabling automatic summarization suppresses automatic summary model calls; deterministic previews and required admission checks still apply. Test this with a recording model and an oversized input. |
+| Brief §§9–10; proposal §§11–12; audit §§7–9 | Deliver versioned memory, task notes, correction, forgetting and lexical recall. Session, project and deliberately shared personal memories have distinct scopes. Personal scope requires explicit user authorization for cross-project access. Keep cross-project recall disabled in the initial implementation and show it as unavailable until access and deletion tests pass. |
+| Brief §§11–12; proposal §§14–15; audit §§11–12 | Provide inspect, compact, search, expand, memory inspection, explicit learning and forgetting through the shared operations in §7. The proposal’s command spellings (e.g. `/context expand`, `/memory forget`) are examples. Preserve existing permission, busy-session and confirmation behavior through every frontend. |
+| Brief §§13–14; proposal §§16–20; audit §§16–19 | Deliver the staged gates in §§6–7. Demonstrate a long coding session, a task change, restart and follow-up recall against native Crush. A performance or quality claim needs measurements from equivalent fixtures. The example time estimates and token settings are not release requirements. |
+| Brief §15; proposal §§2, 5; audit §13 | The source index below supports independent implementation. Reference tests illustrate edge cases; they are not portable conformance tests for Crush. |
+
+The design documents also discuss hierarchical summaries, embeddings/vector storage, dynamic tool discovery, graph-based evidence, speculative retrieval, automatic reflection, semantic decay, and provider-cache tuning. These are explicitly deferred experiments. Implementing them all is not a condition for completing the core UMCA capability. If tool schemas are later shortened or discovered dynamically, preserve executable validation, defaults, required fields, types and tool permissions, and measure changes in model tool selection.
+
+For request inspection, record an optional bounded receipt with request/attempt identity, authorized session, selected source/checkpoint/memory versions, estimate, reported usage and outcome. Reuse existing operation IDs. Never expose a source handle after access is revoked. The receipt supports diagnosis and attribution; it does not justify storing a second raw prompt or a transcript of every token.
+
 ## 8. Findings from XRush that directly affect this design
 
 | Mechanism | Reuse and regression condition |
